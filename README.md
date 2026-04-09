@@ -1,5 +1,7 @@
 # felix-tm
 
+[日本語](README.ja.md)
+
 Cross-platform Translation Memory engine, reimplemented in Python 3.
 
 The fuzzy matching algorithms and TM architecture are inspired by
