@@ -52,10 +52,12 @@ def edit_distance(source: str, target: str, max_distance: int | None = None) -> 
         return n2
 
     # Special case: one string is a single character
+    # If the char exists in the other string: delete all others = len - 1
+    # If not: delete all others + substitute = len
     if n2 == 1:
-        return m2 if s[0] in t else m2 - 1 + 1  # m2 - match + substitution
+        return m2 - 1 if s[0] in t else m2
     if m2 == 1:
-        return n2 if t[0] in s else n2 - 1 + 1
+        return n2 - 1 if t[0] in s else n2
 
     # Ensure we iterate over the shorter string in the inner loop
     if n2 > m2:

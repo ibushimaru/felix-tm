@@ -43,6 +43,19 @@ class TestEditDistance:
         # Matching prefix "hel" and suffix "o" should be skipped
         assert edit_distance("hello", "helpo") == 1
 
+    def test_single_char_found(self):
+        # "a" in "abc" -> delete b,c = distance 2
+        assert edit_distance("a", "abc") == 2
+        assert edit_distance("abc", "a") == 2
+
+    def test_single_char_not_found(self):
+        # "x" not in "abc" -> delete 2 + substitute 1 = 3
+        assert edit_distance("x", "abc") == 3
+        assert edit_distance("abc", "x") == 3
+
+    def test_single_char_same(self):
+        assert edit_distance("a", "a") == 0
+
 
 class TestEditDistanceScore:
     def test_perfect_match(self):

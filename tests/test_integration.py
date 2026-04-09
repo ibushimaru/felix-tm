@@ -5,6 +5,7 @@ from pathlib import Path
 
 from felix_tm.io.tmx import export_tmx, import_tmx
 from felix_tm.io.tsv import export_tsv, import_tsv
+from felix_tm.io.xliff import export_xliff, import_xliff
 from felix_tm.io.xlsx import export_xlsx, import_xlsx
 from felix_tm.memory.record import Record
 from felix_tm.memory.search import SearchEngine
@@ -157,3 +158,83 @@ class TestXlsxRoundtrip:
         assert imported[2].target == "ありがとう"
 
         xlsx_path.unlink()
+
+
+class TestXliffRoundtrip:
+    def test_xliff_12(self):
+        records = [
+            Record(source="Hello", target="こんにちは", context="greeting"),
+            Record(source="Goodbye", target="さようなら"),
+        ]
+
+        with tempfile.NamedTemporaryFile(suffix=".xlf", delete=False) as f:
+            xlf_path = Path(f.name)
+
+        export_xliff(records, xlf_path, source_lang="en", target_lang="ja", version="1.2")
+        imported = import_xliff(xlf_path)
+
+        assert len(imported) == 2
+        assert imported[0].source == "Hello"
+        assert imported[0].target == "こんにちは"
+
+        xlf_path.unlink()
+
+    def test_xliff_20(self):
+        records = [
+            Record(source="Save", target="保存"),
+            Record(source="Cancel", target="キャンセル"),
+        ]
+
+        with tempfile.NamedTemporaryFile(suffix=".xlf", delete=False) as f:
+            xlf_path = Path(f.name)
+
+        export_xliff(records, xlf_path, source_lang="en", target_lang="ja", version="2.0")
+        imported = import_xliff(xlf_path)
+
+        assert len(imported) == 2
+        assert imported[0].source == "Save"
+        assert imported[0].target == "保存"
+
+        xlf_path.unlink()
+
+
+class TestPerformance:
+    def test_large_tm_search(self):
+        """Test that fuzzy search with DB pre-filtering works on larger datasets."""
+        with MemoryStore() as store:
+            # Create records with varying lengths to test length filtering
+            records = []
+            for i in range(500):
+                records.append(Record(
+                    source=f"Short {i}.", target=f"短い {i}。",
+                ))
+            for i in range(500):
+                records.append(Record(
+                    source=f"This is a much longer test sentence number {i} with extra words.",
+                    target=f"これは長いテスト文 {i} です。",
+                ))
+            store.add_bulk(records)
+            assert store.count() == 1000
+
+            engine = SearchEngine(store)
+
+            # Search for a short sentence - should filter out long records
+            result = engine.fuzzy_search("Short 250.", min_score=0.8, max_results=5)
+            assert len(result.matches) > 0
+            assert result.matches[0].score == 1.0
+            # Length filter should eliminate the 500 long records
+            assert result.total_searched < 1000
+
+    def test_search_correctness(self):
+        """Test that optimized search returns same results as expected."""
+        with MemoryStore() as store:
+            store.add(Record(source="The file has been saved.", target="ファイルが保存されました。"))
+            store.add(Record(source="The file has been deleted.", target="ファイルが削除されました。"))
+            store.add(Record(source="Hello world", target="こんにちは世界"))
+
+            engine = SearchEngine(store)
+            result = engine.fuzzy_search("The file has been updated.", min_score=0.5)
+            assert len(result.matches) >= 2
+            sources = [m.source for m in result.matches]
+            assert "The file has been saved." in sources
+            assert "The file has been deleted." in sources

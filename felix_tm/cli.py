@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .io.tmx import export_tmx, import_tmx
 from .io.tsv import export_tsv, import_tsv
+from .io.xliff import export_xliff, import_xliff
 from .io.xlsx import export_xlsx, import_xlsx
 from .memory.record import Record
 from .memory.search import SearchEngine
@@ -32,6 +33,8 @@ def cmd_import(args: argparse.Namespace) -> None:
             target_col=args.target_col or 2,
             header_row=args.header_row or 1,
         )
+    elif fmt in ("xliff", "xlf", "sdlxliff"):
+        records = import_xliff(input_path)
     else:
         print(f"Unsupported format: {fmt}", file=sys.stderr)
         sys.exit(1)
@@ -62,6 +65,10 @@ def cmd_export(args: argparse.Namespace) -> None:
         export_xlsx(records, output_path,
                     source_lang=args.source_lang or "Source",
                     target_lang=args.target_lang or "Target")
+    elif fmt in ("xliff", "xlf"):
+        export_xliff(records, output_path,
+                     source_lang=args.source_lang or "en",
+                     target_lang=args.target_lang or "ja")
     else:
         print(f"Unsupported format: {fmt}", file=sys.stderr)
         sys.exit(1)
