@@ -12,15 +12,14 @@ requires-python = ">=3.10"
 authors = [
     { name = "ibushimaru", email = "ibushimaru@veriscio.com" },
 ]
+dependencies = [
+    "openpyxl>=3.1",
+]
 
 [project.urls]
 Repository = "https://github.com/ibushimaru/felix-tm"
 "Original Felix CAT (archived)" = "https://web.archive.org/web/20190729035158/https://bitbucket.org/ginstrom/felix"
 "Felix CAT Website" = "http://felix-cat.com/"
-
-dependencies = [
-    "openpyxl>=3.1",
-]
 
 [project.optional-dependencies]
 dev = [
