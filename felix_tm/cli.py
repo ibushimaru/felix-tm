@@ -119,6 +119,12 @@ def cmd_concordance(args: argparse.Namespace) -> None:
         print()
 
 
+def cmd_serve(args: argparse.Namespace) -> None:
+    """Start the web UI."""
+    from .web.app import serve
+    serve(db_path=args.db, host=args.host, port=args.port)
+
+
 def cmd_info(args: argparse.Namespace) -> None:
     """Show TM database info."""
     db_path = Path(args.db)
@@ -175,6 +181,12 @@ def main(argv: list[str] | None = None) -> None:
     p_conc.add_argument("--field", default="source",
                         choices=["source", "target", "context"])
 
+    # serve
+    p_serve = sub.add_parser("serve", help="Start web UI")
+    p_serve.add_argument("-d", "--db", default="memory.db", help="TM database path")
+    p_serve.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
+    p_serve.add_argument("-p", "--port", type=int, default=8080, help="Port (default: 8080)")
+
     # info
     p_info = sub.add_parser("info", help="Show TM info")
     p_info.add_argument("-d", "--db", default="memory.db", help="TM database path")
@@ -190,6 +202,7 @@ def main(argv: list[str] | None = None) -> None:
         "export": cmd_export,
         "search": cmd_search,
         "concordance": cmd_concordance,
+        "serve": cmd_serve,
         "info": cmd_info,
     }
     commands[args.command](args)

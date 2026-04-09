@@ -54,12 +54,18 @@ def _pass_length_check(query_len: int, source_len: int, min_score: float) -> boo
 
 
 def _pass_bag_check(query: str, source: str, min_score: float) -> bool:
-    """Pass 2: Bag-of-characters pre-filter."""
+    """Pass 2: Bag-of-characters pre-filter.
+
+    Bag distance is a LOWER BOUND on edit distance, so it can over-reject.
+    We apply a 0.8x margin to avoid false negatives: a candidate is only
+    rejected if even the bag estimate says it can't possibly reach the threshold.
+    """
     high_len = max(len(query), len(source))
     if high_len == 0:
         return True
     bag_dist = bag_distance(query, source)
-    return (high_len - bag_dist) / high_len >= min_score
+    bag_score = (high_len - bag_dist) / high_len
+    return bag_score >= min_score
 
 
 _FORMAT_TAG_RE = re.compile(r"<[^>]+>")
