@@ -37,13 +37,8 @@ jobs:
           pip install pyinstaller
 
       - name: Build binary
-        run: |
-          pyinstaller --onefile --name felix-tm --clean \
-            --hidden-import felix_tm.io.tmx \
-            --hidden-import felix_tm.io.tsv \
-            --hidden-import felix_tm.io.xlsx \
-            --hidden-import felix_tm.io.xliff \
-            entry.py
+        shell: bash
+        run: pyinstaller --onefile --name felix-tm --clean --hidden-import felix_tm.io.tmx --hidden-import felix_tm.io.tsv --hidden-import felix_tm.io.xlsx --hidden-import felix_tm.io.xliff entry.py
 
       - name: Verify binary
         run: ./dist/felix-tm${{ matrix.ext }} --help
