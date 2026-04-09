@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .io.tmx import export_tmx, import_tmx
 from .io.tsv import export_tsv, import_tsv
+from .io.xlsx import export_xlsx, import_xlsx
 from .memory.record import Record
 from .memory.search import SearchEngine
 from .memory.store import MemoryStore
@@ -24,6 +25,13 @@ def cmd_import(args: argparse.Namespace) -> None:
                              target_lang=args.target_lang)
     elif fmt in ("tsv", "txt", "csv"):
         records = import_tsv(input_path)
+    elif fmt in ("xlsx", "xls"):
+        records = import_xlsx(
+            input_path,
+            source_col=args.source_col or 1,
+            target_col=args.target_col or 2,
+            header_row=args.header_row or 1,
+        )
     else:
         print(f"Unsupported format: {fmt}", file=sys.stderr)
         sys.exit(1)
@@ -50,6 +58,10 @@ def cmd_export(args: argparse.Namespace) -> None:
                    target_lang=args.target_lang or "ja")
     elif fmt in ("tsv", "txt"):
         export_tsv(records, output_path)
+    elif fmt in ("xlsx", "xls"):
+        export_xlsx(records, output_path,
+                    source_lang=args.source_lang or "Source",
+                    target_lang=args.target_lang or "Target")
     else:
         print(f"Unsupported format: {fmt}", file=sys.stderr)
         sys.exit(1)
@@ -122,18 +134,21 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command")
 
     # import
-    p_import = sub.add_parser("import", help="Import TMX/TSV into TM")
+    p_import = sub.add_parser("import", help="Import TMX/TSV/XLSX into TM")
     p_import.add_argument("input", help="Input file path")
     p_import.add_argument("-d", "--db", default="memory.db", help="TM database path")
-    p_import.add_argument("-f", "--format", help="Force format (tmx/tsv)")
+    p_import.add_argument("-f", "--format", help="Force format (tmx/tsv/xlsx)")
     p_import.add_argument("--source-lang", help="Source language code")
     p_import.add_argument("--target-lang", help="Target language code")
+    p_import.add_argument("--source-col", type=int, help="Source column (1-based, for xlsx)")
+    p_import.add_argument("--target-col", type=int, help="Target column (1-based, for xlsx)")
+    p_import.add_argument("--header-row", type=int, help="Header row number (for xlsx)")
 
     # export
-    p_export = sub.add_parser("export", help="Export TM to TMX/TSV")
+    p_export = sub.add_parser("export", help="Export TM to TMX/TSV/XLSX")
     p_export.add_argument("output", help="Output file path")
     p_export.add_argument("-d", "--db", default="memory.db", help="TM database path")
-    p_export.add_argument("-f", "--format", help="Force format (tmx/tsv)")
+    p_export.add_argument("-f", "--format", help="Force format (tmx/tsv/xlsx)")
     p_export.add_argument("--source-lang", help="Source language code")
     p_export.add_argument("--target-lang", help="Target language code")
 

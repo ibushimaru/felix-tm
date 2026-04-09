@@ -157,8 +157,11 @@ def bag_distance(source: str, target: str) -> int:
 def substring_distance(needle: str, haystack: str) -> int:
     """Calculate minimum edit distance of needle as a substring of haystack.
 
-    Used for glossary matching - finds the best position in haystack
-    where needle matches with minimum edits.
+    Uses a modified DP where the first row is all zeros (free start position),
+    allowing the needle to match at any position in the haystack.
+    The result is the minimum value in the last row of the DP matrix.
+
+    Ported from Felix CAT distance.cpp (substring distance).
 
     Args:
         needle: The pattern to search for.
@@ -175,46 +178,20 @@ def substring_distance(needle: str, haystack: str) -> int:
     if m == 0:
         return n
 
-    # Initialize: free insertions at the start (substring matching)
-    row = [0] * (m + 1)
+    # dp[i][j] = min edits to match needle[0:i] against a substring ending at haystack[j]
+    # First row is all zeros: matching can start at any position (free start)
+    prev_row = [0] * (m + 1)
 
     for i in range(1, n + 1):
-        prev = i
-        best = i
-
-        for j in range(1, m + 1):
-            cost = 0 if needle[i - 1] == haystack[j - 1] else 1
-            temp = row[j]
-            val = min(
-                row[j] + 1,      # deletion
-                prev + 1,        # insertion
-                row[j - 1] + cost if j > 0 else prev + cost,  # substitution
-            )
-            # For first row of needle, allow free start position
-            prev = val
-            row[j] = temp
-
-            if i == n and val < best:
-                best = val
-
-        # Update row for next iteration
-        row_new = [i + 1] + [0] * m
-        # Actually we need to redo this properly
-        pass
-
-    # Re-implement properly with full matrix approach for correctness
-    # dp[i][j] = min edit distance of needle[0:i] against any substring ending at haystack[j]
-    prev_row = [0] * (m + 1)  # free start position
-
-    for i in range(1, n + 1):
-        curr_row = [i] + [0] * m
+        curr_row = [i] + [0] * m  # deleting all of needle[0:i] if no haystack consumed
         for j in range(1, m + 1):
             cost = 0 if needle[i - 1] == haystack[j - 1] else 1
             curr_row[j] = min(
-                curr_row[j - 1] + 1,   # insertion in needle
-                prev_row[j] + 1,       # deletion from needle
-                prev_row[j - 1] + cost, # substitution
+                curr_row[j - 1] + 1,    # insert into needle (skip haystack char)
+                prev_row[j] + 1,        # delete from needle
+                prev_row[j - 1] + cost, # match/substitute
             )
         prev_row = curr_row
 
-    return min(prev_row[1:]) if m > 0 else n
+    # Minimum over all ending positions in haystack
+    return min(prev_row[1:])

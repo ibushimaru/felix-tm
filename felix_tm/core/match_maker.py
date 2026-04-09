@@ -62,12 +62,13 @@ def _pass_bag_check(query: str, source: str, min_score: float) -> bool:
     return (high_len - bag_dist) / high_len >= min_score
 
 
+_FORMAT_TAG_RE = re.compile(r"<[^>]+>")
+
+
 def _format_penalty(query_rich: str, source_rich: str) -> float:
     """Calculate penalty for mismatched formatting tags."""
-    import re
-    tag_re = re.compile(r"<[^>]+>")
-    q_tags = sorted(tag_re.findall(query_rich))
-    s_tags = sorted(tag_re.findall(source_rich))
+    q_tags = sorted(_FORMAT_TAG_RE.findall(query_rich))
+    s_tags = sorted(_FORMAT_TAG_RE.findall(source_rich))
 
     if not q_tags and not s_tags:
         return 0.0

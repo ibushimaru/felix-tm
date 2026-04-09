@@ -1,6 +1,11 @@
 """Tests for the Levenshtein distance module."""
 
-from felix_tm.core.distance import bag_distance, edit_distance, edit_distance_score
+from felix_tm.core.distance import (
+    bag_distance,
+    edit_distance,
+    edit_distance_score,
+    substring_distance,
+)
 
 
 class TestEditDistance:
@@ -67,3 +72,32 @@ class TestBagDistance:
 
     def test_subset(self):
         assert bag_distance("abc", "abcd") == 1
+
+
+class TestSubstringDistance:
+    def test_exact_substring(self):
+        assert substring_distance("fox", "the quick brown fox jumps") == 0
+
+    def test_not_found(self):
+        assert substring_distance("xyz", "abc") == 3
+
+    def test_fuzzy_substring(self):
+        # "fax" vs "fox" in haystack -> 1 substitution
+        assert substring_distance("fax", "the quick brown fox") == 1
+
+    def test_empty_needle(self):
+        assert substring_distance("", "hello") == 0
+
+    def test_empty_haystack(self):
+        assert substring_distance("hello", "") == 5
+
+    def test_japanese_substring(self):
+        assert substring_distance("翻訳", "翻訳メモリシステム") == 0
+
+    def test_japanese_fuzzy_substring(self):
+        # "翻案" vs "翻訳" -> 1 substitution
+        assert substring_distance("翻案", "翻訳メモリ") == 1
+
+    def test_needle_longer_than_haystack(self):
+        dist = substring_distance("abcdef", "abc")
+        assert dist == 3  # need to delete 3 chars from needle

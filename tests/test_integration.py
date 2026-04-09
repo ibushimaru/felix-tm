@@ -5,6 +5,7 @@ from pathlib import Path
 
 from felix_tm.io.tmx import export_tmx, import_tmx
 from felix_tm.io.tsv import export_tsv, import_tsv
+from felix_tm.io.xlsx import export_xlsx, import_xlsx
 from felix_tm.memory.record import Record
 from felix_tm.memory.search import SearchEngine
 from felix_tm.memory.store import MemoryStore
@@ -133,3 +134,26 @@ class TestTsvRoundtrip:
         assert imported[0].target == "こんにちは"
 
         tsv_path.unlink()
+
+
+class TestXlsxRoundtrip:
+    def test_export_import(self):
+        records = [
+            Record(source="Hello", target="こんにちは"),
+            Record(source="Goodbye", target="さようなら"),
+            Record(source="Thank you", target="ありがとう", reliability=5, validated=True),
+        ]
+
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
+            xlsx_path = Path(f.name)
+
+        export_xlsx(records, xlsx_path, source_lang="English", target_lang="Japanese")
+        imported = import_xlsx(xlsx_path, source_col=1, target_col=2)
+
+        assert len(imported) == 3
+        assert imported[0].source == "Hello"
+        assert imported[0].target == "こんにちは"
+        assert imported[2].source == "Thank you"
+        assert imported[2].target == "ありがとう"
+
+        xlsx_path.unlink()
