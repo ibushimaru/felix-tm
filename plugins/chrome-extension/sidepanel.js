@@ -249,25 +249,49 @@ async function registerTM() {
   document.getElementById('reg-target').value = '';
 }
 
-function bulkImport() {
-  const text = document.getElementById('bulk-data').value.trim();
-  if (!text) return;
-
-  const lines = text.split('\n');
-  let added = 0, updated = 0;
-  for (const line of lines) {
-    const parts = line.split('\t');
-    if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
-      const action = addToTMInternal(parts[0].trim(), parts[1].trim());
-      if (action === 'added') added++;
-      else updated++;
+async function pasteImport() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text || !text.trim()) {
+      showToast('bulk-toast', t('noData') || 'No data in clipboard');
+      return;
     }
-  }
 
-  saveTM();
-  updateStats();
-  showToast('reg-toast', `Imported: ${added} new, ${updated} updated`);
-  document.getElementById('bulk-data').value = '';
+    const lines = text.split('\n');
+    let added = 0, updated = 0, skipped = 0;
+
+    // Detect if first line is a header
+    const firstLine = lines[0].split('\t');
+    const startIdx = (firstLine.length >= 2 &&
+      /^(source|原文|en|src)/i.test(firstLine[0].trim())) ? 1 : 0;
+
+    for (let i = startIdx; i < lines.length; i++) {
+      const parts = lines[i].split('\t');
+      if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
+        const action = addToTMInternal(parts[0].trim(), parts[1].trim());
+        if (action === 'added') added++;
+        else updated++;
+      } else {
+        skipped++;
+      }
+    }
+
+    await saveTM();
+    updateStats();
+
+    const preview = document.getElementById('paste-preview');
+    preview.textContent = `${lines.length - startIdx} rows parsed`;
+
+    showToast('bulk-toast',
+      `${t('imported') || 'Imported'}: ${added} ${t('added') || 'new'}, ${updated} ${t('alreadyExists') ? 'updated' : 'updated'}${skipped ? `, ${skipped} skipped` : ''}`
+    );
+
+    // Re-search current cell with new TM
+    if (lastSearchValue) doSearch(lastSearchValue);
+
+  } catch (err) {
+    showToast('bulk-toast', 'Clipboard access denied. Try Ctrl+V in the text area below.');
+  }
 }
 
 async function saveTM() {
@@ -496,7 +520,7 @@ function escH(s) { const d = document.createElement('div'); d.textContent = s; r
 document.getElementById('min-score').addEventListener('change', () => doSearch());
 document.getElementById('search-type').addEventListener('change', () => doSearch());
 document.getElementById('btn-register').addEventListener('click', () => registerTM());
-document.getElementById('btn-bulk').addEventListener('click', () => bulkImport());
+document.getElementById('btn-paste-import').addEventListener('click', () => pasteImport());
 document.getElementById('btn-add-gloss').addEventListener('click', () => addGlossary());
 document.getElementById('btn-export-tm').addEventListener('click', () => exportTSV());
 document.getElementById('btn-export-gloss').addEventListener('click', () => exportGlossaryTSV());

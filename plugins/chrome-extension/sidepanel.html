@@ -100,10 +100,11 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
   <button class="btn btn-primary" style="margin-bottom:12px" id="btn-register">Register</button>
   <div id="reg-toast"></div>
   <hr>
-  <h3 id="h-build">Build TM from Sheet</h3>
-  <p style="font-size:12px;color:#5f6368;margin-bottom:8px" id="p-bulk-desc">Paste TSV data (source[TAB]target per line) to bulk import.</p>
-  <textarea id="bulk-data" rows="5" style="width:100%;font-size:12px;border:1px solid #dadce0;border-radius:4px;padding:8px;margin-bottom:8px" placeholder="source\ttarget\nsource\ttarget"></textarea>
-  <button class="btn btn-outline" style="width:100%" id="btn-bulk">Bulk Import</button>
+  <h3 id="h-build">Import from Sheet</h3>
+  <p style="font-size:12px;color:#5f6368;margin-bottom:8px" id="p-bulk-desc">Select source+target columns in the sheet, copy (Ctrl+C), then click Import.</p>
+  <button class="btn btn-primary" style="width:100%;margin-bottom:8px" id="btn-paste-import">Paste from Clipboard</button>
+  <div id="paste-preview" style="font-size:11px;color:#5f6368;margin-bottom:8px"></div>
+  <div id="bulk-toast"></div>
 </div>
 
 <!-- Glossary -->

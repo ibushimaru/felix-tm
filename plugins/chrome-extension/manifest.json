@@ -6,7 +6,8 @@
   "permissions": [
     "activeTab",
     "sidePanel",
-    "storage"
+    "storage",
+    "clipboardRead"
   ],
   "host_permissions": [
     "https://docs.google.com/spreadsheets/*"
