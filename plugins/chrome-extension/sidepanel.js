@@ -396,23 +396,21 @@ function renderTMList() {
   el.innerHTML = showing.map((e, i) => {
     const ref = e.refcount ? ` <span style="color:#9aa0a6">(${e.refcount}x)</span>` : '';
     const idx = tmData.indexOf(e);
-    return `<div class="match" style="cursor:default;padding:8px" data-tm-del="${idx}">
+    return `<div class="match" style="cursor:default;padding:8px;position:relative" data-tm-idx="${idx}">
+      <span style="position:absolute;top:6px;right:8px;font-size:11px;color:#ea4335;cursor:pointer" data-tm-del="${idx}">✕</span>
       <div class="match-source">${escH(e.source)}${ref}</div>
       <div class="match-target">${escH(e.target)}</div>
     </div>`;
   }).join('');
 
-  // Long press or right-click to delete
-  el.querySelectorAll('[data-tm-del]').forEach(div => {
-    div.addEventListener('contextmenu', async (ev) => {
-      ev.preventDefault();
-      const idx = parseInt(div.getAttribute('data-tm-del'));
-      if (confirm(`Delete?\n${tmData[idx].source}\n→ ${tmData[idx].target}`)) {
-        tmData.splice(idx, 1);
-        await saveTM();
-        updateStats();
-        renderTMList();
-      }
+  el.querySelectorAll('[data-tm-del]').forEach(btn => {
+    btn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const idx = parseInt(btn.getAttribute('data-tm-del'));
+      tmData.splice(idx, 1);
+      await saveTM();
+      updateStats();
+      renderTMList();
     });
   });
 }
