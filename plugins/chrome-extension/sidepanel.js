@@ -131,7 +131,9 @@ async function init() {
       setTimeout(async () => {
         const resp = await sendBgPayload('DEBUG_DOM');
         if (resp) {
-          dbg.textContent = `bar:${resp.formulaBar} box:${resp.nameBox} val:"${(resp.cellValue||'').substring(0,20)}" ref:${resp.cellRef}`;
+          dbg.innerHTML = `bar:${resp.formulaBar}(${resp.barTag}.${(resp.barClass||'').split(' ')[0]}) children:${resp.barChildren}<br>` +
+            `text:"${resp.barText||''}" html:"${(resp.barHTML||'').substring(0,60)}"<br>` +
+            `role:${resp.barRole} ref:${resp.cellRef}`;
           if (resp.cellValue) onCellChanged(resp.cellValue, resp.cellRef);
         }
       }, 1000);

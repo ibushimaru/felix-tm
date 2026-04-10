@@ -161,12 +161,21 @@
       sendResponse({ value: getCellValue(), ref: getCellRef() });
     }
     if (msg.type === 'DEBUG_DOM') {
+      const bar = findFormulaBar();
+      const box = findNameBox();
       const info = {
-        formulaBar: !!findFormulaBar(),
-        nameBox: !!findNameBox(),
+        formulaBar: !!bar,
+        nameBox: !!box,
         cellValue: getCellValue(),
         cellRef: getCellRef(),
         editables: document.querySelectorAll('[contenteditable]').length,
+        barTag: bar ? bar.tagName : null,
+        barClass: bar ? bar.className.substring(0, 60) : null,
+        barChildren: bar ? bar.children.length : 0,
+        barHTML: bar ? bar.innerHTML.substring(0, 100) : null,
+        barText: bar ? (bar.textContent || '').substring(0, 50) : null,
+        barValue: bar ? (bar.value || '').substring(0, 50) : null,
+        barRole: bar ? bar.getAttribute('aria-label') : null,
       };
       sendResponse(info);
     }
