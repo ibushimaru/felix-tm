@@ -3,32 +3,25 @@
  * Routes messages, manages storage, and handles content script injection.
  */
 
-// Click icon: open side panel. Right-click context menu: open floating window.
+// Click icon: toggle in-page overlay panel
 chrome.action.onClicked.addListener((tab) => {
-  chrome.sidePanel.open({ tabId: tab.id });
+  chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_PANEL' }, () => {
+    void chrome.runtime.lastError;
+  });
 });
 
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-
-// Context menu for floating window option
+// Right-click: open side panel as fallback
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
-    id: 'open-floating',
-    title: 'Open Felix TM (Floating Window)',
+    id: 'open-sidepanel',
+    title: 'Open Felix TM (Side Panel)',
     contexts: ['action'],
   });
 });
 
-chrome.contextMenus.onClicked.addListener((info) => {
-  if (info.menuItemId === 'open-floating') {
-    chrome.windows.create({
-      url: 'sidepanel.html',
-      type: 'popup',
-      width: 400,
-      height: 700,
-      top: 100,
-      left: 100,
-    });
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'open-sidepanel') {
+    chrome.sidePanel.open({ tabId: tab.id });
   }
 });
 
@@ -143,8 +136,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // Sheets API read
-  if (msg.type === 'SHEETS_API_READ') {
+  // Sheets API read (from content script directly)
+  if (msg.type === 'SHEETS_API_READ_DIRECT' || msg.type === 'SHEETS_API_READ') {
     chrome.identity.getAuthToken({ interactive: false }, (token) => {
       if (!token) { sendResponse({ value: '' }); return; }
       const range = encodeURIComponent(msg.range);

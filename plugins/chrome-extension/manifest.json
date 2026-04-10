@@ -29,7 +29,7 @@
   "content_scripts": [
     {
       "matches": ["https://docs.google.com/spreadsheets/*"],
-      "js": ["content.js"],
+      "js": ["felix-engine.js", "content.js"],
       "run_at": "document_idle"
     }
   ],
