@@ -201,8 +201,8 @@ function editDistance(source, target, maxDistance) {
   if (m2 === 0) return n2;
 
   // Single char optimization
-  if (n2 === 1) return s[0] === t.indexOf(s[0]) >= 0 ? m2 - 1 : m2;
-  if (m2 === 1) return t[0] === s.indexOf(t[0]) >= 0 ? n2 - 1 : n2;
+  if (n2 === 1) return t.indexOf(s[0]) >= 0 ? m2 - 1 : m2;
+  if (m2 === 1) return s.indexOf(t[0]) >= 0 ? n2 - 1 : n2;
 
   // Ensure shorter string in inner loop
   let rows, cols;
@@ -262,7 +262,48 @@ function bagDistance(source, target) {
 
 // ============================================================
 // Core: Fuzzy Match (port of match_maker.py)
+// Faithful port of Felix CAT's match_maker.cpp:
+//   - CJK text: character-level Levenshtein
+//   - Western text with spaces: word-level matching
 // ============================================================
+
+function _tokenize(text) {
+  return text.split(/(\s+|[.,;:!?()"'\[\]{}<>])/)
+    .filter(t => t && !/^\s+$/.test(t));
+}
+
+function _wordLevelScore(query, source, minScore) {
+  const qTokens = _tokenize(query);
+  const sTokens = _tokenize(source);
+
+  if (qTokens.length === 0 || sTokens.length === 0) {
+    return editDistanceScore(query, source, minScore);
+  }
+
+  const n = qTokens.length;
+  const m = sTokens.length;
+  const highLen = Math.max(n, m);
+
+  // Word-to-word edit distance with within-token similarity
+  const row = [];
+  for (let i = 0; i <= n; i++) row[i] = i;
+
+  for (let j = 1; j <= m; j++) {
+    let prev = row[0];
+    row[0] = j;
+    for (let i = 1; i <= n; i++) {
+      const tokenScore = editDistanceScore(qTokens[i - 1], sTokens[j - 1]);
+      const cost = 1.0 - tokenScore;
+      const temp = row[i];
+      row[i] = Math.min(row[i] + 1, row[i - 1] + 1, prev + cost);
+      prev = temp;
+    }
+  }
+
+  const totalCost = row[n];
+  const score = highLen > 0 ? (highLen - totalCost) / highLen : 1.0;
+  return Math.max(0.0, Math.min(1.0, score));
+}
 
 function fuzzyMatchScore(queryCmp, sourceCmp, minScore) {
   if (queryCmp === sourceCmp) return 1.0;
@@ -283,7 +324,14 @@ function fuzzyMatchScore(queryCmp, sourceCmp, minScore) {
   if (bagScore < minScore) return 0.0;
 
   // Pass 3: Edit distance
-  const score = editDistanceScore(queryCmp, sourceCmp, minScore);
+  // Auto-detect: CJK -> character-level, Western with spaces -> word-level
+  let score;
+  if (containsCJK(queryCmp) || queryCmp.indexOf(' ') === -1) {
+    score = editDistanceScore(queryCmp, sourceCmp, minScore);
+  } else {
+    score = _wordLevelScore(queryCmp, sourceCmp, minScore);
+  }
+
   return score >= minScore ? score : 0.0;
 }
 
