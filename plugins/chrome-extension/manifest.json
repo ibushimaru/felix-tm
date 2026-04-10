@@ -9,10 +9,12 @@
     "scripting",
     "sidePanel",
     "storage",
-    "clipboardRead"
+    "clipboardRead",
+    "identity"
   ],
   "host_permissions": [
-    "https://docs.google.com/spreadsheets/*"
+    "https://docs.google.com/spreadsheets/*",
+    "https://sheets.googleapis.com/*"
   ],
   "background": {
     "service_worker": "background.js"

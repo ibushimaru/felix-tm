@@ -142,8 +142,10 @@
       return;
     }
     if (msg.type === 'WRITE_CELL') {
-      writeToTargetCell(msg.value, msg.targetCol || 'B');
-      sendResponse({ ok: true });
+      writeToTargetAndAdvance(msg.value, msg.targetCol || 'B')
+        .then(() => sendResponse({ ok: true }))
+        .catch(e => { log('Write error:', e); sendResponse({ ok: false }); });
+      return true; // async response
     }
     if (msg.type === 'GET_CELL') {
       sendResponse({ value: getCellValue(), ref: getCellRef() });
@@ -170,91 +172,84 @@
   });
 
   /**
-   * Write value to the target column cell, then move to next row.
-   *
-   * Flow: current cell is A3 (source), targetCol is B
-   *  1. Navigate to B3 via name box
-   *  2. Write value to B3
-   *  3. Navigate to A4 (next row source)
+   * Extract spreadsheet ID from the current URL.
    */
-  function writeToTargetCell(value, targetCol) {
+  function getSpreadsheetId() {
+    const m = location.pathname.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    return m ? m[1] : null;
+  }
+
+  /**
+   * Get the active sheet's gid and convert to sheet name.
+   */
+  function getSheetGid() {
+    const m = location.hash.match(/gid=(\d+)/);
+    return m ? m[1] : '0';
+  }
+
+  /**
+   * Write to a specific cell via Google Sheets internal API (same origin).
+   * No OAuth needed — uses the session cookie.
+   * Then move the active cell to the next row.
+   */
+  async function writeToTargetAndAdvance(value, targetCol) {
     const ref = getCellRef(); // e.g. "A3"
     if (!ref) { log('No cell ref'); return; }
 
-    // Parse row number from ref (e.g. "A3" -> 3, "AA15" -> 15)
     const match = ref.match(/([A-Z]+)(\d+)/i);
     if (!match) { log('Cannot parse ref:', ref); return; }
+
     const sourceCol = match[1];
-    const rowNum = match[2];
-    const targetRef = targetCol + rowNum;        // B3
-    const nextSourceRef = sourceCol + (parseInt(rowNum) + 1); // A4
+    const rowNum = parseInt(match[2]);
+    const targetRef = targetCol + rowNum;          // B3
+    const nextSourceRef = sourceCol + (rowNum + 1); // A4
 
-    log('Write:', targetRef, '=', value, 'then move to', nextSourceRef);
+    const ssId = getSpreadsheetId();
+    if (!ssId) { log('Cannot find spreadsheet ID'); return; }
 
-    // Step 1: Navigate to target cell via name box
-    navigateToCell(targetRef, () => {
-      // Step 2: Write value
-      setTimeout(() => {
-        writeToCellInput(value, () => {
-          // Step 3: Navigate to next row source cell
-          setTimeout(() => {
-            navigateToCell(nextSourceRef);
-          }, 200);
+    log('Writing', targetRef, '=', value, '(no navigation)');
+
+    // Use the Google Sheets Values API via fetch with session cookies
+    try {
+      const range = encodeURIComponent(targetRef);
+      const resp = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${range}?valueInputOption=USER_ENTERED`,
+        {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: [[value]] }),
+        }
+      );
+
+      if (!resp.ok) {
+        // Sheets API with cookies might not work — fall back to token from extension
+        log('Sheets API cookie auth failed:', resp.status, await resp.text());
+        // Try via background with chrome.identity
+        chrome.runtime.sendMessage({
+          type: 'SHEETS_API_WRITE',
+          spreadsheetId: ssId,
+          range: targetRef,
+          value: value,
         });
-      }, 200);
-    });
-  }
+      } else {
+        log('Written via Sheets API');
+      }
+    } catch (err) {
+      log('Fetch error:', err);
+    }
 
-  /**
-   * Navigate to a cell by typing into the Name Box and pressing Enter.
-   */
-  function navigateToCell(ref, callback) {
+    // Move to next row source cell via name box
     const nameBox = findNameBox();
-    if (!nameBox) { log('Name box not found'); return; }
-
-    // Focus name box, clear it, type the cell reference, press Enter
-    nameBox.focus();
-    nameBox.select && nameBox.select();
-    nameBox.value = ref;
-    nameBox.dispatchEvent(new Event('input', { bubbles: true }));
-    nameBox.dispatchEvent(new Event('change', { bubbles: true }));
-
-    // Press Enter to navigate
-    nameBox.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter', code: 'Enter', keyCode: 13,
-      bubbles: true, cancelable: true,
-    }));
-    nameBox.dispatchEvent(new KeyboardEvent('keyup', {
-      key: 'Enter', code: 'Enter', keyCode: 13,
-      bubbles: true, cancelable: true,
-    }));
-
-    if (callback) setTimeout(callback, 150);
-  }
-
-  /**
-   * Write text into the currently active cell via .cell-input.
-   */
-  function writeToCellInput(value, callback) {
-    const cellInput = document.querySelector('.cell-input');
-    if (!cellInput) { log('cell-input not found'); return; }
-
-    cellInput.focus();
-
-    // Select all existing content and replace
-    const sel = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(cellInput);
-    sel.removeAllRanges();
-    sel.addRange(range);
-
-    // Use execCommand to insert text (works in contenteditable)
-    document.execCommand('insertText', false, value);
-
-    // Dispatch input event
-    cellInput.dispatchEvent(new Event('input', { bubbles: true }));
-
-    if (callback) setTimeout(callback, 100);
+    if (nameBox) {
+      nameBox.focus();
+      if (nameBox.select) nameBox.select();
+      nameBox.value = nextSourceRef;
+      nameBox.dispatchEvent(new Event('input', { bubbles: true }));
+      nameBox.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true,
+      }));
+    }
   }
 
   chrome.runtime.sendMessage({ type: 'CONTENT_READY' }).catch(() => {});

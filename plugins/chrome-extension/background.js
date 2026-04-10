@@ -86,6 +86,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
 
+  // Sheets API write via chrome.identity token
+  if (msg.type === 'SHEETS_API_WRITE') {
+    chrome.identity.getAuthToken({ interactive: true }, (token) => {
+      if (!token) { sendResponse({ error: 'No token' }); return; }
+      const range = encodeURIComponent(msg.range);
+      fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${msg.spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ values: [[msg.value]] }),
+        }
+      ).then(r => r.json()).then(data => {
+        sendResponse(data);
+      }).catch(err => {
+        sendResponse({ error: err.message });
+      });
+    });
+    return true;
+  }
+
   // Storage operations
   if (msg.type === 'TM_SAVE') {
     chrome.storage.local.set({ felixTM: msg.data }, () => sendResponse({ ok: true }));
