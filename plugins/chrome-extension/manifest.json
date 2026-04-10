@@ -46,15 +46,15 @@
   "commands": {
     "insert-top-match": {
       "suggested_key": {
-        "default": "Ctrl+Shift+S",
-        "mac": "Command+Shift+S"
+        "default": "Ctrl+Shift+G",
+        "mac": "Command+Shift+G"
       },
       "description": "Get: Insert top TM match into target cell"
     },
     "set-to-tm": {
       "suggested_key": {
-        "default": "Ctrl+Shift+G",
-        "mac": "Command+Shift+G"
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
       },
       "description": "Set: Register current source+target to TM"
     }
