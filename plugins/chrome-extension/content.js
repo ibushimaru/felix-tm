@@ -256,6 +256,49 @@
     }
   }
 
+  // Custom keyboard shortcuts (configurable via settings)
+  let shortcuts = { get: 'Cmd+Shift+G', set: 'Cmd+Shift+S' };
+
+  // Load shortcut settings
+  chrome.runtime.sendMessage({ type: 'SETTINGS_LOAD' }, (s) => {
+    if (s && s.shortcutGet) shortcuts.get = s.shortcutGet;
+    if (s && s.shortcutSet) shortcuts.set = s.shortcutSet;
+  });
+
+  function matchesShortcut(e, shortcut) {
+    const parts = shortcut.toLowerCase().split('+').map(s => s.trim());
+    const needCmd = parts.includes('cmd') || parts.includes('command') || parts.includes('meta');
+    const needCtrl = parts.includes('ctrl') || parts.includes('control');
+    const needShift = parts.includes('shift');
+    const needAlt = parts.includes('alt') || parts.includes('option');
+    const key = parts.filter(p => !['cmd','command','meta','ctrl','control','shift','alt','option'].includes(p))[0];
+
+    if (needCmd && !e.metaKey) return false;
+    if (needCtrl && !e.ctrlKey) return false;
+    if (needShift && !e.shiftKey) return false;
+    if (needAlt && !e.altKey) return false;
+    if (key && e.key.toLowerCase() !== key) return false;
+    return true;
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (matchesShortcut(e, shortcuts.get)) {
+      e.preventDefault();
+      chrome.runtime.sendMessage({ type: 'INSERT_TOP_MATCH' }).catch(() => {});
+    }
+    if (matchesShortcut(e, shortcuts.set)) {
+      e.preventDefault();
+      chrome.runtime.sendMessage({ type: 'SET_TO_TM' }).catch(() => {});
+    }
+  });
+
+  // Listen for shortcut setting changes
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'SHORTCUTS_UPDATED') {
+      if (msg.get) shortcuts.get = msg.get;
+      if (msg.set) shortcuts.set = msg.set;
+    }
+  });
+
   chrome.runtime.sendMessage({ type: 'CONTENT_READY' }).catch(() => {});
-  log('Content script loaded');
 })();

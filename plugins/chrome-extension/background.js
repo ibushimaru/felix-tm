@@ -10,16 +10,6 @@ chrome.action.onClicked.addListener((tab) => {
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
-// Keyboard shortcut: insert top TM match
-chrome.commands.onCommand.addListener((command) => {
-  if (command === 'insert-top-match') {
-    chrome.runtime.sendMessage({ type: 'INSERT_TOP_MATCH' }).catch(() => {});
-  }
-  if (command === 'set-to-tm') {
-    chrome.runtime.sendMessage({ type: 'SET_TO_TM' }).catch(() => {});
-  }
-});
-
 // Inject content script programmatically when needed
 async function ensureContentScript(tabId) {
   try {
@@ -46,6 +36,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Cell change: forward to all listeners (side panel)
   if (msg.type === 'CELL_CHANGED') {
     chrome.runtime.sendMessage(msg).catch(() => {});
+    return;
+  }
+
+  // Broadcast to content scripts in all Google Sheets tabs
+  if (msg.type === 'BROADCAST') {
+    chrome.tabs.query({ url: 'https://docs.google.com/spreadsheets/*' }, (tabs) => {
+      for (const tab of tabs) {
+        chrome.tabs.sendMessage(tab.id, msg.payload).catch(() => {});
+      }
+    });
     return;
   }
 

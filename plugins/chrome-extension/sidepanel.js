@@ -87,6 +87,9 @@ function applyLang() {
   set('btn-save-settings', t('save'));
   set('btn-clear-tm', t('clearTM'));
   set('btn-clear-gloss', t('clearGloss'));
+  // Update Set button label with current shortcut
+  const setKey = (settings.shortcutSet || 'Cmd+Shift+S').replace('Cmd', '⌘').replace('Shift', '⇧').replace('Ctrl', '⌃');
+  set('btn-set-tm', 'Set (register to TM) — ' + setKey);
 }
 
 // ============================================================
@@ -522,6 +525,8 @@ function loadSettingsUI() {
   document.getElementById('set-target-col').value = settings.targetCol || 'B';
   document.getElementById('set-min-score').value = String(settings.minScore || 0.7);
   document.getElementById('min-score').value = String(settings.minScore || 0.7);
+  document.getElementById('set-shortcut-get').value = settings.shortcutGet || 'Cmd+Shift+G';
+  document.getElementById('set-shortcut-set').value = settings.shortcutSet || 'Cmd+Shift+S';
 }
 
 async function saveSettingsUI() {
@@ -529,8 +534,15 @@ async function saveSettingsUI() {
   settings.sourceCol = document.getElementById('set-source-col').value.toUpperCase();
   settings.targetCol = document.getElementById('set-target-col').value.toUpperCase();
   settings.minScore = parseFloat(document.getElementById('set-min-score').value);
+  settings.shortcutGet = document.getElementById('set-shortcut-get').value;
+  settings.shortcutSet = document.getElementById('set-shortcut-set').value;
   document.getElementById('min-score').value = String(settings.minScore);
   await sendBg('SETTINGS_SAVE', settings);
+  // Notify content script of shortcut changes
+  chrome.runtime.sendMessage({
+    type: 'BROADCAST',
+    payload: { type: 'SHORTCUTS_UPDATED', get: settings.shortcutGet, set: settings.shortcutSet },
+  }).catch(() => {});
   applyLang();
   showToast('settings-toast', t('saved'));
 }
