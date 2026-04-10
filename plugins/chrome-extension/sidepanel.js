@@ -120,6 +120,9 @@ async function init() {
     if (msg.type === 'INSERT_TOP_MATCH') {
       insertTopMatch();
     }
+    if (msg.type === 'SET_TO_TM') {
+      setToTM();
+    }
   });
 
   // Auto-inject content script and get initial cell
@@ -196,32 +199,55 @@ function renderResults(matches, ms) {
   });
 }
 
+/**
+ * Get (Felix-style): Insert match into target cell. Does NOT register to TM.
+ * Translator should review and modify the translation, then explicitly Set.
+ */
 async function insertMatch(el) {
   const target = el.getAttribute('data-target');
   el.classList.add('inserted');
 
-  // Write to target column cell, then move to next source row
+  // Write to target column cell only — no TM registration
   chrome.runtime.sendMessage({
     type: 'WRITE_TO_SHEET',
     value: target,
     targetCol: settings.targetCol || 'B',
   });
-
-  // Register to TM (dedup)
-  const source = lastSearchValue;
-  if (source) {
-    addToTMInternal(source, target);
-    await saveTM();
-    updateStats();
-  }
 }
 
-/** Insert the top match — called by keyboard shortcut */
+/** Insert the top match — called by keyboard shortcut (Cmd+Shift+S = Get) */
 async function insertTopMatch() {
   const firstMatch = document.querySelector('.match');
   if (firstMatch) {
     await insertMatch(firstMatch);
   }
+}
+
+/**
+ * Set (Felix-style): Register current source+target pair to TM.
+ * Called explicitly by the translator after reviewing the translation.
+ * Reads the actual cell values from the sheet (source col + target col).
+ */
+async function setToTM() {
+  // Read current source from active cell preview
+  const source = lastSearchValue;
+  if (!source) return;
+
+  // Read target from sheet (the translator may have edited it)
+  const resp = await sendBgPayload('GET_TARGET_CELL');
+  const target = resp && resp.value ? resp.value : '';
+
+  if (!target) {
+    showToast('results', '<div class="toast" style="background:#fce8e6;color:#c5221f">Target cell is empty</div>');
+    return;
+  }
+
+  const action = addToTMInternal(source, target);
+  await saveTM();
+  updateStats();
+
+  const msg = action === 'refcount' ? t('alreadyExists') : t('registered');
+  showToast('results', '<div class="toast">' + msg + ': ' + escH(source.substring(0, 30)) + '...</div>');
 }
 
 // ============================================================
@@ -466,9 +492,12 @@ function sendBg(type, data) {
 }
 
 /** Send a message to the content script via background relay */
-function sendBgPayload(contentType) {
+function sendBgPayload(contentType, extra) {
   return new Promise(resolve => {
-    chrome.runtime.sendMessage({ type: 'TO_CONTENT', payload: { type: contentType } }, resolve);
+    chrome.runtime.sendMessage({
+      type: 'TO_CONTENT',
+      payload: { type: contentType, targetCol: settings.targetCol || 'B', ...extra }
+    }, resolve);
   });
 }
 
@@ -549,6 +578,7 @@ document.getElementById('btn-paste-import').addEventListener('click', () => past
 document.getElementById('btn-add-gloss').addEventListener('click', () => addGlossary());
 document.getElementById('btn-export-tm').addEventListener('click', () => exportTSV());
 document.getElementById('btn-export-gloss').addEventListener('click', () => exportGlossaryTSV());
+document.getElementById('btn-set-tm').addEventListener('click', () => setToTM());
 document.getElementById('btn-save-settings').addEventListener('click', () => saveSettingsUI());
 document.getElementById('btn-clear-tm').addEventListener('click', () => clearAllTM());
 document.getElementById('btn-clear-gloss').addEventListener('click', () => clearAllGlossary());

@@ -13,8 +13,10 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 // Keyboard shortcut: insert top TM match
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'insert-top-match') {
-    // Forward to side panel
     chrome.runtime.sendMessage({ type: 'INSERT_TOP_MATCH' }).catch(() => {});
+  }
+  if (command === 'set-to-tm') {
+    chrome.runtime.sendMessage({ type: 'SET_TO_TM' }).catch(() => {});
   }
 });
 
@@ -115,6 +117,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // console.log('[FelixTM BG] Error:', err.message);
         sendResponse({ error: err.message });
       });
+    });
+    return true;
+  }
+
+  // Sheets API read
+  if (msg.type === 'SHEETS_API_READ') {
+    chrome.identity.getAuthToken({ interactive: false }, (token) => {
+      if (!token) { sendResponse({ value: '' }); return; }
+      const range = encodeURIComponent(msg.range);
+      fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${msg.spreadsheetId}/values/${range}`,
+        { headers: { 'Authorization': 'Bearer ' + token } }
+      ).then(r => r.json()).then(data => {
+        const val = data.values && data.values[0] ? data.values[0][0] : '';
+        sendResponse({ value: val || '' });
+      }).catch(() => sendResponse({ value: '' }));
     });
     return true;
   }

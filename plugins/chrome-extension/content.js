@@ -154,6 +154,26 @@
     if (msg.type === 'GET_CELL') {
       sendResponse({ value: getCellValue(), ref: getCellRef() });
     }
+    if (msg.type === 'GET_TARGET_CELL') {
+      // Read the target column cell value via Sheets API
+      const ref = getCellRef();
+      const match = ref ? ref.match(/([A-Z]+)(\d+)/i) : null;
+      if (match) {
+        const targetRef = (msg.targetCol || 'B') + match[2];
+        const ssId = getSpreadsheetId();
+        if (ssId) {
+          chrome.runtime.sendMessage({
+            type: 'SHEETS_API_READ',
+            spreadsheetId: ssId,
+            range: targetRef,
+          }, (resp) => {
+            sendResponse({ value: resp && resp.value ? resp.value : '', ref: targetRef });
+          });
+          return true; // async
+        }
+      }
+      sendResponse({ value: '', ref: '' });
+    }
     if (msg.type === 'GET_LOGS') {
       sendResponse({ logs: _logs.slice() });
       return;

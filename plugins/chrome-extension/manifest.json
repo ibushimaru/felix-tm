@@ -49,7 +49,14 @@
         "default": "Ctrl+Shift+S",
         "mac": "Command+Shift+S"
       },
-      "description": "Insert top TM match into target cell"
+      "description": "Get: Insert top TM match into target cell"
+    },
+    "set-to-tm": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+G",
+        "mac": "Command+Shift+G"
+      },
+      "description": "Set: Register current source+target to TM"
     }
   },
   "icons": {
