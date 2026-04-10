@@ -46,8 +46,8 @@
   "commands": {
     "insert-top-match": {
       "suggested_key": {
-        "default": "Ctrl+Shift+Enter",
-        "mac": "Command+Shift+Enter"
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
       },
       "description": "Insert top TM match into target cell"
     }
