@@ -113,10 +113,13 @@ async function init() {
     });
   });
 
-  // Listen for cell changes from content script
+  // Listen for messages
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'CELL_CHANGED') {
       onCellChanged(msg.value, msg.ref);
+    }
+    if (msg.type === 'INSERT_TOP_MATCH') {
+      insertTopMatch();
     }
   });
 
@@ -198,18 +201,23 @@ async function insertMatch(el) {
   const target = el.getAttribute('data-target');
   el.classList.add('inserted');
 
-  // Send write command to content script
-  chrome.runtime.sendMessage({
-    type: 'WRITE_TO_SHEET',
-    value: target,
-    targetColOffset: 1,
-  });
+  // Write to sheet
+  chrome.runtime.sendMessage({ type: 'WRITE_TO_SHEET', value: target });
 
   // Register to TM (dedup)
   const source = lastSearchValue;
   if (source) {
     addToTMInternal(source, target);
     await saveTM();
+    updateStats();
+  }
+}
+
+/** Insert the top match — called by keyboard shortcut */
+async function insertTopMatch() {
+  const firstMatch = document.querySelector('.match');
+  if (firstMatch) {
+    await insertMatch(firstMatch);
   }
 }
 

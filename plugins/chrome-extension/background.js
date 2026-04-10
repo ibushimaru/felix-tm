@@ -10,6 +10,14 @@ chrome.action.onClicked.addListener((tab) => {
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
+// Keyboard shortcut: insert top TM match
+chrome.commands.onCommand.addListener((command) => {
+  if (command === 'insert-top-match') {
+    // Forward to side panel
+    chrome.runtime.sendMessage({ type: 'INSERT_TOP_MATCH' }).catch(() => {});
+  }
+});
+
 // Inject content script programmatically when needed
 async function ensureContentScript(tabId) {
   try {

@@ -169,15 +169,46 @@
     }
   });
 
+  /**
+   * Write value to the active cell in Google Sheets.
+   * Uses the cell-input overlay element to inject text directly.
+   */
   function writeToCell(value) {
-    navigator.clipboard.writeText(value).then(() => {
-      // Simulate Ctrl+V paste into active cell
-      const bar = findFormulaBar();
-      if (bar) {
-        bar.focus();
-        document.execCommand('insertText', false, value);
-      }
-    }).catch(err => log('Write failed:', err));
+    log('writeToCell:', value);
+
+    // Find the active cell editor
+    const cellInput = document.querySelector('.cell-input');
+    if (!cellInput) {
+      log('cell-input not found');
+      return;
+    }
+
+    // Google Sheets cell editor: clear and set content via input events
+    cellInput.focus();
+    cellInput.textContent = value;
+
+    // Dispatch input event to notify Google Sheets of the change
+    cellInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // Confirm with Enter via native InputEvent + keyboard
+    setTimeout(() => {
+      // Try using document.execCommand as it sometimes works in contenteditable
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(cellInput);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.execCommand('insertText', false, value);
+
+      // Confirm entry
+      setTimeout(() => {
+        const enterEvent = new KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', keyCode: 13,
+          bubbles: true, cancelable: true,
+        });
+        cellInput.dispatchEvent(enterEvent);
+      }, 50);
+    }, 50);
   }
 
   chrome.runtime.sendMessage({ type: 'CONTENT_READY' }).catch(() => {});
