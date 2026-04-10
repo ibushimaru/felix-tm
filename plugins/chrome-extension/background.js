@@ -105,23 +105,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // Sheets API write via chrome.identity token
   if (msg.type === 'SHEETS_API_WRITE') {
-    // console.log('[FelixTM BG] SHEETS_API_WRITE', msg.range, msg.value?.substring(0, 30));
+    const d = msg.data || msg; // support both { type, data: {...} } and flat format
     chrome.identity.getAuthToken({ interactive: true }, (token) => {
-      // console.log('[FelixTM BG] Token:', token ? 'OK' : 'FAIL', chrome.runtime.lastError?.message);
       if (!token) {
         sendResponse({ error: chrome.runtime.lastError?.message || 'No token' });
         return;
       }
-      const range = encodeURIComponent(msg.range);
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${msg.spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`;
-      // console.log('[FelixTM BG] Fetch:', url);
+      const range = encodeURIComponent(d.range);
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`;
       fetch(url, {
         method: 'PUT',
         headers: {
           'Authorization': 'Bearer ' + token,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ values: [[msg.value]] }),
+        body: JSON.stringify({ values: [[d.value]] }),
       }).then(r => {
         // console.log('[FelixTM BG] Response status:', r.status);
         return r.json();
@@ -138,11 +136,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // Sheets API read (from content script directly)
   if (msg.type === 'SHEETS_API_READ_DIRECT' || msg.type === 'SHEETS_API_READ') {
+    const d = msg.data || msg;
     chrome.identity.getAuthToken({ interactive: false }, (token) => {
       if (!token) { sendResponse({ value: '' }); return; }
-      const range = encodeURIComponent(msg.range);
+      const range = encodeURIComponent(d.range);
       fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${msg.spreadsheetId}/values/${range}`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values/${range}`,
         { headers: { 'Authorization': 'Bearer ' + token } }
       ).then(r => r.json()).then(data => {
         const val = data.values && data.values[0] ? data.values[0][0] : '';
