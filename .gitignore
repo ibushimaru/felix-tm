@@ -11,3 +11,5 @@ build/
 .coverage
 htmlcov/
 *.spec
+docs/manual-en/
+docs/manual-ja/
