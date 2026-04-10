@@ -120,29 +120,14 @@ async function init() {
     }
   });
 
-  // Auto-inject content script and connect
-  const dbg = document.getElementById('debug-info');
+  // Auto-inject content script and get initial cell
   try {
-    dbg.textContent = 'Connecting...';
-    const result = await sendBg('ENSURE_CONTENT_SCRIPT');
-    if (result && result.injected) {
-      dbg.textContent = `Connected (${result.method})`;
-      // Wait a moment for content script to initialize, then get cell
-      setTimeout(async () => {
-        const resp = await sendBgPayload('DEBUG_DOM');
-        if (resp) {
-          dbg.innerHTML = `bar:${resp.formulaBar}(${resp.barTag}.${(resp.barClass||'').split(' ')[0]}) children:${resp.barChildren}<br>` +
-            `text:"${resp.barText||''}" html:"${(resp.barHTML||'').substring(0,60)}"<br>` +
-            `role:${resp.barRole} ref:${resp.cellRef}`;
-          if (resp.cellValue) onCellChanged(resp.cellValue, resp.cellRef);
-        }
-      }, 1000);
-    } else {
-      dbg.textContent = `Injection failed: ${result?.error || 'unknown'}`;
-    }
-  } catch (e) {
-    dbg.textContent = `Error: ${e.message}`;
-  }
+    await sendBg('ENSURE_CONTENT_SCRIPT');
+    setTimeout(async () => {
+      const resp = await sendBgPayload('GET_CELL');
+      if (resp && resp.value) onCellChanged(resp.value, resp.ref);
+    }, 1000);
+  } catch (_) {}
 }
 
 // ============================================================
