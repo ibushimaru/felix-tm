@@ -15,28 +15,19 @@
   }
 
   // Find the formula bar element.
-  // Priority: contenteditable heuristic first (most reliable),
-  // then known selectors as fallback.
-  function findFormulaBar() {
-    // Best method: find contenteditable div in the top toolbar area
-    // This is what actually contains the cell text
-    const editables = document.querySelectorAll('[contenteditable="true"]');
-    for (const el of editables) {
-      const rect = el.getBoundingClientRect();
-      if (rect.top < 150 && rect.width > 100 && rect.height < 80) {
-        return el;
-      }
-    }
+  // Google Sheets uses .cell-input as the active cell editor overlay.
+  // This element's textContent always reflects the selected cell's value.
+  let _cachedBar = null;
 
-    // Fallback: known selectors
+  function findFormulaBar() {
+    // Primary: .cell-input (confirmed working via debug)
+    const ci = document.querySelector('.cell-input');
+    if (ci) return ci;
+
+    // Fallback selectors
     const selectors = [
       '#t-formula-bar-input',
-      '#t-formula-bar-input-container',
-      '.cell-input',
-      '.formulabar-input',
-      '[aria-label="Formula input"]',
-      '[aria-label="数式入力"]',
-      '[aria-label="数式の入力"]',
+      '[contenteditable="true"][aria-label]',
     ];
     for (const sel of selectors) {
       const el = document.querySelector(sel);
@@ -81,15 +72,19 @@
     const value = getCellValue();
     const ref = getCellRef();
 
-    if (ref !== lastCellRef || value !== lastCellValue) {
+    // Send update if anything changed (value or ref)
+    if (value !== lastCellValue || ref !== lastCellRef) {
       lastCellValue = value;
       lastCellRef = ref;
 
-      chrome.runtime.sendMessage({
-        type: 'CELL_CHANGED',
-        value: value,
-        ref: ref,
-      }).catch(() => {});
+      // Only send if we have a non-empty value
+      if (value) {
+        chrome.runtime.sendMessage({
+          type: 'CELL_CHANGED',
+          value: value,
+          ref: ref,
+        }).catch(() => {});
+      }
     }
   }
 
