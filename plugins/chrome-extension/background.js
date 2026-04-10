@@ -78,7 +78,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
         chrome.tabs.sendMessage(tabs[0].id, {
-          type: 'WRITE_CELL', value: msg.value,
+          type: 'WRITE_CELL', value: msg.value, targetCol: msg.targetCol || 'B',
         }).catch(() => {});
       }
     });

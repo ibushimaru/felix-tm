@@ -142,7 +142,7 @@
       return;
     }
     if (msg.type === 'WRITE_CELL') {
-      writeToCell(msg.value);
+      writeToTargetCell(msg.value, msg.targetCol || 'B');
       sendResponse({ ok: true });
     }
     if (msg.type === 'GET_CELL') {
@@ -170,45 +170,91 @@
   });
 
   /**
-   * Write value to the active cell in Google Sheets.
-   * Uses the cell-input overlay element to inject text directly.
+   * Write value to the target column cell, then move to next row.
+   *
+   * Flow: current cell is A3 (source), targetCol is B
+   *  1. Navigate to B3 via name box
+   *  2. Write value to B3
+   *  3. Navigate to A4 (next row source)
    */
-  function writeToCell(value) {
-    log('writeToCell:', value);
+  function writeToTargetCell(value, targetCol) {
+    const ref = getCellRef(); // e.g. "A3"
+    if (!ref) { log('No cell ref'); return; }
 
-    // Find the active cell editor
+    // Parse row number from ref (e.g. "A3" -> 3, "AA15" -> 15)
+    const match = ref.match(/([A-Z]+)(\d+)/i);
+    if (!match) { log('Cannot parse ref:', ref); return; }
+    const sourceCol = match[1];
+    const rowNum = match[2];
+    const targetRef = targetCol + rowNum;        // B3
+    const nextSourceRef = sourceCol + (parseInt(rowNum) + 1); // A4
+
+    log('Write:', targetRef, '=', value, 'then move to', nextSourceRef);
+
+    // Step 1: Navigate to target cell via name box
+    navigateToCell(targetRef, () => {
+      // Step 2: Write value
+      setTimeout(() => {
+        writeToCellInput(value, () => {
+          // Step 3: Navigate to next row source cell
+          setTimeout(() => {
+            navigateToCell(nextSourceRef);
+          }, 200);
+        });
+      }, 200);
+    });
+  }
+
+  /**
+   * Navigate to a cell by typing into the Name Box and pressing Enter.
+   */
+  function navigateToCell(ref, callback) {
+    const nameBox = findNameBox();
+    if (!nameBox) { log('Name box not found'); return; }
+
+    // Focus name box, clear it, type the cell reference, press Enter
+    nameBox.focus();
+    nameBox.select && nameBox.select();
+    nameBox.value = ref;
+    nameBox.dispatchEvent(new Event('input', { bubbles: true }));
+    nameBox.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // Press Enter to navigate
+    nameBox.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', code: 'Enter', keyCode: 13,
+      bubbles: true, cancelable: true,
+    }));
+    nameBox.dispatchEvent(new KeyboardEvent('keyup', {
+      key: 'Enter', code: 'Enter', keyCode: 13,
+      bubbles: true, cancelable: true,
+    }));
+
+    if (callback) setTimeout(callback, 150);
+  }
+
+  /**
+   * Write text into the currently active cell via .cell-input.
+   */
+  function writeToCellInput(value, callback) {
     const cellInput = document.querySelector('.cell-input');
-    if (!cellInput) {
-      log('cell-input not found');
-      return;
-    }
+    if (!cellInput) { log('cell-input not found'); return; }
 
-    // Google Sheets cell editor: clear and set content via input events
     cellInput.focus();
-    cellInput.textContent = value;
 
-    // Dispatch input event to notify Google Sheets of the change
+    // Select all existing content and replace
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(cellInput);
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    // Use execCommand to insert text (works in contenteditable)
+    document.execCommand('insertText', false, value);
+
+    // Dispatch input event
     cellInput.dispatchEvent(new Event('input', { bubbles: true }));
 
-    // Confirm with Enter via native InputEvent + keyboard
-    setTimeout(() => {
-      // Try using document.execCommand as it sometimes works in contenteditable
-      const sel = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(cellInput);
-      sel.removeAllRanges();
-      sel.addRange(range);
-      document.execCommand('insertText', false, value);
-
-      // Confirm entry
-      setTimeout(() => {
-        const enterEvent = new KeyboardEvent('keydown', {
-          key: 'Enter', code: 'Enter', keyCode: 13,
-          bubbles: true, cancelable: true,
-        });
-        cellInput.dispatchEvent(enterEvent);
-      }, 50);
-    }, 50);
+    if (callback) setTimeout(callback, 100);
   }
 
   chrome.runtime.sendMessage({ type: 'CONTENT_READY' }).catch(() => {});

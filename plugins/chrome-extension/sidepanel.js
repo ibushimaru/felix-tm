@@ -201,8 +201,12 @@ async function insertMatch(el) {
   const target = el.getAttribute('data-target');
   el.classList.add('inserted');
 
-  // Write to sheet
-  chrome.runtime.sendMessage({ type: 'WRITE_TO_SHEET', value: target });
+  // Write to target column cell, then move to next source row
+  chrome.runtime.sendMessage({
+    type: 'WRITE_TO_SHEET',
+    value: target,
+    targetCol: settings.targetCol || 'B',
+  });
 
   // Register to TM (dedup)
   const source = lastSearchValue;
