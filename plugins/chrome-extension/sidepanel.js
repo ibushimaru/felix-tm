@@ -415,6 +415,49 @@ function renderTMList() {
   });
 }
 
+async function pasteGlossary() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text || !text.trim()) {
+      showToast('gloss-toast', 'No data in clipboard');
+      return;
+    }
+
+    const lines = text.split('\n');
+    const startIdx = (lines[0] && /^(term|用語|source|en|src)/i.test(lines[0].split('\t')[0].trim())) ? 1 : 0;
+    let added = 0, dup = 0;
+
+    for (let i = startIdx; i < lines.length; i++) {
+      const parts = lines[i].split('\t');
+      if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
+        const term = parts[0].trim();
+        const trans = parts[1].trim();
+        const notes = parts.length >= 3 ? parts[2].trim() : '';
+        const tCmp = FelixEngine.makeCmp(term);
+
+        const exists = glossaryData.some(e =>
+          (e.cmp || FelixEngine.makeCmp(e.term)) === tCmp &&
+          FelixEngine.makeCmp(e.translation) === FelixEngine.makeCmp(trans)
+        );
+
+        if (!exists) {
+          glossaryData.push({ term, translation: trans, notes, cmp: tCmp });
+          added++;
+        } else {
+          dup++;
+        }
+      }
+    }
+
+    await sendBg('GLOSSARY_SAVE', glossaryData);
+    updateStats();
+    renderGlossaryList();
+    showToast('gloss-toast', `${added} added, ${dup} duplicates`);
+  } catch (err) {
+    showToast('gloss-toast', 'Clipboard access denied');
+  }
+}
+
 function renderGlossaryList() {
   const el = document.getElementById('gloss-list');
   if (!glossaryData.length) {
@@ -635,6 +678,7 @@ document.getElementById('btn-paste-import').addEventListener('click', () => past
 document.getElementById('tm-filter').addEventListener('input', () => renderTMList());
 document.getElementById('btn-add-gloss').addEventListener('click', () => addGlossary());
 document.getElementById('btn-export-tm').addEventListener('click', () => exportTSV());
+document.getElementById('btn-paste-gloss').addEventListener('click', () => pasteGlossary());
 document.getElementById('btn-export-gloss').addEventListener('click', () => exportGlossaryTSV());
 document.getElementById('btn-set-tm').addEventListener('click', () => setToTM());
 document.getElementById('btn-save-settings').addEventListener('click', () => saveSettingsUI());
