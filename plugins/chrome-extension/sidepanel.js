@@ -14,7 +14,7 @@ let settings = { sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en' };
 
 const I18N = {
   en: {
-    search: 'Search', register: 'Register', glossary: 'Glossary', import: 'Import',
+    search: 'Search', tm: 'TM', glossary: 'Glossary',
     activeCell: 'Active Cell', selectCell: 'Select a cell to auto-search',
     noMatch: 'No matches', registerToTM: 'Register to TM',
     source: 'Source', target: 'Target', registered: 'Registered!',
@@ -30,7 +30,7 @@ const I18N = {
     confirmClear: 'Delete all entries? This cannot be undone.',
   },
   ja: {
-    search: '検索', register: '登録', glossary: '用語集', import: 'インポート',
+    search: '検索', tm: 'TM', glossary: '用語集',
     activeCell: 'アクティブセル', selectCell: 'セルを選択すると自動検索します',
     noMatch: 'マッチなし', registerToTM: 'TMに登録',
     source: '原文', target: '訳文', registered: '登録しました',
@@ -57,9 +57,8 @@ function applyLang() {
 
   // Tabs
   set('tab-search', t('search'));
-  set('tab-register', t('register'));
+  set('tab-tm', t('tm'));
   set('tab-glossary', t('glossary'));
-  set('tab-import', t('import'));
   // Cell preview
   set('lbl-active-cell', t('activeCell'));
   // Search
@@ -551,7 +550,6 @@ document.getElementById('btn-add-gloss').addEventListener('click', () => addGlos
 document.getElementById('btn-export-tm').addEventListener('click', () => exportTSV());
 document.getElementById('btn-export-gloss').addEventListener('click', () => exportGlossaryTSV());
 document.getElementById('btn-save-settings').addEventListener('click', () => saveSettingsUI());
-document.getElementById('btn-show-logs').addEventListener('click', () => showLogs());
 document.getElementById('btn-clear-tm').addEventListener('click', () => clearAllTM());
 document.getElementById('btn-clear-gloss').addEventListener('click', () => clearAllGlossary());
 

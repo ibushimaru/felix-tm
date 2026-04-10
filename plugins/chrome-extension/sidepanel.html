@@ -68,9 +68,8 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
 
 <div class="tabs">
   <div class="tab active" data-panel="search" id="tab-search">Search</div>
-  <div class="tab" data-panel="register" id="tab-register">Register</div>
+  <div class="tab" data-panel="tm" id="tab-tm">TM</div>
   <div class="tab" data-panel="glossary" id="tab-glossary">Glossary</div>
-  <div class="tab" data-panel="import" id="tab-import">Import</div>
   <div class="tab" data-panel="settings">⚙</div>
 </div>
 
@@ -92,19 +91,30 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
   <div id="results"><div class="empty" id="empty-search">Select a cell to auto-search</div></div>
 </div>
 
-<!-- Register -->
-<div id="register" class="panel">
-  <h3 id="h-register">Register to TM</h3>
+<!-- TM (Register + Import + Export) -->
+<div id="tm" class="panel">
+  <h3 id="h-register">Register</h3>
   <input type="text" id="reg-source" placeholder="Source">
   <input type="text" id="reg-target" placeholder="Target">
-  <button class="btn btn-primary" style="margin-bottom:12px" id="btn-register">Register</button>
+  <button class="btn btn-primary" style="margin-bottom:8px" id="btn-register">Register</button>
   <div id="reg-toast"></div>
+
   <hr>
-  <h3 id="h-build">Import from Sheet</h3>
+  <h3 id="h-build">Import</h3>
   <p style="font-size:12px;color:#5f6368;margin-bottom:8px" id="p-bulk-desc">Select source+target columns in the sheet, copy (Ctrl+C), then click Import.</p>
   <button class="btn btn-primary" style="width:100%;margin-bottom:8px" id="btn-paste-import">Paste from Clipboard</button>
   <div id="paste-preview" style="font-size:11px;color:#5f6368;margin-bottom:8px"></div>
   <div id="bulk-toast"></div>
+
+  <div id="drop-zone" style="border:2px dashed #dadce0;border-radius:8px;padding:20px;text-align:center;color:#9aa0a6;cursor:pointer;margin-bottom:8px">
+    <span id="drop-text">Drop TMX/TSV file</span>
+    <input type="file" id="file-input" accept=".tmx,.tsv,.txt,.csv" style="display:none">
+  </div>
+  <div id="import-toast"></div>
+
+  <hr>
+  <h3 id="h-export">Export</h3>
+  <button class="btn btn-outline" style="width:100%;margin-bottom:8px" id="btn-export-tm">Export TM as TSV</button>
 </div>
 
 <!-- Glossary -->
@@ -116,20 +126,7 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
   <div id="gloss-toast"></div>
   <hr>
   <div id="gloss-list"></div>
-</div>
-
-<!-- Import -->
-<div id="import" class="panel">
-  <h3 id="h-import">Import TM</h3>
-  <p style="font-size:12px;color:#5f6368;margin-bottom:8px" id="p-import-desc">Drop a TMX or TSV file to import.</p>
-  <div id="drop-zone" style="border:2px dashed #dadce0;border-radius:8px;padding:30px;text-align:center;color:#9aa0a6;cursor:pointer">
-    <span id="drop-text">Drop file here or click to browse</span>
-    <input type="file" id="file-input" accept=".tmx,.tsv,.txt,.csv" style="display:none">
-  </div>
-  <div id="import-toast" style="margin-top:8px"></div>
   <hr>
-  <h3 id="h-export">Export</h3>
-  <button class="btn btn-outline" style="width:100%;margin-bottom:8px" id="btn-export-tm">Export TM as TSV</button>
   <button class="btn btn-outline" style="width:100%" id="btn-export-gloss">Export Glossary as TSV</button>
 </div>
 
@@ -160,10 +157,6 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
   <button class="btn btn-primary" style="margin-top:12px" id="btn-save-settings">Save / 保存</button>
   <div id="settings-toast" style="margin-top:8px"></div>
 
-  <hr>
-  <h3>Debug</h3>
-  <button class="btn btn-outline" style="width:100%;margin-bottom:8px" id="btn-show-logs">Show Logs</button>
-  <pre id="log-output" style="font-size:10px;color:#5f6368;max-height:200px;overflow:auto;background:#f8f9fa;padding:8px;border-radius:4px;display:none;white-space:pre-wrap;word-break:break-all"></pre>
   <hr>
   <h3 style="color:#ea4335">Danger Zone</h3>
   <button class="btn btn-outline" style="width:100%;margin-bottom:8px;color:#ea4335;border-color:#ea4335" id="btn-clear-tm">Clear TM</button>

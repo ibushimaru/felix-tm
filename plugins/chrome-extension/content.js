@@ -8,7 +8,7 @@
   let lastCellRef = '';
   let formulaBarEl = null;
   let nameBoxEl = null;
-  let debugMode = true;
+  let debugMode = false;
 
   const _logs = [];
   function log(...args) {
@@ -52,7 +52,7 @@
     for (const sel of selectors) {
       const el = document.querySelector(sel);
       if (el) {
-        log('Name box found:', sel);
+        // log('Name box found:', sel);
         return el;
       }
     }
