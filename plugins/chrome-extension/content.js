@@ -72,16 +72,26 @@
     return (box.value || box.textContent || '').trim();
   }
 
+  function isExtensionValid() {
+    try { return !!chrome.runtime.id; } catch (_) { return false; }
+  }
+
+  let _pollTimer = null;
+
   function checkForChanges() {
+    if (!isExtensionValid()) {
+      // Extension was updated/reloaded — stop polling to prevent errors
+      if (_pollTimer) clearInterval(_pollTimer);
+      return;
+    }
+
     const value = getCellValue();
     const ref = getCellRef();
 
-    // Send update if anything changed (value or ref)
     if (value !== lastCellValue || ref !== lastCellRef) {
       lastCellValue = value;
       lastCellRef = ref;
 
-      // Only send if we have a non-empty value
       if (value) {
         try {
           chrome.runtime.sendMessage({
@@ -95,7 +105,7 @@
   }
 
   // Poll at 200ms
-  setInterval(checkForChanges, 200);
+  _pollTimer = setInterval(checkForChanges, 200);
 
   // MutationObserver on formula bar for instant detection
   function setupObserver() {
