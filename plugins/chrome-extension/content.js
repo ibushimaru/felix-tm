@@ -83,11 +83,13 @@
 
       // Only send if we have a non-empty value
       if (value) {
-        chrome.runtime.sendMessage({
-          type: 'CELL_CHANGED',
-          value: value,
-          ref: ref,
-        }).catch(() => {});
+        try {
+          chrome.runtime.sendMessage({
+            type: 'CELL_CHANGED',
+            value: value,
+            ref: ref,
+          }, () => { void chrome.runtime.lastError; });
+        } catch (_) {}
       }
     }
   }
@@ -284,11 +286,11 @@
   document.addEventListener('keydown', (e) => {
     if (matchesShortcut(e, shortcuts.get)) {
       e.preventDefault();
-      chrome.runtime.sendMessage({ type: 'INSERT_TOP_MATCH' }).catch(() => {});
+      try { chrome.runtime.sendMessage({ type: 'INSERT_TOP_MATCH' }, () => { void chrome.runtime.lastError; }); } catch (_) {}
     }
     if (matchesShortcut(e, shortcuts.set)) {
       e.preventDefault();
-      chrome.runtime.sendMessage({ type: 'SET_TO_TM' }).catch(() => {});
+      try { chrome.runtime.sendMessage({ type: 'SET_TO_TM' }, () => { void chrome.runtime.lastError; }); } catch (_) {}
     }
   });
 
@@ -300,5 +302,5 @@
     }
   });
 
-  chrome.runtime.sendMessage({ type: 'CONTENT_READY' }).catch(() => {});
+  try { chrome.runtime.sendMessage({ type: 'CONTENT_READY' }, () => { void chrome.runtime.lastError; }); } catch (_) {}
 })();
