@@ -14,35 +14,33 @@
     if (debugMode) console.log('[FelixTM]', ...args);
   }
 
-  // Try multiple selectors to find the formula bar
+  // Find the formula bar element.
+  // Priority: contenteditable heuristic first (most reliable),
+  // then known selectors as fallback.
   function findFormulaBar() {
+    // Best method: find contenteditable div in the top toolbar area
+    // This is what actually contains the cell text
+    const editables = document.querySelectorAll('[contenteditable="true"]');
+    for (const el of editables) {
+      const rect = el.getBoundingClientRect();
+      if (rect.top < 150 && rect.width > 100 && rect.height < 80) {
+        return el;
+      }
+    }
+
+    // Fallback: known selectors
     const selectors = [
-      '#t-formula-bar-input-container',
       '#t-formula-bar-input',
+      '#t-formula-bar-input-container',
       '.cell-input',
       '.formulabar-input',
       '[aria-label="Formula input"]',
       '[aria-label="数式入力"]',
       '[aria-label="数式の入力"]',
-      '.waffle-formula-bar-input',
     ];
     for (const sel of selectors) {
       const el = document.querySelector(sel);
-      if (el) {
-        log('Formula bar found:', sel, el.tagName);
-        return el;
-      }
-    }
-
-    // Fallback: find by structure - look for contenteditable in the toolbar area
-    const editables = document.querySelectorAll('[contenteditable="true"]');
-    for (const el of editables) {
-      // The formula bar is usually a contenteditable div in the top area
-      const rect = el.getBoundingClientRect();
-      if (rect.top < 100 && rect.width > 200) {
-        log('Formula bar found via contenteditable heuristic:', el.tagName, el.className);
-        return el;
-      }
+      if (el) return el;
     }
 
     return null;
