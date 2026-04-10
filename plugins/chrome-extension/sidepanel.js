@@ -617,8 +617,8 @@ function loadSettingsUI() {
   document.getElementById('set-target-col').value = settings.targetCol || 'B';
   document.getElementById('set-min-score').value = String(settings.minScore || 0.7);
   document.getElementById('min-score').value = String(settings.minScore || 0.7);
-  document.getElementById('set-shortcut-get').value = settings.shortcutGet || 'Cmd+Shift+G';
-  document.getElementById('set-shortcut-set').value = settings.shortcutSet || 'Cmd+Shift+S';
+  document.getElementById('set-shortcut-get').value = settings.shortcutGet || 'Cmd+Shift+J';
+  document.getElementById('set-shortcut-set').value = settings.shortcutSet || 'Cmd+Shift+U';
 }
 
 async function saveSettingsUI() {

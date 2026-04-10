@@ -259,7 +259,7 @@
   }
 
   // Custom keyboard shortcuts (configurable via settings)
-  let shortcuts = { get: 'Cmd+Shift+G', set: 'Cmd+Shift+S' };
+  let shortcuts = { get: 'Cmd+Shift+J', set: 'Cmd+Shift+U' };
 
   // Load shortcut settings
   chrome.runtime.sendMessage({ type: 'SETTINGS_LOAD' }, (s) => {
