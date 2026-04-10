@@ -3,7 +3,7 @@
  * Used by both content script and side panel.
  */
 
-const FelixEngine = (() => {
+var FelixEngine = (() => {
 
   // === Text Normalization ===
 
