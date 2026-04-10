@@ -1,55 +1,87 @@
 /**
  * Content Script — Injected into Google Sheets pages.
- * Monitors cell selection and communicates with the side panel.
+ * Monitors cell selection via formula bar and communicates with side panel.
  */
 
 (() => {
   let lastCellValue = '';
   let lastCellRef = '';
+  let formulaBarEl = null;
+  let nameBoxEl = null;
+  let debugMode = true;
 
-  // Google Sheets formula bar selector
-  const FORMULA_BAR_SELECTORS = [
-    '#t-formula-bar-input-container',
-    '.cell-input',
-    '[aria-label="Formula input"]',
-  ];
+  function log(...args) {
+    if (debugMode) console.log('[FelixTM]', ...args);
+  }
 
-  const NAME_BOX_SELECTORS = [
-    '#t-name-box .waffle-name-box',
-    '.waffle-name-box',
-    '[aria-label="Name Box"]',
-  ];
-
-  function getFormulaBarElement() {
-    for (const sel of FORMULA_BAR_SELECTORS) {
+  // Try multiple selectors to find the formula bar
+  function findFormulaBar() {
+    const selectors = [
+      '#t-formula-bar-input-container',
+      '#t-formula-bar-input',
+      '.cell-input',
+      '.formulabar-input',
+      '[aria-label="Formula input"]',
+      '[aria-label="数式入力"]',
+      '[aria-label="数式の入力"]',
+      '.waffle-formula-bar-input',
+    ];
+    for (const sel of selectors) {
       const el = document.querySelector(sel);
-      if (el) return el;
+      if (el) {
+        log('Formula bar found:', sel, el.tagName);
+        return el;
+      }
     }
+
+    // Fallback: find by structure - look for contenteditable in the toolbar area
+    const editables = document.querySelectorAll('[contenteditable="true"]');
+    for (const el of editables) {
+      // The formula bar is usually a contenteditable div in the top area
+      const rect = el.getBoundingClientRect();
+      if (rect.top < 100 && rect.width > 200) {
+        log('Formula bar found via contenteditable heuristic:', el.tagName, el.className);
+        return el;
+      }
+    }
+
     return null;
   }
 
-  function getNameBoxElement() {
-    for (const sel of NAME_BOX_SELECTORS) {
+  function findNameBox() {
+    const selectors = [
+      '#t-name-box .waffle-name-box',
+      '.waffle-name-box',
+      'input[aria-label="Name Box"]',
+      'input[aria-label="名前ボックス"]',
+      '#t-name-box input',
+    ];
+    for (const sel of selectors) {
       const el = document.querySelector(sel);
-      if (el) return el;
+      if (el) {
+        log('Name box found:', sel);
+        return el;
+      }
     }
     return null;
   }
 
   function getCellValue() {
-    const bar = getFormulaBarElement();
-    if (bar) {
-      return bar.textContent || bar.innerText || '';
-    }
-    return '';
+    if (!formulaBarEl) formulaBarEl = findFormulaBar();
+    if (!formulaBarEl) return '';
+
+    // Try different ways to read the value
+    const val = formulaBarEl.textContent
+      || formulaBarEl.innerText
+      || formulaBarEl.value
+      || '';
+    return val.trim();
   }
 
   function getCellRef() {
-    const box = getNameBoxElement();
-    if (box) {
-      return (box.value || box.textContent || '').trim();
-    }
-    return '';
+    if (!nameBoxEl) nameBoxEl = findNameBox();
+    if (!nameBoxEl) return '';
+    return (nameBoxEl.value || nameBoxEl.textContent || '').trim();
   }
 
   function checkForChanges() {
@@ -60,7 +92,6 @@
       lastCellValue = value;
       lastCellRef = ref;
 
-      // Send to side panel via background
       chrome.runtime.sendMessage({
         type: 'CELL_CHANGED',
         value: value,
@@ -69,68 +100,85 @@
     }
   }
 
-  // Poll for changes at 200ms intervals — fast enough to feel real-time
+  // Poll at 200ms
   setInterval(checkForChanges, 200);
 
-  // Also observe DOM mutations on the formula bar for instant detection
-  function observeFormulaBar() {
-    const bar = getFormulaBarElement();
-    if (!bar) {
-      setTimeout(observeFormulaBar, 1000);
+  // MutationObserver on formula bar for instant detection
+  function setupObserver() {
+    formulaBarEl = findFormulaBar();
+    if (!formulaBarEl) {
+      log('Formula bar not found yet, retrying in 2s...');
+      setTimeout(setupObserver, 2000);
       return;
     }
 
-    const observer = new MutationObserver(() => {
-      checkForChanges();
+    log('Setting up MutationObserver on formula bar');
+    new MutationObserver(() => checkForChanges()).observe(formulaBarEl, {
+      childList: true, subtree: true, characterData: true,
     });
 
-    observer.observe(bar, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
+    // Also observe parent in case the element gets replaced
+    if (formulaBarEl.parentElement) {
+      new MutationObserver(() => {
+        const newBar = findFormulaBar();
+        if (newBar && newBar !== formulaBarEl) {
+          formulaBarEl = newBar;
+          log('Formula bar element changed, re-observing');
+        }
+        checkForChanges();
+      }).observe(formulaBarEl.parentElement, {
+        childList: true, subtree: true, characterData: true,
+      });
+    }
   }
 
-  // Wait for Google Sheets to fully load
-  setTimeout(observeFormulaBar, 2000);
+  // Wait for Sheets to fully load
+  setTimeout(setupObserver, 3000);
 
-  // Listen for commands from side panel
+  // Dump available selectors for debugging
+  setTimeout(() => {
+    log('=== DOM Debug ===');
+    log('contenteditable elements:', document.querySelectorAll('[contenteditable]').length);
+    log('#t-formula-bar-input-container:', !!document.querySelector('#t-formula-bar-input-container'));
+    log('#t-formula-bar-input:', !!document.querySelector('#t-formula-bar-input'));
+    log('.cell-input:', !!document.querySelector('.cell-input'));
+    log('.waffle-name-box:', !!document.querySelector('.waffle-name-box'));
+    log('Formula bar result:', !!findFormulaBar());
+    log('Name box result:', !!findNameBox());
+  }, 5000);
+
+  // Listen for messages from side panel
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'WRITE_CELL') {
-      writeToCellBelow(msg.value, msg.targetColOffset);
+      writeToCell(msg.value);
       sendResponse({ ok: true });
     }
     if (msg.type === 'GET_CELL') {
       sendResponse({ value: getCellValue(), ref: getCellRef() });
     }
+    if (msg.type === 'DEBUG_DOM') {
+      const info = {
+        formulaBar: !!findFormulaBar(),
+        nameBox: !!findNameBox(),
+        cellValue: getCellValue(),
+        cellRef: getCellRef(),
+        editables: document.querySelectorAll('[contenteditable]').length,
+      };
+      sendResponse(info);
+    }
   });
 
-  /**
-   * Write a value to the target column of the current row.
-   * Uses clipboard paste approach for reliability.
-   */
-  function writeToCellBelow(value, colOffset) {
-    // Click on the target cell: we need to simulate navigation
-    // For now, use keyboard simulation: Tab to move to target column, type value
-    // This is a simplified approach — may need refinement
-    const bar = getFormulaBarElement();
-    if (!bar) return;
-
-    // Copy value to clipboard and paste
+  function writeToCell(value) {
     navigator.clipboard.writeText(value).then(() => {
-      // Focus the formula bar and paste
-      document.execCommand('paste');
-    }).catch(() => {
-      // Fallback: use a temporary textarea
-      const ta = document.createElement('textarea');
-      ta.value = value;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-    });
+      // Simulate Ctrl+V paste into active cell
+      const bar = findFormulaBar();
+      if (bar) {
+        bar.focus();
+        document.execCommand('insertText', false, value);
+      }
+    }).catch(err => log('Write failed:', err));
   }
 
-  // Notify background that content script is ready
   chrome.runtime.sendMessage({ type: 'CONTENT_READY' }).catch(() => {});
+  log('Content script loaded');
 })();
