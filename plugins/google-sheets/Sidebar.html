@@ -1,5 +1,3 @@
-<!-- This HTML is embedded as a string constant SIDEBAR_HTML in FelixTM.js -->
-<!-- Copy the content between the <html> tags into the SIDEBAR_HTML variable -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -20,23 +18,28 @@ input:focus, select:focus { outline: none; border-color: #1a73e8; }
 .btn { display: inline-block; padding: 8px 16px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; }
 .btn-primary { background: #1a73e8; color: #fff; }
 .btn-primary:hover { background: #1557b0; }
-.btn-sm { padding: 4px 10px; font-size: 12px; }
 .btn-outline { background: #fff; color: #1a73e8; border: 1px solid #dadce0; }
 .btn-outline:hover { background: #f1f3f4; }
+.btn:disabled { opacity: 0.5; cursor: default; }
 .row { display: flex; gap: 6px; margin-bottom: 8px; }
 .row > * { flex: 1; }
 
-.match { background: #f8f9fa; border: 1px solid #e8eaed; border-radius: 8px; padding: 10px; margin-bottom: 8px; cursor: pointer; }
+.match { background: #f8f9fa; border: 1px solid #e8eaed; border-radius: 8px; padding: 10px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.1s; }
 .match:hover { border-color: #1a73e8; background: #e8f0fe; }
 .score { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; color: #fff; margin-bottom: 4px; }
 .score-high { background: #34a853; }
 .score-mid { background: #f9ab00; }
 .score-low { background: #ea4335; }
-.match-source { color: #5f6368; font-size: 12px; margin-bottom: 2px; }
-.match-target { color: #202124; font-size: 13px; }
+.match-source { color: #5f6368; font-size: 12px; margin-bottom: 2px; word-break: break-all; }
+.match-target { color: #202124; font-size: 13px; word-break: break-all; }
 .empty { text-align: center; color: #80868b; padding: 24px 8px; }
-.status { background: #e6f4ea; color: #137333; padding: 8px; border-radius: 4px; font-size: 12px; margin-bottom: 8px; display: none; }
+
+.toast { padding: 8px 12px; border-radius: 4px; font-size: 12px; margin-bottom: 8px; animation: fadeIn 0.15s; }
+.toast-ok { background: #e6f4ea; color: #137333; }
+.toast-err { background: #fce8e6; color: #c5221f; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .badge { background: #e8eaed; color: #5f6368; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+hr { margin: 12px 0; border: none; border-top: 1px solid #dadce0; }
 </style>
 </head>
 <body>
@@ -47,14 +50,14 @@ input:focus, select:focus { outline: none; border-color: #1a73e8; }
 </div>
 
 <div class="tabs">
-  <div class="tab active" data-panel="search">Search</div>
-  <div class="tab" data-panel="register">Register</div>
-  <div class="tab" data-panel="glossary">Glossary</div>
+  <div class="tab active" data-panel="search" id="tab-search"></div>
+  <div class="tab" data-panel="register" id="tab-register"></div>
+  <div class="tab" data-panel="glossary" id="tab-glossary"></div>
 </div>
 
 <!-- Search Panel -->
 <div id="search" class="panel active">
-  <input type="text" id="query" placeholder="Enter text or click Get Source">
+  <input type="text" id="query" placeholder="">
   <div class="row">
     <select id="min-score">
       <option value="0.5">50%</option>
@@ -65,53 +68,236 @@ input:focus, select:focus { outline: none; border-color: #1a73e8; }
     </select>
     <select id="search-type">
       <option value="fuzzy">Fuzzy</option>
-      <option value="glossary">Glossary</option>
+      <option value="glossary" id="opt-glossary"></option>
     </select>
   </div>
   <div class="row">
-    <button class="btn btn-outline" onclick="getSource()">Get Source</button>
-    <button class="btn btn-primary" onclick="doSearch()">Search</button>
+    <button class="btn btn-outline" id="btn-get-source" onclick="getSource()"></button>
+    <button class="btn btn-primary" id="btn-search" onclick="doSearch()"></button>
   </div>
-  <div id="results">
-    <div class="empty">Search the TM or click Get Source</div>
-  </div>
+  <div id="results"><div class="empty" id="empty-search"></div></div>
 </div>
 
 <!-- Register Panel -->
 <div id="register" class="panel">
-  <h3>Register to TM</h3>
-  <label style="font-size:12px;color:#5f6368">Source</label>
-  <input type="text" id="reg-source" placeholder="Source text">
-  <label style="font-size:12px;color:#5f6368">Target</label>
-  <input type="text" id="reg-target" placeholder="Target translation">
+  <h3 id="h-register"></h3>
+  <label style="font-size:12px;color:#5f6368" id="lbl-source"></label>
+  <input type="text" id="reg-source">
+  <label style="font-size:12px;color:#5f6368" id="lbl-target"></label>
+  <input type="text" id="reg-target">
   <div class="row">
-    <button class="btn btn-outline" onclick="fillFromSheet()">Fill from Sheet</button>
-    <button class="btn btn-primary" onclick="registerTM()">Register</button>
+    <button class="btn btn-outline" id="btn-fill" onclick="fillFromSheet()"></button>
+    <button class="btn btn-primary" id="btn-register" onclick="registerTM()"></button>
   </div>
-  <div class="status" id="reg-status"></div>
-
-  <hr style="margin:12px 0;border:none;border-top:1px solid #dadce0">
-  <h3>Build TM from Sheet</h3>
-  <p style="font-size:12px;color:#5f6368;margin-bottom:8px">
-    Register all rows from the active sheet to TM.
-  </p>
-  <button class="btn btn-outline" onclick="buildTM()" style="width:100%">Build TM</button>
+  <div id="reg-toast"></div>
+  <hr>
+  <h3 id="h-build"></h3>
+  <p style="font-size:12px;color:#5f6368;margin-bottom:8px" id="p-build"></p>
+  <button class="btn btn-outline" id="btn-build" onclick="buildTM()" style="width:100%"></button>
 </div>
 
 <!-- Glossary Panel -->
 <div id="glossary" class="panel">
-  <h3>Add Term</h3>
-  <input type="text" id="gloss-term" placeholder="Term (source)">
-  <input type="text" id="gloss-trans" placeholder="Translation">
-  <button class="btn btn-primary" onclick="addGlossary()" style="width:100%;margin-bottom:12px">Add</button>
-  <div class="status" id="gloss-status"></div>
-
-  <hr style="margin:12px 0;border:none;border-top:1px solid #dadce0">
-  <button class="btn btn-outline" onclick="doHighlight()" style="width:100%;margin-bottom:8px">Highlight in Sheet</button>
-  <button class="btn btn-outline" onclick="doExportGlossary()" style="width:100%">Export to Sheet</button>
+  <h3 id="h-gloss-add"></h3>
+  <input type="text" id="gloss-term" placeholder="">
+  <input type="text" id="gloss-trans" placeholder="">
+  <button class="btn btn-primary" id="btn-gloss-add" onclick="addGlossary()" style="width:100%;margin-bottom:12px"></button>
+  <div id="gloss-toast"></div>
+  <hr>
+  <button class="btn btn-outline" id="btn-highlight" onclick="doHighlight()" style="width:100%;margin-bottom:8px"></button>
+  <button class="btn btn-outline" id="btn-export" onclick="doExportGlossary()" style="width:100%"></button>
 </div>
 
 <script>
+// i18n
+const L = {
+  en: {
+    tabSearch: 'Search', tabRegister: 'Register', tabGlossary: 'Glossary',
+    placeholder: 'Enter text or click Get Source',
+    glossary: 'Glossary', getSource: 'Get Source', search: 'Search',
+    emptySearch: 'Search the TM or click Get Source',
+    noMatch: 'No matches found', searching: 'Searching...',
+    hRegister: 'Register to TM', lblSource: 'Source', lblTarget: 'Target',
+    fill: 'Fill from Sheet', register: 'Register', registered: 'Registered!',
+    hBuild: 'Build TM from Sheet', pBuild: 'Register all rows from the active sheet.',
+    build: 'Build TM', buildDone: 'TM built!',
+    hGlossAdd: 'Add Term', termPh: 'Term (source)', transPh: 'Translation',
+    addTerm: 'Add', termAdded: 'Added!',
+    highlight: 'Highlight in Sheet', export: 'Export to Sheet',
+  },
+  ja: {
+    tabSearch: '検索', tabRegister: '登録', tabGlossary: '用語集',
+    placeholder: 'テキストを入力、または原文取得をクリック',
+    glossary: '用語集', getSource: '原文取得', search: '検索',
+    emptySearch: 'TMを検索、または原文取得をクリック',
+    noMatch: 'マッチなし', searching: '検索中...',
+    hRegister: 'TMに登録', lblSource: '原文', lblTarget: '訳文',
+    fill: 'シートから取得', register: '登録', registered: '登録しました',
+    hBuild: 'シートからTMを構築', pBuild: 'アクティブシートの全行をTMに登録します。',
+    build: 'TM構築', buildDone: 'TM構築完了',
+    hGlossAdd: '用語を追加', termPh: '用語（原文）', transPh: '訳語',
+    addTerm: '追加', termAdded: '追加しました',
+    highlight: 'シートをハイライト', export: 'シートにエクスポート',
+  },
+};
+
+let lang = 'en';
+
+function t(key) { return (L[lang] && L[lang][key]) || L.en[key] || key; }
+
+function applyLang() {
+  document.getElementById('tab-search').textContent = t('tabSearch');
+  document.getElementById('tab-register').textContent = t('tabRegister');
+  document.getElementById('tab-glossary').textContent = t('tabGlossary');
+  document.getElementById('query').placeholder = t('placeholder');
+  document.getElementById('opt-glossary').textContent = t('glossary');
+  document.getElementById('btn-get-source').textContent = t('getSource');
+  document.getElementById('btn-search').textContent = t('search');
+  document.getElementById('empty-search').textContent = t('emptySearch');
+  document.getElementById('h-register').textContent = t('hRegister');
+  document.getElementById('lbl-source').textContent = t('lblSource');
+  document.getElementById('lbl-target').textContent = t('lblTarget');
+  document.getElementById('btn-fill').textContent = t('fill');
+  document.getElementById('btn-register').textContent = t('register');
+  document.getElementById('h-build').textContent = t('hBuild');
+  document.getElementById('p-build').textContent = t('pBuild');
+  document.getElementById('btn-build').textContent = t('build');
+  document.getElementById('h-gloss-add').textContent = t('hGlossAdd');
+  document.getElementById('gloss-term').placeholder = t('termPh');
+  document.getElementById('gloss-trans').placeholder = t('transPh');
+  document.getElementById('btn-gloss-add').textContent = t('addTerm');
+  document.getElementById('btn-highlight').textContent = t('highlight');
+  document.getElementById('btn-export').textContent = t('export');
+}
+
+// ============================================================
+// Client-side TM engine (no server calls for search)
+// ============================================================
+var _tmData = null; // [[source, target, context, source_cmp], ...]
+var _glossData = null;
+
+function _ensureData(cb) {
+  if (_tmData !== null) { cb(); return; }
+  google.script.run.withSuccessHandler(d => {
+    _tmData = d.tm || [];
+    _glossData = d.glossary || [];
+    if (d.lang) { lang = d.lang; applyLang(); }
+    document.getElementById('stats-badge').textContent = 'TM:' + _tmData.length + ' Gloss:' + _glossData.length;
+    cb();
+  }).loadAllData();
+}
+
+function _makeCmp(text) {
+  var s = text.replace(/<[^>]+>/g, '');
+  s = s.replace(/[\uFF01-\uFF5E]/g, function(ch) { return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0); });
+  s = s.replace(/\u3000/g, ' ');
+  s = s.toLowerCase();
+  s = s.replace(/[\u3041-\u3096]/g, function(ch) { return String.fromCharCode(ch.charCodeAt(0) + 0x60); });
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function _containsCJK(text) { return /[\u3000-\u9FFF\uF900-\uFAFF]/.test(text); }
+
+function _editDist(src, tgt, maxD) {
+  var n = src.length, m = tgt.length;
+  if (n === 0) return m; if (m === 0) return n;
+  var p = 0;
+  while (p < n && p < m && src[p] === tgt[p]) p++;
+  var sx = 0;
+  while (sx < n-p && sx < m-p && src[n-1-sx] === tgt[m-1-sx]) sx++;
+  var s = src.substring(p, n-sx), t = tgt.substring(p, m-sx);
+  var n2 = s.length, m2 = t.length;
+  if (n2 === 0) return m2; if (m2 === 0) return n2;
+  if (n2 === 1) return t.indexOf(s[0])>=0 ? m2-1 : m2;
+  if (m2 === 1) return s.indexOf(t[0])>=0 ? n2-1 : n2;
+  var rows, cols;
+  if (n2 > m2) { rows=t; cols=s; } else { rows=s; cols=t; }
+  var rl=rows.length, cl=cols.length;
+  if (maxD===undefined) maxD=cl;
+  var row=new Array(rl+1);
+  for(var i=0;i<=rl;i++) row[i]=i;
+  for(var j=1;j<=cl;j++){
+    var prev=row[0]; row[0]=j; var rm=j;
+    var cc=cols[j-1];
+    for(var i=1;i<=rl;i++){
+      var tmp=row[i];
+      row[i]=Math.min(row[i]+1,row[i-1]+1,prev+(rows[i-1]===cc?0:1));
+      prev=tmp; if(row[i]<rm) rm=row[i];
+    }
+    if(rm>maxD) return maxD+1;
+  }
+  return row[rl];
+}
+
+function _edScore(s, t, ms) {
+  if(!s&&!t) return 1; var h=Math.max(s.length,t.length); if(!h) return 1;
+  var md=Math.floor(h*(1-(ms||0))); var d=_editDist(s,t,md);
+  return d>md ? 0 : (h-d)/h;
+}
+
+function _bagDist(s, t) {
+  var f={}; for(var c of s) f[c]=(f[c]||0)+1; for(var c of t) f[c]=(f[c]||0)-1;
+  var d=0; for(var k in f) d+=Math.abs(f[k]); return d;
+}
+
+function _tokenize(t) { return t.split(/(\s+|[.,;:!?()"'\[\]{}<>])/).filter(function(x){return x&&!/^\s+$/.test(x);}); }
+
+function _wordScore(q, s, ms) {
+  var qt=_tokenize(q), st=_tokenize(s);
+  if(!qt.length||!st.length) return _edScore(q,s,ms);
+  var n=qt.length,m=st.length,h=Math.max(n,m);
+  var row=new Array(n+1); for(var i=0;i<=n;i++) row[i]=i;
+  for(var j=1;j<=m;j++){
+    var prev=row[0]; row[0]=j;
+    for(var i=1;i<=n;i++){
+      var c=1-_edScore(qt[i-1],st[j-1]); var tmp=row[i];
+      row[i]=Math.min(row[i]+1,row[i-1]+1,prev+c); prev=tmp;
+    }
+  }
+  var sc=h>0?(h-row[n])/h:1; return Math.max(0,Math.min(1,sc));
+}
+
+function _fuzzyScore(qCmp, sCmp, ms) {
+  if(qCmp===sCmp) return 1;
+  var ql=qCmp.length, sl=sCmp.length, h=Math.max(ql,sl);
+  if(!h) return 1;
+  if((h-(h-Math.min(ql,sl)))/h < ms) return 0;
+  if((h-_bagDist(qCmp,sCmp))/h < ms) return 0;
+  var sc = (_containsCJK(qCmp)||qCmp.indexOf(' ')===-1) ? _edScore(qCmp,sCmp,ms) : _wordScore(qCmp,sCmp,ms);
+  return sc>=ms ? sc : 0;
+}
+
+function _clientSearch(query, minScore) {
+  if(!_tmData) return [];
+  var qCmp = _makeCmp(query);
+  var matches = [];
+  for(var i=0; i<_tmData.length; i++){
+    var r=_tmData[i];
+    var sCmp = r[3] || _makeCmp(r[0]);
+    var sc = _fuzzyScore(qCmp, sCmp, minScore);
+    if(sc >= minScore) matches.push({score:sc, source:r[0], target:r[1], context:r[2]});
+  }
+  matches.sort(function(a,b){return b.score-a.score;});
+  return matches.slice(0,20);
+}
+
+function _clientGlossary(query) {
+  if(!_glossData) return [];
+  var qCmp = _makeCmp(query);
+  return _glossData.filter(function(r){
+    var tCmp = _makeCmp(r[0]);
+    return qCmp.indexOf(tCmp)>=0 || tCmp.indexOf(qCmp)>=0;
+  }).map(function(r){ return {score:1, source:r[0], target:r[1], context:r[2]}; });
+}
+
+// ============================================================
+
+function showToast(elId, msg, type) {
+  const el = document.getElementById(elId);
+  el.innerHTML = '<div class="toast toast-' + (type || 'ok') + '">' + msg + '</div>';
+  setTimeout(() => el.innerHTML = '', 3000);
+}
+
 // Tabs
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
@@ -124,45 +310,78 @@ document.querySelectorAll('.tab').forEach(tab => {
 
 // Search
 function getSource() {
+  document.getElementById('btn-get-source').disabled = true;
   google.script.run.withSuccessHandler(text => {
     document.getElementById('query').value = text;
-    doSearch();
+    document.getElementById('btn-get-source').disabled = false;
+    if (text) doSearch();
+  }).withFailureHandler(() => {
+    document.getElementById('btn-get-source').disabled = false;
   }).sidebarGetCurrentSource();
 }
 
 function doSearch() {
-  const query = document.getElementById('query').value.trim();
-  if (!query) return;
+  const q = document.getElementById('query').value.trim();
+  if (!q) return;
   const minScore = parseFloat(document.getElementById('min-score').value);
   const type = document.getElementById('search-type').value;
 
-  document.getElementById('results').innerHTML = '<div class="empty">Searching...</div>';
-
-  google.script.run.withSuccessHandler(matches => {
+  _ensureData(function() {
+    // Client-side search — instant, no server call
+    const matches = type === 'glossary' ? _clientGlossary(q) : _clientSearch(q, minScore);
     const el = document.getElementById('results');
-    if (!matches || matches.length === 0) {
-      el.innerHTML = '<div class="empty">No matches found</div>';
+    if (!matches.length) {
+      el.innerHTML = '<div class="empty">' + t('noMatch') + '</div>';
       return;
     }
-    el.innerHTML = matches.map(m => {
+    el.innerHTML = matches.map((m, idx) => {
       const pct = Math.round(m.score * 100);
       const cls = pct >= 90 ? 'score-high' : pct >= 70 ? 'score-mid' : 'score-low';
-      return '<div class="match" onclick="insertMatch(\'' + esc(m.target) + '\')">' +
-        '<span class="score ' + cls + '">' + pct + '%</span> ' +
+      return '<div class="match" onclick="insertMatch(' + idx + ')" data-target="' + escA(m.target) + '">' +
+        '<span class="score ' + cls + '">' + pct + '%</span>' +
         '<div class="match-source">' + escH(m.source) + '</div>' +
-        '<div class="match-target">' + escH(m.target) + '</div>' +
-        '</div>';
+        '<div class="match-target">' + escH(m.target) + '</div></div>';
     }).join('');
-  }).sidebarSearch(query, minScore, type);
+  });
 }
 
-function insertMatch(target) {
-  google.script.run.withSuccessHandler(result => {
+function insertMatch(idx) {
+  const el = document.querySelectorAll('.match')[idx];
+  if (!el) return;
+  const target = el.getAttribute('data-target');
+
+  // Optimistic UI: immediately show success
+  el.style.borderColor = '#34a853';
+  el.style.opacity = '0.6';
+
+  // Update client TM cache immediately (dedup-aware)
+  var currentQuery = document.getElementById('query').value.trim();
+  if (currentQuery && _tmData) {
+    var qCmp = _makeCmp(currentQuery);
+    var tCmp = _makeCmp(target);
+    var dup = false;
+    for (var i = 0; i < _tmData.length; i++) {
+      if ((_tmData[i][3] || _makeCmp(_tmData[i][0])) === qCmp && _makeCmp(_tmData[i][1]) === tCmp) {
+        _tmData[i][4] = (_tmData[i][4] || 0) + 1;
+        dup = true; break;
+      }
+    }
+    if (!dup) _tmData.push([currentQuery, target, '', qCmp, 0, 0]);
+  }
+
+  // Clear results while waiting
+  document.getElementById('results').innerHTML = '<div class="empty">...</div>';
+  document.getElementById('query').value = '';
+
+  // Server: write + move + get next source (single call)
+  google.script.run.withSuccessHandler(function(result) {
     if (result && result.nextSource) {
       document.getElementById('query').value = result.nextSource;
-      if (result.nextSource) doSearch();
+      doSearch(); // instant client-side search
+    } else {
+      document.getElementById('results').innerHTML = '<div class="empty">' + t('emptySearch') + '</div>';
     }
-  }).sidebarInsertTranslation(target, 0);
+  }).sidebarInsertTranslation(target);
 }
 
 // Register
@@ -176,12 +395,10 @@ function registerTM() {
   const source = document.getElementById('reg-source').value.trim();
   const target = document.getElementById('reg-target').value.trim();
   if (!source || !target) return;
-
   google.script.run.withSuccessHandler(() => {
-    const st = document.getElementById('reg-status');
-    st.textContent = 'Registered!';
-    st.style.display = 'block';
-    setTimeout(() => st.style.display = 'none', 3000);
+    // Update client cache
+    if (_tmData) { _tmData.push([source, target, '', _makeCmp(source)]); }
+    showToast('reg-toast', t('registered'));
     document.getElementById('reg-source').value = '';
     document.getElementById('reg-target').value = '';
     refreshStats();
@@ -189,8 +406,15 @@ function registerTM() {
 }
 
 function buildTM() {
-  google.script.run.withSuccessHandler(() => {
+  document.getElementById('btn-build').disabled = true;
+  google.script.run.withSuccessHandler(result => {
+    _tmData = null; // invalidate cache, will reload on next search
+    const msg = result ? t('buildDone') + ' (' + result.count + ' → ' + result.total + ')' : t('buildDone');
+    showToast('reg-toast', msg);
+    document.getElementById('btn-build').disabled = false;
     refreshStats();
+  }).withFailureHandler(() => {
+    document.getElementById('btn-build').disabled = false;
   }).buildTMFromSheet();
 }
 
@@ -199,12 +423,8 @@ function addGlossary() {
   const term = document.getElementById('gloss-term').value.trim();
   const trans = document.getElementById('gloss-trans').value.trim();
   if (!term || !trans) return;
-
   google.script.run.withSuccessHandler(() => {
-    const st = document.getElementById('gloss-status');
-    st.textContent = 'Added!';
-    st.style.display = 'block';
-    setTimeout(() => st.style.display = 'none', 3000);
+    showToast('gloss-toast', t('termAdded'));
     document.getElementById('gloss-term').value = '';
     document.getElementById('gloss-trans').value = '';
     refreshStats();
@@ -212,26 +432,104 @@ function addGlossary() {
 }
 
 function doHighlight() {
-  google.script.run.highlightGlossaryTerms();
+  document.getElementById('btn-highlight').disabled = true;
+  google.script.run.withSuccessHandler(result => {
+    if (result) showToast('gloss-toast', result.count + ' cells highlighted');
+    document.getElementById('btn-highlight').disabled = false;
+  }).withFailureHandler(() => {
+    document.getElementById('btn-highlight').disabled = false;
+  }).highlightGlossaryTerms();
 }
 
 function doExportGlossary() {
-  google.script.run.exportGlossaryToSheet();
+  google.script.run.withSuccessHandler(result => {
+    if (result) showToast('gloss-toast', result.count + ' entries exported');
+  }).exportGlossaryToSheet();
 }
 
 // Stats
 function refreshStats() {
   google.script.run.withSuccessHandler(s => {
     document.getElementById('stats-badge').textContent = 'TM:' + s.tmCount + ' Gloss:' + s.glossaryCount;
+    if (s.lang && s.lang !== lang) { lang = s.lang; applyLang(); }
   }).getStats();
 }
 
-function esc(s) { return s.replace(/'/g, "\\'").replace(/\n/g, ' '); }
+function runBenchmark() {
+  var results = document.getElementById('results');
+  results.innerHTML = '<div class="empty">Running benchmark...</div>';
+  var tests = ['benchNoop', 'benchCache', 'benchProps', 'benchCell', 'benchCellAndCache'];
+  var output = [];
+  var idx = 0;
+  function next() {
+    if (idx >= tests.length) {
+      results.innerHTML = output.map(function(r) {
+        return '<div class="match"><div class="match-source">' + r.name + '</div><div class="match-target" style="font-size:16px;font-weight:bold">' + r.ms + ' ms</div></div>';
+      }).join('');
+      return;
+    }
+    var name = tests[idx];
+    var t0 = performance.now();
+    google.script.run.withSuccessHandler(function() {
+      var ms = Math.round(performance.now() - t0);
+      output.push({ name: name, ms: ms });
+      idx++;
+      next();
+    }).withFailureHandler(function(e) {
+      output.push({ name: name + ' (FAIL)', ms: e.message });
+      idx++;
+      next();
+    })[name]();
+  }
+  next();
+}
+
+function escA(s) { return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 function escH(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-// Init
+// Init — all data embedded at load time, search is instant
 document.getElementById('query').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
-refreshStats();
+(function() {
+  var initData = <?!= initData ?>;
+  if (initData) {
+    // Pre-populate client-side cache from embedded data
+    if (initData.tm) { _tmData = initData.tm; }
+    if (initData.glossary) { _glossData = initData.glossary; }
+    document.getElementById('stats-badge').textContent =
+      'TM:' + (initData.tmCount || 0) + ' Gloss:' + (initData.glossaryCount || 0);
+    if (initData.lang) { lang = initData.lang; }
+    // Auto-fill current source and search immediately
+    if (initData.currentSource) {
+      document.getElementById('query').value = initData.currentSource;
+    }
+  }
+  applyLang();
+  // Auto-search if we have a query
+  if (document.getElementById('query').value) doSearch();
+
+  // Benchmark button (temporary)
+  document.getElementById('stats-badge').style.cursor = 'pointer';
+  document.getElementById('stats-badge').title = 'Click to run latency benchmark';
+  document.getElementById('stats-badge').addEventListener('click', runBenchmark);
+
+  // Poll for cell selection changes (lightweight — reads CacheService, not the sheet)
+  var _lastPolled = document.getElementById('query').value || '';
+  var _polling = true;
+  function pollSource() {
+    if (!_polling) return;
+    google.script.run.withSuccessHandler(function(val) {
+      if (val && val !== _lastPolled) {
+        _lastPolled = val;
+        document.getElementById('query').value = val;
+        doSearch(); // instant client-side search
+      }
+      setTimeout(pollSource, 1500);
+    }).withFailureHandler(function() {
+      setTimeout(pollSource, 3000);
+    }).pollCurrentSource();
+  }
+  setTimeout(pollSource, 2000); // start polling after 2s
+})();
 </script>
 </body>
 </html>

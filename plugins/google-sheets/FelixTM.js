@@ -7,230 +7,242 @@
  */
 
 // ============================================================
-// Menu & Initialization
+// i18n
+// ============================================================
+
+const I18N = {
+  en: {
+    menuOpen: 'Open Sidebar', menuLookup: 'TM Lookup (selected cell)',
+    menuRegister: 'Register Selection to TM', menuBuild: 'Build TM from Sheet',
+    menuHighlight: 'Highlight Glossary Terms', menuExport: 'Export Glossary to Sheet',
+    menuSettings: 'Settings', menuLang: 'Language: English → 日本語',
+    menuClearTM: 'Clear TM', menuShowTM: 'Show/Hide TM Sheet',
+    buildConfirm: 'Build Translation Memory from all rows in the active sheet?',
+    clearConfirm: 'Delete ALL entries from the Translation Memory? This cannot be undone.',
+    emptySource: 'Source cell is empty.', emptyGlossary: 'Glossary is empty.',
+    emptyBoth: 'Both source and target cells must have content.',
+    noMatch: 'No matches found.', insertConfirm: 'Insert this translation?',
+  },
+  ja: {
+    menuOpen: 'サイドバーを開く', menuLookup: 'TM検索（選択セル）',
+    menuRegister: '選択行をTMに登録', menuBuild: 'シートからTMを構築',
+    menuHighlight: '用語集ハイライト', menuExport: '用語集をシートにエクスポート',
+    menuSettings: '設定', menuLang: 'Language: 日本語 → English',
+    menuClearTM: 'TMを全削除', menuShowTM: 'TMシートの表示/非表示',
+    buildConfirm: 'アクティブシートの全行からTMを構築しますか？',
+    clearConfirm: 'TMの全エントリを削除しますか？この操作は元に戻せません。',
+    emptySource: '原文セルが空です。', emptyGlossary: '用語集が空です。',
+    emptyBoth: '原文セルと訳文セルの両方に内容が必要です。',
+    noMatch: 'マッチが見つかりません。', insertConfirm: 'この訳文を挿入しますか？',
+  },
+};
+
+function _t(key) {
+  const lang = getSettings().lang || 'en';
+  return (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
+}
+
+// ============================================================
+// Menu
 // ============================================================
 
 function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('Felix TM')
-    .addItem('Open Sidebar', 'showSidebar')
+  SpreadsheetApp.getUi().createMenu('Felix TM')
+    .addItem(_t('menuOpen'), 'showSidebar')
     .addSeparator()
-    .addItem('TM Lookup (selected cell)', 'tmLookupSelected')
-    .addItem('Set Translation + Next Row', 'setAndNext')
+    .addItem(_t('menuLookup'), 'tmLookupSelected')
+    .addItem(_t('menuRegister'), 'registerSelectionToTM')
+    .addItem(_t('menuBuild'), 'buildTMFromSheetPrompt')
     .addSeparator()
-    .addItem('Register Selection to TM', 'registerSelectionToTM')
-    .addItem('Build TM from Sheet', 'buildTMFromSheetPrompt')
+    .addItem(_t('menuHighlight'), 'highlightGlossaryTerms')
+    .addItem(_t('menuExport'), 'exportGlossaryToSheet')
     .addSeparator()
-    .addItem('Highlight Glossary Terms', 'highlightGlossaryTerms')
-    .addItem('Export Glossary to Sheet', 'exportGlossaryToSheet')
+    .addItem(_t('menuClearTM'), 'clearTMPrompt')
     .addSeparator()
-    .addItem('Settings', 'showSettings')
+    .addItem(_t('menuSettings'), 'showSettings')
+    .addItem(_t('menuLang'), 'toggleLanguage')
     .addToUi();
 }
 
+// Fires on every cell selection change — writes source value to cache
+function onSelectionChange(e) {
+  try {
+    const settings = getSettings();
+    const sheet = e.range.getSheet();
+    const srcCol = _colNum(settings.sourceCol);
+    const val = String(sheet.getRange(e.range.getRow(), srcCol).getValue());
+    CacheService.getDocumentCache().put('felix_current_source', val, 300);
+  } catch (_) {}
+}
+
+// Lightweight read from cache — no sheet access, fast for polling
+function pollCurrentSource() {
+  return CacheService.getDocumentCache().get('felix_current_source') || '';
+}
+
 function showSidebar() {
-  const html = HtmlService.createHtmlOutputFromFile('Sidebar')
-    .setTitle('Felix TM')
-    .setWidth(380);
-  SpreadsheetApp.getUi().showSidebar(html);
-}
-
-// ============================================================
-// Settings (stored in Script Properties)
-// ============================================================
-
-const DEFAULT_SETTINGS = {
-  sourceCol: 'A',
-  targetCol: 'B',
-  minScore: 0.7,
-  tmSheetName: '_FelixTM',
-  glossarySheetName: '_FelixGlossary',
-};
-
-function getSettings() {
-  const props = PropertiesService.getDocumentProperties();
-  const saved = props.getProperty('felixSettings');
-  if (saved) {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
-  }
-  return { ...DEFAULT_SETTINGS };
-}
-
-function saveSettings(settings) {
-  const props = PropertiesService.getDocumentProperties();
-  props.setProperty('felixSettings', JSON.stringify(settings));
-  return settings;
+  const tpl = HtmlService.createTemplateFromFile('Sidebar');
+  // Embed ALL data + current source — zero server calls needed after open
+  const all = loadAllData();
+  all.tmCount = all.tm.length;
+  all.glossaryCount = all.glossary.length;
+  // Pre-fetch current source cell
+  try {
+    const settings = getSettings();
+    const sheet = SpreadsheetApp.getActiveSheet();
+    all.currentSource = String(sheet.getRange(
+      sheet.getActiveCell().getRow(), _colNum(settings.sourceCol)
+    ).getValue());
+  } catch (e) { all.currentSource = ''; }
+  tpl.initData = JSON.stringify(all);
+  SpreadsheetApp.getUi().showSidebar(
+    tpl.evaluate().setTitle('Felix TM').setWidth(380)
+  );
 }
 
 function showSettings() {
-  const html = HtmlService.createHtmlOutputFromFile('Settings')
-    .setWidth(350)
-    .setHeight(300);
-  SpreadsheetApp.getUi().showModalDialog(html, 'Settings');
+  SpreadsheetApp.getUi().showModalDialog(
+    HtmlService.createHtmlOutputFromFile('Settings').setWidth(350).setHeight(350),
+    _t('menuSettings')
+  );
+}
+
+function toggleLanguage() {
+  const s = getSettings();
+  s.lang = s.lang === 'ja' ? 'en' : 'ja';
+  saveSettings(s);
+  onOpen();
 }
 
 // ============================================================
-// TM Storage (dedicated sheet)
+// Settings
 // ============================================================
 
+const DEFAULT_SETTINGS = {
+  sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en',
+  tmSheetName: '_FelixTM', glossarySheetName: '_FelixGlossary',
+};
+
+let _settingsCache = null;
+
+function getSettings() {
+  if (_settingsCache) return _settingsCache;
+  const saved = PropertiesService.getDocumentProperties().getProperty('felixSettings');
+  _settingsCache = saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : { ...DEFAULT_SETTINGS };
+  return _settingsCache;
+}
+
+function saveSettings(settings) {
+  PropertiesService.getDocumentProperties().setProperty('felixSettings', JSON.stringify(settings));
+  _settingsCache = settings;
+  return settings;
+}
+
+function getLang() { return getSettings().lang || 'en'; }
+
+// ============================================================
+// Sheet Access
+// ============================================================
+
+let _ssCache = null;
+function _ss() { return _ssCache || (_ssCache = SpreadsheetApp.getActiveSpreadsheet()); }
+function _colNum(letter) { return letter.toUpperCase().charCodeAt(0) - 64; }
+
+// TM Sheet columns (Felix record structure):
+// A:source  B:target  C:context  D:source_cmp  E:refcount  F:reliability  G:validated  H:created  I:modified
+const TM_COLS = { SOURCE: 1, TARGET: 2, CONTEXT: 3, CMP: 4, REFCOUNT: 5, RELIABILITY: 6, VALIDATED: 7, CREATED: 8, MODIFIED: 9 };
+const TM_COL_COUNT = 9;
+const TM_HEADERS = ['source', 'target', 'context', 'source_cmp', 'refcount', 'reliability', 'validated', 'created', 'modified'];
+
+// Glossary Sheet columns:
+// A:term  B:translation  C:notes  D:term_cmp
+const GL_COL_COUNT = 4;
+const GL_HEADERS = ['term', 'translation', 'notes', 'term_cmp'];
+
 function _getTMSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const settings = getSettings();
-  let sheet = ss.getSheetByName(settings.tmSheetName);
+  const name = getSettings().tmSheetName;
+  let sheet = _ss().getSheetByName(name);
   if (!sheet) {
-    sheet = ss.insertSheet(settings.tmSheetName);
-    sheet.appendRow(['source', 'target', 'context', 'source_cmp', 'score_cache']);
+    sheet = _ss().insertSheet(name);
+    sheet.getRange(1, 1, 1, TM_COL_COUNT).setValues([TM_HEADERS]);
     sheet.setFrozenRows(1);
-    // Hide the TM sheet
-    sheet.hideSheet();
+    sheet.setTabColor('#999999');
+  }
+  // Migration: old sheets may have fewer columns
+  if (sheet.getLastColumn() < TM_COL_COUNT && sheet.getLastRow() >= 1) {
+    const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (headerRow.length < TM_COL_COUNT) {
+      sheet.getRange(1, 1, 1, TM_COL_COUNT).setValues([TM_HEADERS]);
+      // Backfill existing rows with defaults
+      const lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        const fillCount = lastRow - 1;
+        const now = new Date().toISOString();
+        const defaults = Array.from({ length: fillCount }, () => [0, 0, '', now, now]);
+        sheet.getRange(2, TM_COLS.REFCOUNT, fillCount, 5).setValues(defaults);
+      }
+    }
   }
   return sheet;
 }
 
 function _getGlossarySheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const settings = getSettings();
-  let sheet = ss.getSheetByName(settings.glossarySheetName);
+  const name = getSettings().glossarySheetName;
+  let sheet = _ss().getSheetByName(name);
   if (!sheet) {
-    sheet = ss.insertSheet(settings.glossarySheetName);
-    sheet.appendRow(['term', 'translation', 'notes', 'term_cmp']);
+    sheet = _ss().insertSheet(name);
+    sheet.getRange(1, 1, 1, GL_COL_COUNT).setValues([GL_HEADERS]);
     sheet.setFrozenRows(1);
-    sheet.hideSheet();
+    sheet.setTabColor('#999999');
   }
   return sheet;
 }
 
-function getTMCount() {
-  const sheet = _getTMSheet();
-  return Math.max(0, sheet.getLastRow() - 1);
-}
-
-function getGlossaryCount() {
-  const sheet = _getGlossarySheet();
-  return Math.max(0, sheet.getLastRow() - 1);
-}
-
 // ============================================================
-// Core: Text Normalization (port of segment.py)
+// Core: Text Normalization
 // ============================================================
-
-function _stripTags(text) {
-  return text.replace(/<[^>]+>/g, '');
-}
-
-function _normalizeWidth(text) {
-  // Full-width ASCII -> half-width
-  let result = '';
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    // Full-width ASCII: FF01-FF5E -> 0021-007E
-    if (code >= 0xFF01 && code <= 0xFF5E) {
-      result += String.fromCharCode(code - 0xFEE0);
-    }
-    // Full-width space
-    else if (code === 0x3000) {
-      result += ' ';
-    } else {
-      result += text[i];
-    }
-  }
-  return result;
-}
-
-function _normalizeHiraToKata(text) {
-  let result = '';
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    // Hiragana: 3041-3096 -> Katakana: 30A1-30F6
-    if (code >= 0x3041 && code <= 0x3096) {
-      result += String.fromCharCode(code + 0x60);
-    } else {
-      result += text[i];
-    }
-  }
-  return result;
-}
 
 function makeCmp(text) {
-  let s = _stripTags(text);
-  s = _normalizeWidth(s);
-  s = s.toLowerCase();
-  s = _normalizeHiraToKata(s);
-  s = s.replace(/\s+/g, ' ').trim();
-  return s;
+  let s = text.replace(/<[^>]+>/g, '');
+  s = s.replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+  s = s.replace(/\u3000/g, ' ').toLowerCase();
+  s = s.replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
+  return s.replace(/\s+/g, ' ').trim();
 }
 
-function containsCJK(text) {
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    if ((code >= 0x3000 && code <= 0x9FFF) ||
-        (code >= 0xF900 && code <= 0xFAFF) ||
-        (code >= 0xFF00 && code <= 0xFFEF)) {
-      return true;
-    }
-  }
-  return false;
-}
+function containsCJK(text) { return /[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(text); }
 
 // ============================================================
-// Core: Levenshtein Edit Distance (port of distance.py)
+// Core: Levenshtein Edit Distance
 // ============================================================
 
 function editDistance(source, target, maxDistance) {
-  const n = source.length;
-  const m = target.length;
-
-  if (n === 0) return m;
-  if (m === 0) return n;
-
-  // Skip matching prefix
+  let n = source.length, m = target.length;
+  if (n === 0) return m; if (m === 0) return n;
   let prefix = 0;
   while (prefix < n && prefix < m && source[prefix] === target[prefix]) prefix++;
-
-  // Skip matching suffix
   let suffix = 0;
-  while (suffix < n - prefix && suffix < m - prefix &&
-         source[n - 1 - suffix] === target[m - 1 - suffix]) suffix++;
-
-  const s = source.substring(prefix, n - suffix);
-  const t = target.substring(prefix, m - suffix);
-  const n2 = s.length;
-  const m2 = t.length;
-
-  if (n2 === 0) return m2;
-  if (m2 === 0) return n2;
-
-  // Single char optimization
+  while (suffix < n - prefix && suffix < m - prefix && source[n-1-suffix] === target[m-1-suffix]) suffix++;
+  const s = source.substring(prefix, n - suffix), t = target.substring(prefix, m - suffix);
+  const n2 = s.length, m2 = t.length;
+  if (n2 === 0) return m2; if (m2 === 0) return n2;
   if (n2 === 1) return t.indexOf(s[0]) >= 0 ? m2 - 1 : m2;
   if (m2 === 1) return s.indexOf(t[0]) >= 0 ? n2 - 1 : n2;
-
-  // Ensure shorter string in inner loop
-  let rows, cols;
-  if (n2 > m2) { rows = t; cols = s; } else { rows = s; cols = t; }
-  const rl = rows.length;
-  const cl = cols.length;
-
+  const [rows, cols] = n2 > m2 ? [t, s] : [s, t];
+  const rl = rows.length, cl = cols.length;
   if (maxDistance === undefined) maxDistance = cl;
-
-  const row = [];
+  const row = new Array(rl + 1);
   for (let i = 0; i <= rl; i++) row[i] = i;
-
   for (let j = 1; j <= cl; j++) {
-    let prev = row[0];
-    row[0] = j;
-    let rowMin = j;
-
+    let prev = row[0]; row[0] = j; let rowMin = j;
+    const cc = cols[j - 1];
     for (let i = 1; i <= rl; i++) {
-      const cost = rows[i - 1] === cols[j - 1] ? 0 : 1;
       const temp = row[i];
-      row[i] = Math.min(row[i] + 1, row[i - 1] + 1, prev + cost);
-      prev = temp;
-      if (row[i] < rowMin) rowMin = row[i];
+      row[i] = Math.min(row[i] + 1, row[i-1] + 1, prev + (rows[i-1] === cc ? 0 : 1));
+      prev = temp; if (row[i] < rowMin) rowMin = row[i];
     }
-
     if (rowMin > maxDistance) return maxDistance + 1;
   }
-
   return row[rl];
 }
 
@@ -238,216 +250,273 @@ function editDistanceScore(source, target, minScore) {
   if (!source && !target) return 1.0;
   const highLen = Math.max(source.length, target.length);
   if (highLen === 0) return 1.0;
-
   const maxDist = Math.floor(highLen * (1.0 - (minScore || 0)));
   const dist = editDistance(source, target, maxDist);
-
-  if (dist > maxDist) return 0.0;
-  return (highLen - dist) / highLen;
+  return dist > maxDist ? 0.0 : (highLen - dist) / highLen;
 }
 
 function bagDistance(source, target) {
-  const freqS = {};
-  const freqT = {};
-  for (const ch of source) freqS[ch] = (freqS[ch] || 0) + 1;
-  for (const ch of target) freqT[ch] = (freqT[ch] || 0) + 1;
-
-  const allChars = new Set([...Object.keys(freqS), ...Object.keys(freqT)]);
-  let diff = 0;
-  for (const ch of allChars) {
-    diff += Math.abs((freqS[ch] || 0) - (freqT[ch] || 0));
-  }
+  const freq = {};
+  for (const ch of source) freq[ch] = (freq[ch] || 0) + 1;
+  for (const ch of target) freq[ch] = (freq[ch] || 0) - 1;
+  let diff = 0; for (const k in freq) diff += Math.abs(freq[k]);
   return diff;
 }
 
 // ============================================================
-// Core: Fuzzy Match (port of match_maker.py)
-// Faithful port of Felix CAT's match_maker.cpp:
-//   - CJK text: character-level Levenshtein
-//   - Western text with spaces: word-level matching
+// Core: Fuzzy Match (Felix CAT faithful port)
 // ============================================================
 
 function _tokenize(text) {
-  return text.split(/(\s+|[.,;:!?()"'\[\]{}<>])/)
-    .filter(t => t && !/^\s+$/.test(t));
+  return text.split(/(\s+|[.,;:!?()"'\[\]{}<>])/).filter(t => t && !/^\s+$/.test(t));
 }
 
 function _wordLevelScore(query, source, minScore) {
-  const qTokens = _tokenize(query);
-  const sTokens = _tokenize(source);
-
-  if (qTokens.length === 0 || sTokens.length === 0) {
-    return editDistanceScore(query, source, minScore);
-  }
-
-  const n = qTokens.length;
-  const m = sTokens.length;
-  const highLen = Math.max(n, m);
-
-  // Word-to-word edit distance with within-token similarity
-  const row = [];
+  const qT = _tokenize(query), sT = _tokenize(source);
+  if (!qT.length || !sT.length) return editDistanceScore(query, source, minScore);
+  const n = qT.length, m = sT.length, highLen = Math.max(n, m);
+  const row = new Array(n + 1);
   for (let i = 0; i <= n; i++) row[i] = i;
-
   for (let j = 1; j <= m; j++) {
-    let prev = row[0];
-    row[0] = j;
+    let prev = row[0]; row[0] = j;
     for (let i = 1; i <= n; i++) {
-      const tokenScore = editDistanceScore(qTokens[i - 1], sTokens[j - 1]);
-      const cost = 1.0 - tokenScore;
+      const cost = 1.0 - editDistanceScore(qT[i-1], sT[j-1]);
       const temp = row[i];
-      row[i] = Math.min(row[i] + 1, row[i - 1] + 1, prev + cost);
+      row[i] = Math.min(row[i] + 1, row[i-1] + 1, prev + cost);
       prev = temp;
     }
   }
-
-  const totalCost = row[n];
-  const score = highLen > 0 ? (highLen - totalCost) / highLen : 1.0;
-  return Math.max(0.0, Math.min(1.0, score));
+  return Math.max(0, Math.min(1, highLen > 0 ? (highLen - row[n]) / highLen : 1));
 }
 
 function fuzzyMatchScore(queryCmp, sourceCmp, minScore) {
   if (queryCmp === sourceCmp) return 1.0;
-
-  const qLen = queryCmp.length;
-  const sLen = sourceCmp.length;
-  const highLen = Math.max(qLen, sLen);
-
+  const qLen = queryCmp.length, sLen = sourceCmp.length, highLen = Math.max(qLen, sLen);
   if (highLen === 0) return 1.0;
-
-  // Pass 1: Length check
-  const diff = highLen - Math.min(qLen, sLen);
-  if ((highLen - diff) / highLen < minScore) return 0.0;
-
-  // Pass 2: Bag-of-characters
-  const bagDist = bagDistance(queryCmp, sourceCmp);
-  const bagScore = (highLen - bagDist) / highLen;
-  if (bagScore < minScore) return 0.0;
-
-  // Pass 3: Edit distance
-  // Auto-detect: CJK -> character-level, Western with spaces -> word-level
-  let score;
-  if (containsCJK(queryCmp) || queryCmp.indexOf(' ') === -1) {
-    score = editDistanceScore(queryCmp, sourceCmp, minScore);
-  } else {
-    score = _wordLevelScore(queryCmp, sourceCmp, minScore);
-  }
-
+  if ((highLen - (highLen - Math.min(qLen, sLen))) / highLen < minScore) return 0.0;
+  if ((highLen - bagDistance(queryCmp, sourceCmp)) / highLen < minScore) return 0.0;
+  const score = (containsCJK(queryCmp) || queryCmp.indexOf(' ') === -1)
+    ? editDistanceScore(queryCmp, sourceCmp, minScore)
+    : _wordLevelScore(queryCmp, sourceCmp, minScore);
   return score >= minScore ? score : 0.0;
 }
 
 // ============================================================
-// TM Operations
+// TM Operations — Felix-faithful (refcount, dedup, delete)
 // ============================================================
 
-function tmLookup(query, minScore) {
-  if (!query || query.trim() === '') return [];
-
-  const settings = getSettings();
-  if (minScore === undefined) minScore = settings.minScore;
-
-  const queryCmp = makeCmp(query);
+function _loadTMData() {
   const sheet = _getTMSheet();
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) return [];
+  const data = sheet.getRange(2, 1, lastRow - 1, TM_COL_COUNT).getValues();
+  // Skip any row that looks like a header (source_cmp column = 'source_cmp')
+  return data.filter(r => r[0] && String(r[0]) !== 'source' && String(r[3]) !== 'source_cmp');
+}
 
-  const data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+/**
+ * Add to TM with deduplication (Felix behavior).
+ * If source+target already exist: increment refcount and update modified date.
+ * If source exists with different target: add as new entry.
+ * Otherwise: add new entry.
+ */
+function addToTM(source, target, context) {
+  if (!source || !target) return { action: 'none' };
+
+  const sheet = _getTMSheet();
+  const lastRow = sheet.getLastRow();
+  const sourceCmp = makeCmp(source);
+  const targetCmp = makeCmp(target);
+  const now = new Date().toISOString();
+
+  // Check for existing duplicate
+  if (lastRow > 1) {
+    const data = sheet.getRange(2, 1, lastRow - 1, TM_COL_COUNT).getValues();
+    for (let i = 0; i < data.length; i++) {
+      const existCmp = data[i][TM_COLS.CMP - 1] || makeCmp(String(data[i][0]));
+      if (existCmp === sourceCmp && makeCmp(String(data[i][1])) === targetCmp) {
+        // Duplicate found — increment refcount, update modified date
+        const row = i + 2;
+        const oldRefcount = Number(data[i][TM_COLS.REFCOUNT - 1]) || 0;
+        sheet.getRange(row, TM_COLS.REFCOUNT).setValue(oldRefcount + 1);
+        sheet.getRange(row, TM_COLS.MODIFIED).setValue(now);
+        return { action: 'refcount', refcount: oldRefcount + 1, row };
+      }
+    }
+  }
+
+  // New entry
+  const nextRow = lastRow + 1;
+  sheet.getRange(nextRow, 1, 1, TM_COL_COUNT).setValues([[
+    source, target, context || '', sourceCmp,
+    0,     // refcount
+    0,     // reliability
+    '',    // validated
+    now,   // created
+    now,   // modified
+  ]]);
+  return { action: 'added', row: nextRow };
+}
+
+/**
+ * Bulk add with deduplication.
+ * Uses in-memory dedup map for speed.
+ */
+function addToTMBulk(pairs) {
+  if (!pairs || !pairs.length) return { added: 0, updated: 0 };
+
+  const sheet = _getTMSheet();
+  const lastRow = sheet.getLastRow();
+  const now = new Date().toISOString();
+
+  // Build existing index: key = sourceCmp + '|||' + targetCmp → row index
+  const existingIndex = {};
+  let existingData = [];
+  if (lastRow > 1) {
+    existingData = sheet.getRange(2, 1, lastRow - 1, TM_COL_COUNT).getValues();
+    for (let i = 0; i < existingData.length; i++) {
+      const sCmp = existingData[i][TM_COLS.CMP - 1] || makeCmp(String(existingData[i][0]));
+      const tCmp = makeCmp(String(existingData[i][1]));
+      existingIndex[sCmp + '|||' + tCmp] = i;
+    }
+  }
+
+  const newRows = [];
+  const refcountUpdates = []; // [{row, newRefcount}]
+  let added = 0, updated = 0;
+
+  for (const [source, target, context] of pairs) {
+    const sCmp = makeCmp(source);
+    const tCmp = makeCmp(target);
+    const key = sCmp + '|||' + tCmp;
+
+    if (key in existingIndex) {
+      // Duplicate — queue refcount update
+      const idx = existingIndex[key];
+      const oldRef = Number(existingData[idx][TM_COLS.REFCOUNT - 1]) || 0;
+      refcountUpdates.push({ row: idx + 2, refcount: oldRef + 1 });
+      existingData[idx][TM_COLS.REFCOUNT - 1] = oldRef + 1; // update in-memory too
+      updated++;
+    } else {
+      newRows.push([source, target, context || '', sCmp, 0, 0, '', now, now]);
+      // Add to index to dedup within the batch itself
+      existingIndex[key] = -1; // mark as seen
+      added++;
+    }
+  }
+
+  // Batch write new rows
+  if (newRows.length > 0) {
+    const startRow = sheet.getLastRow() + 1;
+    sheet.getRange(startRow, 1, newRows.length, TM_COL_COUNT).setValues(newRows);
+  }
+
+  // Batch update refcounts
+  for (const upd of refcountUpdates) {
+    sheet.getRange(upd.row, TM_COLS.REFCOUNT).setValue(upd.refcount);
+    sheet.getRange(upd.row, TM_COLS.MODIFIED).setValue(now);
+  }
+
+  return { added, updated, total: getTMCount() };
+}
+
+function deleteTMEntry(rowIndex) {
+  // rowIndex is 0-based data index (row in sheet = rowIndex + 2)
+  const sheet = _getTMSheet();
+  sheet.deleteRow(rowIndex + 2);
+  return { deleted: true };
+}
+
+function clearTMPrompt() {
+  const ui = SpreadsheetApp.getUi();
+  if (ui.alert('Clear TM', _t('clearConfirm'), ui.ButtonSet.YES_NO) === ui.Button.YES) {
+    clearTM();
+  }
+}
+
+function clearTM() {
+  const sheet = _getTMSheet();
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.deleteRows(2, lastRow - 1);
+  }
+  // Ensure header row is correct after clear
+  sheet.getRange(1, 1, 1, TM_COL_COUNT).setValues([TM_HEADERS]);
+  sheet.setFrozenRows(1);
+}
+
+
+function getTMCount() {
+  return Math.max(0, _getTMSheet().getLastRow() - 1);
+}
+
+// ============================================================
+// TM Lookup
+// ============================================================
+
+function tmLookup(query, minScore) {
+  if (!query || !query.trim()) return [];
+  if (minScore === undefined) minScore = getSettings().minScore;
+  const queryCmp = makeCmp(query);
+  const data = _loadTMData();
   const matches = [];
 
   for (let i = 0; i < data.length; i++) {
-    const source = data[i][0];
-    const target = data[i][1];
-    const sourceCmp = data[i][3] || makeCmp(source);
-
+    const sourceCmp = data[i][TM_COLS.CMP - 1] || makeCmp(String(data[i][0]));
     const score = fuzzyMatchScore(queryCmp, sourceCmp, minScore);
     if (score >= minScore) {
       matches.push({
-        score: score,
-        source: source,
-        target: target,
+        score,
+        source: data[i][0],
+        target: data[i][1],
         context: data[i][2] || '',
-        row: i + 2,
+        refcount: Number(data[i][TM_COLS.REFCOUNT - 1]) || 0,
+        reliability: Number(data[i][TM_COLS.RELIABILITY - 1]) || 0,
+        validated: !!data[i][TM_COLS.VALIDATED - 1],
+        rowIndex: i,
       });
     }
   }
 
-  matches.sort((a, b) => b.score - a.score);
+  // Sort: score desc, then refcount desc (Felix behavior)
+  matches.sort((a, b) => b.score - a.score || b.refcount - a.refcount || b.reliability - a.reliability);
   return matches.slice(0, 20);
 }
 
 function tmLookupSelected() {
   const settings = getSettings();
   const sheet = SpreadsheetApp.getActiveSheet();
-  const cell = sheet.getActiveCell();
-  const sourceCol = settings.sourceCol.toUpperCase().charCodeAt(0) - 64;
-  const query = sheet.getRange(cell.getRow(), sourceCol).getValue();
-
-  if (!query) {
-    SpreadsheetApp.getUi().alert('Source cell is empty.');
-    return;
-  }
-
-  const matches = tmLookup(String(query), settings.minScore);
-  if (matches.length === 0) {
-    SpreadsheetApp.getUi().alert('No matches found.');
-    return;
-  }
-
-  // Show top match
+  const row = sheet.getActiveCell().getRow();
+  const query = String(sheet.getRange(row, _colNum(settings.sourceCol)).getValue());
+  if (!query.trim()) { SpreadsheetApp.getUi().alert(_t('emptySource')); return; }
+  const matches = tmLookup(query, settings.minScore);
+  if (!matches.length) { SpreadsheetApp.getUi().alert(_t('noMatch')); return; }
   const top = matches[0];
   const pct = Math.round(top.score * 100);
   const ui = SpreadsheetApp.getUi();
-  const result = ui.alert(
-    `TM Match: ${pct}%`,
-    `Source: ${top.source}\nTarget: ${top.target}\n\nInsert this translation?`,
-    ui.ButtonSet.YES_NO
-  );
-
-  if (result === ui.Button.YES) {
-    const targetCol = settings.targetCol.toUpperCase().charCodeAt(0) - 64;
-    sheet.getRange(cell.getRow(), targetCol).setValue(top.target);
+  if (ui.alert(`TM Match: ${pct}%`,
+    `Source: ${top.source}\nTarget: ${top.target}\n\n${_t('insertConfirm')}`,
+    ui.ButtonSet.YES_NO) === ui.Button.YES) {
+    sheet.getRange(row, _colNum(settings.targetCol)).setValue(top.target);
   }
-}
-
-function addToTM(source, target, context) {
-  if (!source || !target) return;
-  const sheet = _getTMSheet();
-  const sourceCmp = makeCmp(source);
-  sheet.appendRow([source, target, context || '', sourceCmp]);
 }
 
 function registerSelectionToTM() {
   const settings = getSettings();
   const sheet = SpreadsheetApp.getActiveSheet();
-  const cell = sheet.getActiveCell();
-  const row = cell.getRow();
-  const sourceCol = settings.sourceCol.toUpperCase().charCodeAt(0) - 64;
-  const targetCol = settings.targetCol.toUpperCase().charCodeAt(0) - 64;
-
-  const source = String(sheet.getRange(row, sourceCol).getValue()).trim();
-  const target = String(sheet.getRange(row, targetCol).getValue()).trim();
-
-  if (!source || !target) {
-    SpreadsheetApp.getUi().alert('Both source and target cells must have content.');
-    return;
-  }
-
+  const row = sheet.getActiveCell().getRow();
+  const maxCol = Math.max(_colNum(settings.sourceCol), _colNum(settings.targetCol));
+  const vals = sheet.getRange(row, 1, 1, maxCol).getValues()[0];
+  const source = String(vals[_colNum(settings.sourceCol) - 1]).trim();
+  const target = String(vals[_colNum(settings.targetCol) - 1]).trim();
+  if (!source || !target) { SpreadsheetApp.getUi().alert(_t('emptyBoth')); return; }
   addToTM(source, target);
-  SpreadsheetApp.getActiveSpreadsheet().toast(
-    `Registered: "${source.substring(0, 30)}..." → "${target.substring(0, 30)}..."`,
-    'Felix TM', 3
-  );
 }
 
 function buildTMFromSheetPrompt() {
   const ui = SpreadsheetApp.getUi();
-  const result = ui.alert(
-    'Build TM',
-    'Build Translation Memory from all rows in the active sheet?\n' +
-    'This will read the source and target columns defined in Settings.',
-    ui.ButtonSet.YES_NO
-  );
-  if (result === ui.Button.YES) {
-    buildTMFromSheet();
+  if (ui.alert('Build TM', _t('buildConfirm'), ui.ButtonSet.YES_NO) === ui.Button.YES) {
+    return buildTMFromSheet();
   }
 }
 
@@ -455,196 +524,166 @@ function buildTMFromSheet() {
   const settings = getSettings();
   const sheet = SpreadsheetApp.getActiveSheet();
   const lastRow = sheet.getLastRow();
-  const sourceCol = settings.sourceCol.toUpperCase().charCodeAt(0) - 64;
-  const targetCol = settings.targetCol.toUpperCase().charCodeAt(0) - 64;
-
-  const tmSheet = _getTMSheet();
-  let count = 0;
-  const batchRows = [];
-
-  for (let row = 2; row <= lastRow; row++) {
-    const source = String(sheet.getRange(row, sourceCol).getValue()).trim();
-    const target = String(sheet.getRange(row, targetCol).getValue()).trim();
-
-    if (source && target) {
-      batchRows.push([source, target, '', makeCmp(source)]);
-      count++;
-    }
+  if (lastRow <= 1) return { added: 0, updated: 0, total: 0 };
+  const srcCol = _colNum(settings.sourceCol);
+  const tgtCol = _colNum(settings.targetCol);
+  const maxCol = Math.max(srcCol, tgtCol);
+  const allData = sheet.getRange(2, 1, lastRow - 1, maxCol).getValues();
+  const pairs = [];
+  for (const row of allData) {
+    const source = String(row[srcCol - 1]).trim();
+    const target = String(row[tgtCol - 1]).trim();
+    if (source && target) pairs.push([source, target, '']);
   }
-
-  if (batchRows.length > 0) {
-    tmSheet.getRange(tmSheet.getLastRow() + 1, 1, batchRows.length, 4).setValues(batchRows);
-  }
-
-  SpreadsheetApp.getActiveSpreadsheet().toast(
-    `Added ${count} entries to TM (total: ${getTMCount()})`,
-    'Felix TM', 5
-  );
-}
-
-function setAndNext() {
-  // Called from sidebar - insert translation and move to next row
-  const settings = getSettings();
-  const sheet = SpreadsheetApp.getActiveSheet();
-  const cell = sheet.getActiveCell();
-  const nextRow = cell.getRow() + 1;
-  const sourceCol = settings.sourceCol.toUpperCase().charCodeAt(0) - 64;
-
-  // Move to next row's source cell
-  sheet.getRange(nextRow, sourceCol).activate();
+  return addToTMBulk(pairs);
 }
 
 // ============================================================
 // Glossary Operations
 // ============================================================
 
-function addToGlossary(term, translation, notes) {
-  if (!term || !translation) return;
-  const sheet = _getGlossarySheet();
-  sheet.appendRow([term, translation, notes || '', makeCmp(term)]);
-}
-
-function getGlossaryTerms() {
+function _loadGlossaryData() {
   const sheet = _getGlossarySheet();
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) return [];
-  return sheet.getRange(2, 1, lastRow - 1, 3).getValues().map(r => ({
-    term: r[0], translation: r[1], notes: r[2]
-  }));
+  return sheet.getRange(2, 1, lastRow - 1, GL_COL_COUNT).getValues();
 }
+
+function addToGlossary(term, translation, notes) {
+  if (!term || !translation) return;
+  const sheet = _getGlossarySheet();
+  const termCmp = makeCmp(term);
+
+  // Dedup check
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    const data = sheet.getRange(2, 1, lastRow - 1, GL_COL_COUNT).getValues();
+    for (let i = 0; i < data.length; i++) {
+      if ((data[i][3] || makeCmp(String(data[i][0]))) === termCmp &&
+          makeCmp(String(data[i][1])) === makeCmp(translation)) {
+        return { action: 'duplicate' };
+      }
+    }
+  }
+
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, GL_COL_COUNT)
+    .setValues([[term, translation, notes || '', termCmp]]);
+  return { action: 'added' };
+}
+
+function deleteGlossaryEntry(rowIndex) {
+  _getGlossarySheet().deleteRow(rowIndex + 2);
+  return { deleted: true };
+}
+
+function getGlossaryTerms() {
+  return _loadGlossaryData().map(r => ({ term: r[0], translation: r[1], notes: r[2] }));
+}
+
+function getGlossaryCount() { return Math.max(0, _getGlossarySheet().getLastRow() - 1); }
 
 function highlightGlossaryTerms() {
   const settings = getSettings();
   const sheet = SpreadsheetApp.getActiveSheet();
-  const sourceCol = settings.sourceCol.toUpperCase().charCodeAt(0) - 64;
+  const sourceCol = _colNum(settings.sourceCol);
   const lastRow = sheet.getLastRow();
-
+  if (lastRow <= 1) return { count: 0 };
   const terms = getGlossaryTerms();
-  if (terms.length === 0) {
-    SpreadsheetApp.getUi().alert('Glossary is empty.');
-    return;
+  if (!terms.length) { SpreadsheetApp.getUi().alert(_t('emptyGlossary')); return { count: 0 }; }
+  const termsLower = terms.map(t => t.term.toLowerCase());
+  const sourceRange = sheet.getRange(2, sourceCol, lastRow - 1, 1);
+  const sourceValues = sourceRange.getValues();
+  const backgrounds = sourceRange.getBackgrounds();
+  let count = 0;
+  for (let i = 0; i < sourceValues.length; i++) {
+    const text = String(sourceValues[i][0]).toLowerCase();
+    if (termsLower.some(t => text.includes(t))) { backgrounds[i][0] = '#FFF2CC'; count++; }
   }
-
-  let highlightCount = 0;
-  const yellow = SpreadsheetApp.newColor().setRgbColor('#FFF2CC').build();
-
-  for (let row = 2; row <= lastRow; row++) {
-    const cell = sheet.getRange(row, sourceCol);
-    const text = String(cell.getValue()).toLowerCase();
-
-    let found = false;
-    for (const entry of terms) {
-      if (text.includes(entry.term.toLowerCase())) {
-        found = true;
-        break;
-      }
-    }
-
-    if (found) {
-      cell.setBackground('#FFF2CC');
-      highlightCount++;
-    }
-  }
-
-  SpreadsheetApp.getActiveSpreadsheet().toast(
-    `Highlighted ${highlightCount} cells containing glossary terms.`,
-    'Felix TM', 5
-  );
+  sourceRange.setBackgrounds(backgrounds);
+  return { count };
 }
 
 function exportGlossaryToSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
   const terms = getGlossaryTerms();
-
-  if (terms.length === 0) {
-    SpreadsheetApp.getUi().alert('Glossary is empty.');
-    return;
-  }
-
+  if (!terms.length) { SpreadsheetApp.getUi().alert(_t('emptyGlossary')); return { count: 0 }; }
+  const ss = _ss();
   let exportSheet = ss.getSheetByName('Glossary Export');
   if (exportSheet) ss.deleteSheet(exportSheet);
   exportSheet = ss.insertSheet('Glossary Export');
-
-  exportSheet.appendRow(['Term', 'Translation', 'Notes']);
+  const rows = [['Term', 'Translation', 'Notes'], ...terms.map(t => [t.term, t.translation, t.notes])];
+  exportSheet.getRange(1, 1, rows.length, 3).setValues(rows);
   exportSheet.getRange(1, 1, 1, 3).setFontWeight('bold');
-
-  const rows = terms.map(t => [t.term, t.translation, t.notes]);
-  if (rows.length > 0) {
-    exportSheet.getRange(2, 1, rows.length, 3).setValues(rows);
-  }
-
   exportSheet.autoResizeColumns(1, 3);
   ss.setActiveSheet(exportSheet);
-
-  SpreadsheetApp.getActiveSpreadsheet().toast(
-    `Exported ${terms.length} glossary entries.`,
-    'Felix TM', 5
-  );
+  return { count: terms.length };
 }
 
 // ============================================================
-// API for Sidebar
+// Sidebar API
 // ============================================================
 
-function sidebarSearch(query, minScore, searchType) {
-  if (searchType === 'glossary') {
-    return glossaryLookup(query);
-  }
-  return tmLookup(query, minScore);
-}
-
-function glossaryLookup(query) {
-  const queryCmp = makeCmp(query);
-  const terms = getGlossaryTerms();
-  const matches = [];
-
-  for (const entry of terms) {
-    const termCmp = makeCmp(entry.term);
-    if (queryCmp.includes(termCmp) || termCmp.includes(queryCmp)) {
-      matches.push({
-        score: 1.0,
-        source: entry.term,
-        target: entry.translation,
-        context: entry.notes,
-      });
-    }
-  }
-  return matches;
-}
-
-function sidebarInsertTranslation(target, rowOffset) {
+function sidebarInsertTranslation(target) {
   const settings = getSettings();
   const sheet = SpreadsheetApp.getActiveSheet();
-  const cell = sheet.getActiveCell();
-  const targetCol = settings.targetCol.toUpperCase().charCodeAt(0) - 64;
-  const row = cell.getRow() + (rowOffset || 0);
+  const row = sheet.getActiveCell().getRow();
+  const srcCol = _colNum(settings.sourceCol);
+  const tgtCol = _colNum(settings.targetCol);
+  const source = String(sheet.getRange(row, srcCol).getValue());
 
-  sheet.getRange(row, targetCol).setValue(target);
+  // Write translation
+  sheet.getRange(row, tgtCol).setValue(target);
 
-  // Also register to TM
-  const sourceCol = settings.sourceCol.toUpperCase().charCodeAt(0) - 64;
-  const source = String(sheet.getRange(row, sourceCol).getValue());
-  if (source) {
-    addToTM(source, target);
-  }
+  // Register to TM (with dedup)
+  if (source) addToTM(source, target);
 
   // Move to next row
-  sheet.getRange(row + 1, sourceCol).activate();
-
-  return { nextSource: String(sheet.getRange(row + 1, sourceCol).getValue()) };
+  const nextRow = row + 1;
+  sheet.getRange(nextRow, srcCol).activate();
+  return { nextSource: String(sheet.getRange(nextRow, srcCol).getValue()) };
 }
 
 function sidebarGetCurrentSource() {
   const settings = getSettings();
   const sheet = SpreadsheetApp.getActiveSheet();
-  const cell = sheet.getActiveCell();
-  const sourceCol = settings.sourceCol.toUpperCase().charCodeAt(0) - 64;
-  return String(sheet.getRange(cell.getRow(), sourceCol).getValue());
+  return String(sheet.getRange(sheet.getActiveCell().getRow(), _colNum(settings.sourceCol)).getValue());
 }
 
 function getStats() {
-  return {
-    tmCount: getTMCount(),
-    glossaryCount: getGlossaryCount(),
-  };
+  return { tmCount: getTMCount(), glossaryCount: getGlossaryCount(), lang: getLang() };
+}
+
+// ============================================================
+// Benchmark — measure actual latency of different approaches
+// ============================================================
+
+/** Minimal no-op — measures pure google.script.run overhead */
+function benchNoop() { return 1; }
+
+/** Read from CacheService only */
+function benchCache() { return CacheService.getDocumentCache().get('felix_current_source') || ''; }
+
+/** Read from PropertiesService */
+function benchProps() { return PropertiesService.getDocumentProperties().getProperty('felixSettings') ? 1 : 0; }
+
+/** Read one cell */
+function benchCell() {
+  return String(SpreadsheetApp.getActiveSheet().getActiveCell().getValue());
+}
+
+/** Read one cell + write to cache */
+function benchCellAndCache() {
+  const val = String(SpreadsheetApp.getActiveSheet().getActiveCell().getValue());
+  CacheService.getDocumentCache().put('felix_current_source', val, 300);
+  return val;
+}
+
+/** Return all TM + glossary data for client-side search */
+function loadAllData() {
+  const tm = _loadTMData().map(r => [
+    String(r[0]), String(r[1]), String(r[2] || ''), String(r[3] || ''),
+    Number(r[TM_COLS.REFCOUNT - 1]) || 0,
+    Number(r[TM_COLS.RELIABILITY - 1]) || 0,
+  ]);
+  const gl = _loadGlossaryData().map(r => [String(r[0]), String(r[1]), String(r[2] || '')]);
+  return { tm, glossary: gl, lang: getLang() };
 }
