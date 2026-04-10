@@ -10,7 +10,11 @@
   let nameBoxEl = null;
   let debugMode = true;
 
+  const _logs = [];
   function log(...args) {
+    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    _logs.push(msg);
+    if (_logs.length > 50) _logs.shift();
     if (debugMode) console.log('[FelixTM]', ...args);
   }
 
@@ -149,6 +153,10 @@
     }
     if (msg.type === 'GET_CELL') {
       sendResponse({ value: getCellValue(), ref: getCellRef() });
+    }
+    if (msg.type === 'GET_LOGS') {
+      sendResponse({ logs: _logs.slice() });
+      return;
     }
     if (msg.type === 'DEBUG_DOM') {
       const bar = findFormulaBar();

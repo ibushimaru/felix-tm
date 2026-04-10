@@ -524,6 +524,18 @@ async function clearAllGlossary() {
   showToast('settings-toast', 'Glossary cleared');
 }
 
+async function showLogs() {
+  const el = document.getElementById('log-output');
+  el.style.display = 'block';
+  el.textContent = 'Loading...';
+  const resp = await sendBgPayload('GET_LOGS');
+  if (resp && resp.logs) {
+    el.textContent = resp.logs.join('\n') || '(no logs)';
+  } else {
+    el.textContent = '(no response from content script)';
+  }
+}
+
 function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
 function escH(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
@@ -539,6 +551,7 @@ document.getElementById('btn-add-gloss').addEventListener('click', () => addGlos
 document.getElementById('btn-export-tm').addEventListener('click', () => exportTSV());
 document.getElementById('btn-export-gloss').addEventListener('click', () => exportGlossaryTSV());
 document.getElementById('btn-save-settings').addEventListener('click', () => saveSettingsUI());
+document.getElementById('btn-show-logs').addEventListener('click', () => showLogs());
 document.getElementById('btn-clear-tm').addEventListener('click', () => clearAllTM());
 document.getElementById('btn-clear-gloss').addEventListener('click', () => clearAllGlossary());
 
