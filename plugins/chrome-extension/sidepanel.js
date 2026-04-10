@@ -185,14 +185,18 @@ function renderResults(matches, ms) {
     return;
   }
 
+  const query = lastSearchValue || '';
   el.innerHTML = matches.map((m, i) => {
     const pct = Math.round(m.score * 100);
     const cls = pct >= 90 ? 'score-high' : pct >= 70 ? 'score-mid' : 'score-low';
     const meta = m.refcount ? `used ${m.refcount}x` : '';
+    // Diff highlight: show differences between query and TM source
+    const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.source) : null;
+    const sourceDisplay = diff ? diff.sourceHtml : escH(m.source);
     return `<div class="match" data-idx="${i}" data-target="${esc(m.target)}">
       <span class="score ${cls}">${pct}%</span>
       ${ms && i === 0 ? `<span style="float:right;font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
-      <div class="match-source">${escH(m.source)}</div>
+      <div class="match-source">${sourceDisplay}</div>
       <div class="match-target">${escH(m.target)}</div>
       ${meta ? `<div class="match-meta">${meta}</div>` : ''}
     </div>`;

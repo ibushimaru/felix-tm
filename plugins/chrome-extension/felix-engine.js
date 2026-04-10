@@ -132,8 +132,106 @@ const FelixEngine = (() => {
     });
   }
 
+  // === Diff Highlighting (backtrace from edit distance matrix) ===
+
+  /**
+   * Compute word-level diff between query and TM source.
+   * Returns HTML strings with colored spans:
+   *   green = match, yellow = substitution, red = insertion/deletion
+   *
+   * For CJK: character-level diff
+   * For Western: word-level diff
+   */
+  function diffHighlight(query, tmSource) {
+    if (!query || !tmSource) return { queryHtml: esc(query), sourceHtml: esc(tmSource) };
+    if (query === tmSource) return { queryHtml: `<span class="diff-match">${esc(query)}</span>`, sourceHtml: `<span class="diff-match">${esc(tmSource)}</span>` };
+
+    const useChar = containsCJK(query) || query.indexOf(' ') === -1;
+    const qTokens = useChar ? Array.from(query) : tokenize(query);
+    const sTokens = useChar ? Array.from(tmSource) : tokenize(tmSource);
+    const sep = useChar ? '' : ' ';
+
+    // Build full DP matrix for backtrace
+    const n = qTokens.length, m = sTokens.length;
+    const dp = [];
+    for (let i = 0; i <= n; i++) {
+      dp[i] = new Array(m + 1);
+      dp[i][0] = i;
+    }
+    for (let j = 0; j <= m; j++) dp[0][j] = j;
+
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        const cost = (useChar ? qTokens[i-1] === sTokens[j-1] : qTokens[i-1].toLowerCase() === sTokens[j-1].toLowerCase()) ? 0 : 1;
+        dp[i][j] = Math.min(
+          dp[i-1][j] + 1,     // delete from query
+          dp[i][j-1] + 1,     // insert from source
+          dp[i-1][j-1] + cost  // match/substitute
+        );
+      }
+    }
+
+    // Backtrace
+    const ops = []; // {type: 'match'|'sub'|'del'|'ins', qTok, sTok}
+    let i = n, j = m;
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0) {
+        const match = useChar ? qTokens[i-1] === sTokens[j-1] : qTokens[i-1].toLowerCase() === sTokens[j-1].toLowerCase();
+        if (match && dp[i][j] === dp[i-1][j-1]) {
+          ops.unshift({ type: 'match', qTok: qTokens[i-1], sTok: sTokens[j-1] });
+          i--; j--; continue;
+        }
+        if (dp[i][j] === dp[i-1][j-1] + 1) {
+          ops.unshift({ type: 'sub', qTok: qTokens[i-1], sTok: sTokens[j-1] });
+          i--; j--; continue;
+        }
+      }
+      if (i > 0 && dp[i][j] === dp[i-1][j] + 1) {
+        ops.unshift({ type: 'del', qTok: qTokens[i-1], sTok: null });
+        i--; continue;
+      }
+      if (j > 0 && dp[i][j] === dp[i][j-1] + 1) {
+        ops.unshift({ type: 'ins', qTok: null, sTok: sTokens[j-1] });
+        j--; continue;
+      }
+      // Fallback
+      if (i > 0) { ops.unshift({ type: 'del', qTok: qTokens[--i], sTok: null }); }
+      else if (j > 0) { ops.unshift({ type: 'ins', qTok: null, sTok: sTokens[--j] }); }
+    }
+
+    // Build HTML
+    let qParts = [], sParts = [];
+    for (const op of ops) {
+      switch (op.type) {
+        case 'match':
+          qParts.push(`<span class="diff-match">${esc(op.qTok)}</span>`);
+          sParts.push(`<span class="diff-match">${esc(op.sTok)}</span>`);
+          break;
+        case 'sub':
+          qParts.push(`<span class="diff-sub">${esc(op.qTok)}</span>`);
+          sParts.push(`<span class="diff-sub">${esc(op.sTok)}</span>`);
+          break;
+        case 'del':
+          qParts.push(`<span class="diff-del">${esc(op.qTok)}</span>`);
+          break;
+        case 'ins':
+          sParts.push(`<span class="diff-ins">${esc(op.sTok)}</span>`);
+          break;
+      }
+    }
+
+    return {
+      queryHtml: qParts.join(sep),
+      sourceHtml: sParts.join(sep),
+    };
+  }
+
+  function esc(s) {
+    return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
   // === Public API ===
-  return { makeCmp, search, glossarySearch, fuzzyScore, edScore };
+  return { makeCmp, search, glossarySearch, fuzzyScore, edScore, diffHighlight, tokenize, containsCJK };
 })();
 
 // Make available in different contexts
