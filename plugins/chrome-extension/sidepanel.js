@@ -113,15 +113,6 @@ async function init() {
     });
   });
 
-  // Setup file drop
-  const dropZone = document.getElementById('drop-zone');
-  const fileInput = document.getElementById('file-input');
-  dropZone.addEventListener('click', () => fileInput.click());
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#1a73e8'; });
-  dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = '#dadce0'; });
-  dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.style.borderColor = '#dadce0'; handleFile(e.dataTransfer.files[0]); });
-  fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
-
   // Listen for cell changes from content script
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'CELL_CHANGED') {
@@ -498,9 +489,29 @@ async function clearAllGlossary() {
 function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
 function escH(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-// Score change triggers re-search
+// ============================================================
+// Event Bindings (no inline onclick — required by Manifest V3 CSP)
+// ============================================================
+
 document.getElementById('min-score').addEventListener('change', () => doSearch());
 document.getElementById('search-type').addEventListener('change', () => doSearch());
+document.getElementById('btn-register').addEventListener('click', () => registerTM());
+document.getElementById('btn-bulk').addEventListener('click', () => bulkImport());
+document.getElementById('btn-add-gloss').addEventListener('click', () => addGlossary());
+document.getElementById('btn-export-tm').addEventListener('click', () => exportTSV());
+document.getElementById('btn-export-gloss').addEventListener('click', () => exportGlossaryTSV());
+document.getElementById('btn-save-settings').addEventListener('click', () => saveSettingsUI());
+document.getElementById('btn-clear-tm').addEventListener('click', () => clearAllTM());
+document.getElementById('btn-clear-gloss').addEventListener('click', () => clearAllGlossary());
+
+// File drop zone
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#1a73e8'; });
+dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = '#dadce0'; });
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.style.borderColor = '#dadce0'; handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
 
 // Init
 init();

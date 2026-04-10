@@ -97,13 +97,13 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
   <h3 id="h-register">Register to TM</h3>
   <input type="text" id="reg-source" placeholder="Source">
   <input type="text" id="reg-target" placeholder="Target">
-  <button class="btn btn-primary" onclick="registerTM()" style="margin-bottom:12px" id="btn-register">Register</button>
+  <button class="btn btn-primary" style="margin-bottom:12px" id="btn-register">Register</button>
   <div id="reg-toast"></div>
   <hr>
   <h3 id="h-build">Build TM from Sheet</h3>
   <p style="font-size:12px;color:#5f6368;margin-bottom:8px" id="p-bulk-desc">Paste TSV data (source[TAB]target per line) to bulk import.</p>
   <textarea id="bulk-data" rows="5" style="width:100%;font-size:12px;border:1px solid #dadce0;border-radius:4px;padding:8px;margin-bottom:8px" placeholder="source\ttarget\nsource\ttarget"></textarea>
-  <button class="btn btn-outline" onclick="bulkImport()" style="width:100%" id="btn-bulk">Bulk Import</button>
+  <button class="btn btn-outline" style="width:100%" id="btn-bulk">Bulk Import</button>
 </div>
 
 <!-- Glossary -->
@@ -111,7 +111,7 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
   <h3 id="h-add-term">Add Term</h3>
   <input type="text" id="gloss-term" placeholder="Term (source)">
   <input type="text" id="gloss-trans" placeholder="Translation">
-  <button class="btn btn-primary" onclick="addGlossary()" style="width:100%;margin-bottom:12px" id="btn-add-gloss">Add</button>
+  <button class="btn btn-primary" style="width:100%;margin-bottom:12px" id="btn-add-gloss">Add</button>
   <div id="gloss-toast"></div>
   <hr>
   <div id="gloss-list"></div>
@@ -128,8 +128,8 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
   <div id="import-toast" style="margin-top:8px"></div>
   <hr>
   <h3 id="h-export">Export</h3>
-  <button class="btn btn-outline" onclick="exportTSV()" style="width:100%;margin-bottom:8px" id="btn-export-tm">Export TM as TSV</button>
-  <button class="btn btn-outline" onclick="exportGlossaryTSV()" style="width:100%" id="btn-export-gloss">Export Glossary as TSV</button>
+  <button class="btn btn-outline" style="width:100%;margin-bottom:8px" id="btn-export-tm">Export TM as TSV</button>
+  <button class="btn btn-outline" style="width:100%" id="btn-export-gloss">Export Glossary as TSV</button>
 </div>
 
 <!-- Settings -->
@@ -156,13 +156,13 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
     <option value="0.8">80%</option>
   </select>
 
-  <button class="btn btn-primary" onclick="saveSettingsUI()" style="margin-top:12px" id="btn-save-settings">Save / 保存</button>
+  <button class="btn btn-primary" style="margin-top:12px" id="btn-save-settings">Save / 保存</button>
   <div id="settings-toast" style="margin-top:8px"></div>
 
   <hr>
   <h3 style="color:#ea4335">Danger Zone</h3>
-  <button class="btn btn-outline" onclick="clearAllTM()" style="width:100%;margin-bottom:8px;color:#ea4335;border-color:#ea4335" id="btn-clear-tm">Clear TM</button>
-  <button class="btn btn-outline" onclick="clearAllGlossary()" style="width:100%;color:#ea4335;border-color:#ea4335" id="btn-clear-gloss">Clear Glossary</button>
+  <button class="btn btn-outline" style="width:100%;margin-bottom:8px;color:#ea4335;border-color:#ea4335" id="btn-clear-tm">Clear TM</button>
+  <button class="btn btn-outline" style="width:100%;color:#ea4335;border-color:#ea4335" id="btn-clear-gloss">Clear Glossary</button>
 </div>
 
 <script src="felix-engine.js"></script>
