@@ -67,21 +67,16 @@
   }
 
   function getCellValue() {
-    if (!formulaBarEl) formulaBarEl = findFormulaBar();
-    if (!formulaBarEl) return '';
-
-    // Try different ways to read the value
-    const val = formulaBarEl.textContent
-      || formulaBarEl.innerText
-      || formulaBarEl.value
-      || '';
-    return val.trim();
+    // Don't cache — re-find every time (DOM can change)
+    const bar = findFormulaBar();
+    if (!bar) return '';
+    return (bar.textContent || bar.innerText || bar.value || '').trim();
   }
 
   function getCellRef() {
-    if (!nameBoxEl) nameBoxEl = findNameBox();
-    if (!nameBoxEl) return '';
-    return (nameBoxEl.value || nameBoxEl.textContent || '').trim();
+    const box = findNameBox();
+    if (!box) return '';
+    return (box.value || box.textContent || '').trim();
   }
 
   function checkForChanges() {
