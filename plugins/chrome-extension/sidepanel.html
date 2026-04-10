@@ -63,14 +63,14 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
 </div>
 
 <!-- Live cell preview -->
-<div class="cell-label">Active Cell <span id="cell-ref"></span></div>
+<div class="cell-label"><span id="lbl-active-cell">Active Cell</span> <span id="cell-ref"></span></div>
 <div class="cell-preview" id="cell-value">—</div>
 
 <div class="tabs">
-  <div class="tab active" data-panel="search">Search</div>
-  <div class="tab" data-panel="register">Register</div>
-  <div class="tab" data-panel="glossary">Glossary</div>
-  <div class="tab" data-panel="import">Import</div>
+  <div class="tab active" data-panel="search" id="tab-search">Search</div>
+  <div class="tab" data-panel="register" id="tab-register">Register</div>
+  <div class="tab" data-panel="glossary" id="tab-glossary">Glossary</div>
+  <div class="tab" data-panel="import" id="tab-import">Import</div>
   <div class="tab" data-panel="settings">⚙</div>
 </div>
 
@@ -89,29 +89,29 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
       <option value="glossary">Glossary</option>
     </select>
   </div>
-  <div id="results"><div class="empty">Select a cell to auto-search</div></div>
+  <div id="results"><div class="empty" id="empty-search">Select a cell to auto-search</div></div>
 </div>
 
 <!-- Register -->
 <div id="register" class="panel">
-  <h3>Register to TM</h3>
+  <h3 id="h-register">Register to TM</h3>
   <input type="text" id="reg-source" placeholder="Source">
   <input type="text" id="reg-target" placeholder="Target">
-  <button class="btn btn-primary" onclick="registerTM()" style="margin-bottom:12px">Register</button>
+  <button class="btn btn-primary" onclick="registerTM()" style="margin-bottom:12px" id="btn-register">Register</button>
   <div id="reg-toast"></div>
   <hr>
-  <h3>Build TM from Sheet</h3>
-  <p style="font-size:12px;color:#5f6368;margin-bottom:8px">Paste TSV data (source[TAB]target per line) to bulk import.</p>
+  <h3 id="h-build">Build TM from Sheet</h3>
+  <p style="font-size:12px;color:#5f6368;margin-bottom:8px" id="p-bulk-desc">Paste TSV data (source[TAB]target per line) to bulk import.</p>
   <textarea id="bulk-data" rows="5" style="width:100%;font-size:12px;border:1px solid #dadce0;border-radius:4px;padding:8px;margin-bottom:8px" placeholder="source\ttarget\nsource\ttarget"></textarea>
-  <button class="btn btn-outline" onclick="bulkImport()" style="width:100%">Bulk Import</button>
+  <button class="btn btn-outline" onclick="bulkImport()" style="width:100%" id="btn-bulk">Bulk Import</button>
 </div>
 
 <!-- Glossary -->
 <div id="glossary" class="panel">
-  <h3>Add Term</h3>
+  <h3 id="h-add-term">Add Term</h3>
   <input type="text" id="gloss-term" placeholder="Term (source)">
   <input type="text" id="gloss-trans" placeholder="Translation">
-  <button class="btn btn-primary" onclick="addGlossary()" style="width:100%;margin-bottom:12px">Add</button>
+  <button class="btn btn-primary" onclick="addGlossary()" style="width:100%;margin-bottom:12px" id="btn-add-gloss">Add</button>
   <div id="gloss-toast"></div>
   <hr>
   <div id="gloss-list"></div>
@@ -119,17 +119,17 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
 
 <!-- Import -->
 <div id="import" class="panel">
-  <h3>Import TM</h3>
-  <p style="font-size:12px;color:#5f6368;margin-bottom:8px">Drop a TMX or TSV file to import.</p>
+  <h3 id="h-import">Import TM</h3>
+  <p style="font-size:12px;color:#5f6368;margin-bottom:8px" id="p-import-desc">Drop a TMX or TSV file to import.</p>
   <div id="drop-zone" style="border:2px dashed #dadce0;border-radius:8px;padding:30px;text-align:center;color:#9aa0a6;cursor:pointer">
-    Drop file here or click to browse
+    <span id="drop-text">Drop file here or click to browse</span>
     <input type="file" id="file-input" accept=".tmx,.tsv,.txt,.csv" style="display:none">
   </div>
   <div id="import-toast" style="margin-top:8px"></div>
   <hr>
-  <h3>Export</h3>
-  <button class="btn btn-outline" onclick="exportTSV()" style="width:100%;margin-bottom:8px">Export TM as TSV</button>
-  <button class="btn btn-outline" onclick="exportGlossaryTSV()" style="width:100%">Export Glossary as TSV</button>
+  <h3 id="h-export">Export</h3>
+  <button class="btn btn-outline" onclick="exportTSV()" style="width:100%;margin-bottom:8px" id="btn-export-tm">Export TM as TSV</button>
+  <button class="btn btn-outline" onclick="exportGlossaryTSV()" style="width:100%" id="btn-export-gloss">Export Glossary as TSV</button>
 </div>
 
 <!-- Settings -->

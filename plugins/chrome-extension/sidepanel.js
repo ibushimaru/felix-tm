@@ -52,32 +52,42 @@ function t(key) {
 }
 
 function applyLang() {
-  const $ = id => document.getElementById(id);
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  const ph = (id, text) => { const el = document.getElementById(id); if (el) el.placeholder = text; };
+
   // Tabs
-  document.querySelectorAll('.tab').forEach(tab => {
-    const p = tab.dataset.panel;
-    if (I18N.en[p]) tab.textContent = t(p);
-  });
+  set('tab-search', t('search'));
+  set('tab-register', t('register'));
+  set('tab-glossary', t('glossary'));
+  set('tab-import', t('import'));
   // Cell preview
-  $('cell-ref')?.parentElement && (document.querySelector('.cell-label').childNodes[0].textContent = t('activeCell') + ' ');
+  set('lbl-active-cell', t('activeCell'));
   // Search
-  const emptyEl = document.querySelector('#results .empty');
-  if (emptyEl) emptyEl.textContent = t('selectCell');
+  set('empty-search', t('selectCell'));
   // Register
-  if ($('reg-source')) $('reg-source').placeholder = t('source');
-  if ($('reg-target')) $('reg-target').placeholder = t('target');
-  document.querySelectorAll('#register h3')[0] && (document.querySelectorAll('#register h3')[0].textContent = t('registerToTM'));
-  if ($('bulk-data')) $('bulk-data').previousElementSibling.textContent = t('bulkDesc');
+  set('h-register', t('registerToTM'));
+  ph('reg-source', t('source'));
+  ph('reg-target', t('target'));
+  set('btn-register', t('register'));
+  set('h-build', t('buildTM'));
+  set('p-bulk-desc', t('bulkDesc'));
+  set('btn-bulk', t('bulkImport'));
   // Glossary
-  if ($('gloss-term')) $('gloss-term').placeholder = t('termSrc');
-  if ($('gloss-trans')) $('gloss-trans').placeholder = t('termTgt');
+  set('h-add-term', t('addTerm'));
+  ph('gloss-term', t('termSrc'));
+  ph('gloss-trans', t('termTgt'));
+  set('btn-add-gloss', t('add'));
   // Import
-  if ($('drop-zone')) $('drop-zone').childNodes[0].textContent = t('dropFile');
+  set('h-import', t('importTM'));
+  set('drop-text', t('dropFile'));
+  set('h-export', t('export'));
+  set('btn-export-tm', t('exportTM'));
+  set('btn-export-gloss', t('exportGloss'));
   // Settings
-  if ($('h-settings')) $('h-settings').textContent = t('settings');
-  if ($('btn-save-settings')) $('btn-save-settings').textContent = t('save');
-  if ($('btn-clear-tm')) $('btn-clear-tm').textContent = t('clearTM');
-  if ($('btn-clear-gloss')) $('btn-clear-gloss').textContent = t('clearGloss');
+  set('h-settings', t('settings'));
+  set('btn-save-settings', t('save'));
+  set('btn-clear-tm', t('clearTM'));
+  set('btn-clear-gloss', t('clearGloss'));
 }
 
 // ============================================================
