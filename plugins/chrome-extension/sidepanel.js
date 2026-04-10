@@ -120,12 +120,23 @@ async function init() {
     }
   });
 
-  // Get initial cell value
+  // Debug: check content script status
   try {
-    const resp = await sendBgAsync('GET_CURRENT_CELL');
-    if (resp && resp.value) {
-      onCellChanged(resp.value, resp.ref);
-    }
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'DEBUG_DOM' }, (resp) => {
+          const el = document.getElementById('debug-info');
+          if (chrome.runtime.lastError) {
+            el.textContent = 'Content script not connected: ' + chrome.runtime.lastError.message;
+          } else if (resp) {
+            el.textContent = `formulaBar:${resp.formulaBar} nameBox:${resp.nameBox} editables:${resp.editables} val:"${resp.cellValue}" ref:"${resp.cellRef}"`;
+            if (resp.cellValue) onCellChanged(resp.cellValue, resp.cellRef);
+          } else {
+            el.textContent = 'No response from content script';
+          }
+        });
+      }
+    });
   } catch (_) {}
 }
 

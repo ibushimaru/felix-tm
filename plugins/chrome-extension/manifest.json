@@ -5,6 +5,7 @@
   "description": "Translation Memory for Google Sheets & Excel Online — real-time fuzzy matching",
   "permissions": [
     "activeTab",
+    "tabs",
     "sidePanel",
     "storage",
     "clipboardRead"
