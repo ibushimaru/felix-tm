@@ -188,20 +188,12 @@
   }
 
   /**
-   * Get the active sheet's gid and convert to sheet name.
-   */
-  function getSheetGid() {
-    const m = location.hash.match(/gid=(\d+)/);
-    return m ? m[1] : '0';
-  }
-
-  /**
-   * Write to a specific cell via Google Sheets internal API (same origin).
-   * No OAuth needed — uses the session cookie.
-   * Then move the active cell to the next row.
+   * Write to target cell via background (Sheets API with OAuth token).
+   * No cell navigation needed — writes directly to the target cell.
+   * Then moves cursor to next source row.
    */
   async function writeToTargetAndAdvance(value, targetCol) {
-    const ref = getCellRef(); // e.g. "A3"
+    const ref = getCellRef();
     if (!ref) { log('No cell ref'); return; }
 
     const match = ref.match(/([A-Z]+)(\d+)/i);
@@ -209,45 +201,29 @@
 
     const sourceCol = match[1];
     const rowNum = parseInt(match[2]);
-    const targetRef = targetCol + rowNum;          // B3
-    const nextSourceRef = sourceCol + (rowNum + 1); // A4
+    const targetRef = targetCol + rowNum;
+    const nextSourceRef = sourceCol + (rowNum + 1);
 
     const ssId = getSpreadsheetId();
     if (!ssId) { log('Cannot find spreadsheet ID'); return; }
 
-    log('Writing', targetRef, '=', value, '(no navigation)');
+    log('Writing', targetRef, '=', value);
 
-    // Use the Google Sheets Values API via fetch with session cookies
-    try {
-      const range = encodeURIComponent(targetRef);
-      const resp = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${ssId}/values/${range}?valueInputOption=USER_ENTERED`,
-        {
-          method: 'PUT',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ values: [[value]] }),
-        }
-      );
-
-      if (!resp.ok) {
-        // Sheets API with cookies might not work — fall back to token from extension
-        log('Sheets API cookie auth failed:', resp.status, await resp.text());
-        // Try via background with chrome.identity
-        chrome.runtime.sendMessage({
-          type: 'SHEETS_API_WRITE',
-          spreadsheetId: ssId,
-          range: targetRef,
-          value: value,
-        });
+    // Write via background script (uses chrome.identity OAuth token)
+    chrome.runtime.sendMessage({
+      type: 'SHEETS_API_WRITE',
+      spreadsheetId: ssId,
+      range: targetRef,
+      value: value,
+    }, (resp) => {
+      if (resp && resp.error) {
+        log('Write failed:', resp.error);
       } else {
-        log('Written via Sheets API');
+        log('Written OK:', targetRef);
       }
-    } catch (err) {
-      log('Fetch error:', err);
-    }
+    });
 
-    // Move to next row source cell via name box
+    // Move to next source row via name box
     const nameBox = findNameBox();
     if (nameBox) {
       nameBox.focus();
