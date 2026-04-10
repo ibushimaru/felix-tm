@@ -147,8 +147,12 @@
     log('Name box result:', !!findNameBox());
   }, 5000);
 
-  // Listen for messages from side panel
+  // Listen for messages from side panel / background
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg.type === 'PING') {
+      sendResponse({ pong: true });
+      return;
+    }
     if (msg.type === 'WRITE_CELL') {
       writeToCell(msg.value);
       sendResponse({ ok: true });

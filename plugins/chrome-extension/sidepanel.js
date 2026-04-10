@@ -120,24 +120,27 @@ async function init() {
     }
   });
 
-  // Debug: check content script status
+  // Auto-inject content script and connect
+  const dbg = document.getElementById('debug-info');
   try {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs && tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: 'DEBUG_DOM' }, (resp) => {
-          const el = document.getElementById('debug-info');
-          if (chrome.runtime.lastError) {
-            el.textContent = 'Content script not connected: ' + chrome.runtime.lastError.message;
-          } else if (resp) {
-            el.textContent = `formulaBar:${resp.formulaBar} nameBox:${resp.nameBox} editables:${resp.editables} val:"${resp.cellValue}" ref:"${resp.cellRef}"`;
-            if (resp.cellValue) onCellChanged(resp.cellValue, resp.cellRef);
-          } else {
-            el.textContent = 'No response from content script';
-          }
-        });
-      }
-    });
-  } catch (_) {}
+    dbg.textContent = 'Connecting...';
+    const result = await sendBg('ENSURE_CONTENT_SCRIPT');
+    if (result && result.injected) {
+      dbg.textContent = `Connected (${result.method})`;
+      // Wait a moment for content script to initialize, then get cell
+      setTimeout(async () => {
+        const resp = await sendBgPayload('DEBUG_DOM');
+        if (resp) {
+          dbg.textContent = `bar:${resp.formulaBar} box:${resp.nameBox} val:"${(resp.cellValue||'').substring(0,20)}" ref:${resp.cellRef}`;
+          if (resp.cellValue) onCellChanged(resp.cellValue, resp.cellRef);
+        }
+      }, 1000);
+    } else {
+      dbg.textContent = `Injection failed: ${result?.error || 'unknown'}`;
+    }
+  } catch (e) {
+    dbg.textContent = `Error: ${e.message}`;
+  }
 }
 
 // ============================================================
@@ -464,9 +467,10 @@ function sendBg(type, data) {
   });
 }
 
-function sendBgAsync(type) {
+/** Send a message to the content script via background relay */
+function sendBgPayload(contentType) {
   return new Promise(resolve => {
-    chrome.runtime.sendMessage({ type }, resolve);
+    chrome.runtime.sendMessage({ type: 'TO_CONTENT', payload: { type: contentType } }, resolve);
   });
 }
 
