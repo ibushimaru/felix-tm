@@ -1,0 +1,237 @@
+<!-- This HTML is embedded as a string constant SIDEBAR_HTML in FelixTM.js -->
+<!-- Copy the content between the <html> tags into the SIDEBAR_HTML variable -->
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Google Sans', Roboto, Arial, sans-serif; font-size: 13px; color: #202124; padding: 12px; }
+h3 { font-size: 14px; font-weight: 500; margin-bottom: 8px; color: #1a73e8; }
+
+.tabs { display: flex; border-bottom: 1px solid #dadce0; margin-bottom: 12px; }
+.tab { padding: 8px 12px; cursor: pointer; font-size: 12px; color: #5f6368; border-bottom: 2px solid transparent; }
+.tab:hover { color: #202124; }
+.tab.active { color: #1a73e8; border-bottom-color: #1a73e8; }
+.panel { display: none; }
+.panel.active { display: block; }
+
+input, select { width: 100%; padding: 8px; border: 1px solid #dadce0; border-radius: 4px; font-size: 13px; margin-bottom: 8px; }
+input:focus, select:focus { outline: none; border-color: #1a73e8; }
+.btn { display: inline-block; padding: 8px 16px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; }
+.btn-primary { background: #1a73e8; color: #fff; }
+.btn-primary:hover { background: #1557b0; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn-outline { background: #fff; color: #1a73e8; border: 1px solid #dadce0; }
+.btn-outline:hover { background: #f1f3f4; }
+.row { display: flex; gap: 6px; margin-bottom: 8px; }
+.row > * { flex: 1; }
+
+.match { background: #f8f9fa; border: 1px solid #e8eaed; border-radius: 8px; padding: 10px; margin-bottom: 8px; cursor: pointer; }
+.match:hover { border-color: #1a73e8; background: #e8f0fe; }
+.score { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; color: #fff; margin-bottom: 4px; }
+.score-high { background: #34a853; }
+.score-mid { background: #f9ab00; }
+.score-low { background: #ea4335; }
+.match-source { color: #5f6368; font-size: 12px; margin-bottom: 2px; }
+.match-target { color: #202124; font-size: 13px; }
+.empty { text-align: center; color: #80868b; padding: 24px 8px; }
+.status { background: #e6f4ea; color: #137333; padding: 8px; border-radius: 4px; font-size: 12px; margin-bottom: 8px; display: none; }
+.badge { background: #e8eaed; color: #5f6368; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+  <span style="font-weight:600; font-size:15px;">Felix TM</span>
+  <span class="badge" id="stats-badge">-</span>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-panel="search">Search</div>
+  <div class="tab" data-panel="register">Register</div>
+  <div class="tab" data-panel="glossary">Glossary</div>
+</div>
+
+<!-- Search Panel -->
+<div id="search" class="panel active">
+  <input type="text" id="query" placeholder="Enter text or click Get Source">
+  <div class="row">
+    <select id="min-score">
+      <option value="0.5">50%</option>
+      <option value="0.6">60%</option>
+      <option value="0.7" selected>70%</option>
+      <option value="0.8">80%</option>
+      <option value="0.9">90%</option>
+    </select>
+    <select id="search-type">
+      <option value="fuzzy">Fuzzy</option>
+      <option value="glossary">Glossary</option>
+    </select>
+  </div>
+  <div class="row">
+    <button class="btn btn-outline" onclick="getSource()">Get Source</button>
+    <button class="btn btn-primary" onclick="doSearch()">Search</button>
+  </div>
+  <div id="results">
+    <div class="empty">Search the TM or click Get Source</div>
+  </div>
+</div>
+
+<!-- Register Panel -->
+<div id="register" class="panel">
+  <h3>Register to TM</h3>
+  <label style="font-size:12px;color:#5f6368">Source</label>
+  <input type="text" id="reg-source" placeholder="Source text">
+  <label style="font-size:12px;color:#5f6368">Target</label>
+  <input type="text" id="reg-target" placeholder="Target translation">
+  <div class="row">
+    <button class="btn btn-outline" onclick="fillFromSheet()">Fill from Sheet</button>
+    <button class="btn btn-primary" onclick="registerTM()">Register</button>
+  </div>
+  <div class="status" id="reg-status"></div>
+
+  <hr style="margin:12px 0;border:none;border-top:1px solid #dadce0">
+  <h3>Build TM from Sheet</h3>
+  <p style="font-size:12px;color:#5f6368;margin-bottom:8px">
+    Register all rows from the active sheet to TM.
+  </p>
+  <button class="btn btn-outline" onclick="buildTM()" style="width:100%">Build TM</button>
+</div>
+
+<!-- Glossary Panel -->
+<div id="glossary" class="panel">
+  <h3>Add Term</h3>
+  <input type="text" id="gloss-term" placeholder="Term (source)">
+  <input type="text" id="gloss-trans" placeholder="Translation">
+  <button class="btn btn-primary" onclick="addGlossary()" style="width:100%;margin-bottom:12px">Add</button>
+  <div class="status" id="gloss-status"></div>
+
+  <hr style="margin:12px 0;border:none;border-top:1px solid #dadce0">
+  <button class="btn btn-outline" onclick="doHighlight()" style="width:100%;margin-bottom:8px">Highlight in Sheet</button>
+  <button class="btn btn-outline" onclick="doExportGlossary()" style="width:100%">Export to Sheet</button>
+</div>
+
+<script>
+// Tabs
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(tab.dataset.panel).classList.add('active');
+  });
+});
+
+// Search
+function getSource() {
+  google.script.run.withSuccessHandler(text => {
+    document.getElementById('query').value = text;
+    doSearch();
+  }).sidebarGetCurrentSource();
+}
+
+function doSearch() {
+  const query = document.getElementById('query').value.trim();
+  if (!query) return;
+  const minScore = parseFloat(document.getElementById('min-score').value);
+  const type = document.getElementById('search-type').value;
+
+  document.getElementById('results').innerHTML = '<div class="empty">Searching...</div>';
+
+  google.script.run.withSuccessHandler(matches => {
+    const el = document.getElementById('results');
+    if (!matches || matches.length === 0) {
+      el.innerHTML = '<div class="empty">No matches found</div>';
+      return;
+    }
+    el.innerHTML = matches.map(m => {
+      const pct = Math.round(m.score * 100);
+      const cls = pct >= 90 ? 'score-high' : pct >= 70 ? 'score-mid' : 'score-low';
+      return '<div class="match" onclick="insertMatch(\'' + esc(m.target) + '\')">' +
+        '<span class="score ' + cls + '">' + pct + '%</span> ' +
+        '<div class="match-source">' + escH(m.source) + '</div>' +
+        '<div class="match-target">' + escH(m.target) + '</div>' +
+        '</div>';
+    }).join('');
+  }).sidebarSearch(query, minScore, type);
+}
+
+function insertMatch(target) {
+  google.script.run.withSuccessHandler(result => {
+    if (result && result.nextSource) {
+      document.getElementById('query').value = result.nextSource;
+      if (result.nextSource) doSearch();
+    }
+  }).sidebarInsertTranslation(target, 0);
+}
+
+// Register
+function fillFromSheet() {
+  google.script.run.withSuccessHandler(text => {
+    document.getElementById('reg-source').value = text;
+  }).sidebarGetCurrentSource();
+}
+
+function registerTM() {
+  const source = document.getElementById('reg-source').value.trim();
+  const target = document.getElementById('reg-target').value.trim();
+  if (!source || !target) return;
+
+  google.script.run.withSuccessHandler(() => {
+    const st = document.getElementById('reg-status');
+    st.textContent = 'Registered!';
+    st.style.display = 'block';
+    setTimeout(() => st.style.display = 'none', 3000);
+    document.getElementById('reg-source').value = '';
+    document.getElementById('reg-target').value = '';
+    refreshStats();
+  }).addToTM(source, target, '');
+}
+
+function buildTM() {
+  google.script.run.withSuccessHandler(() => {
+    refreshStats();
+  }).buildTMFromSheet();
+}
+
+// Glossary
+function addGlossary() {
+  const term = document.getElementById('gloss-term').value.trim();
+  const trans = document.getElementById('gloss-trans').value.trim();
+  if (!term || !trans) return;
+
+  google.script.run.withSuccessHandler(() => {
+    const st = document.getElementById('gloss-status');
+    st.textContent = 'Added!';
+    st.style.display = 'block';
+    setTimeout(() => st.style.display = 'none', 3000);
+    document.getElementById('gloss-term').value = '';
+    document.getElementById('gloss-trans').value = '';
+    refreshStats();
+  }).addToGlossary(term, trans, '');
+}
+
+function doHighlight() {
+  google.script.run.highlightGlossaryTerms();
+}
+
+function doExportGlossary() {
+  google.script.run.exportGlossaryToSheet();
+}
+
+// Stats
+function refreshStats() {
+  google.script.run.withSuccessHandler(s => {
+    document.getElementById('stats-badge').textContent = 'TM:' + s.tmCount + ' Gloss:' + s.glossaryCount;
+  }).getStats();
+}
+
+function esc(s) { return s.replace(/'/g, "\\'").replace(/\n/g, ' '); }
+function escH(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// Init
+document.getElementById('query').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+refreshStats();
+</script>
+</body>
+</html>

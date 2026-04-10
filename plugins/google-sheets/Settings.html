@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body { font-family: 'Google Sans', Roboto, Arial, sans-serif; font-size: 13px; padding: 16px; }
+label { display: block; font-size: 12px; color: #5f6368; margin-bottom: 4px; margin-top: 12px; }
+input, select { width: 100%; padding: 8px; border: 1px solid #dadce0; border-radius: 4px; font-size: 13px; }
+.btn { padding: 8px 24px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; margin-top: 16px; }
+.btn-primary { background: #1a73e8; color: #fff; }
+</style>
+</head>
+<body>
+<label>Source Column</label>
+<input type="text" id="sourceCol" value="A" maxlength="2">
+
+<label>Target Column</label>
+<input type="text" id="targetCol" value="B" maxlength="2">
+
+<label>Minimum Match Score</label>
+<select id="minScore">
+  <option value="0.5">50%</option>
+  <option value="0.6">60%</option>
+  <option value="0.7">70%</option>
+  <option value="0.8">80%</option>
+</select>
+
+<button class="btn btn-primary" onclick="save()">Save</button>
+
+<script>
+google.script.run.withSuccessHandler(s => {
+  document.getElementById('sourceCol').value = s.sourceCol;
+  document.getElementById('targetCol').value = s.targetCol;
+  document.getElementById('minScore').value = String(s.minScore);
+}).getSettings();
+
+function save() {
+  const settings = {
+    sourceCol: document.getElementById('sourceCol').value.toUpperCase(),
+    targetCol: document.getElementById('targetCol').value.toUpperCase(),
+    minScore: parseFloat(document.getElementById('minScore').value),
+  };
+  google.script.run.withSuccessHandler(() => {
+    google.script.host.close();
+  }).saveSettings(settings);
+}
+</script>
+</body>
+</html>
