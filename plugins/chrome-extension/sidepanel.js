@@ -686,6 +686,9 @@ document.getElementById('btn-paste-gloss').addEventListener('click', () => paste
 document.getElementById('btn-export-gloss').addEventListener('click', () => exportGlossaryTSV());
 document.getElementById('btn-set-tm').addEventListener('click', () => setToTM());
 document.getElementById('btn-save-settings').addEventListener('click', () => saveSettingsUI());
+document.getElementById('btn-float').addEventListener('click', () => {
+  chrome.windows.create({ url: 'sidepanel.html', type: 'popup', width: 400, height: 700 });
+});
 document.getElementById('btn-clear-tm').addEventListener('click', () => clearAllTM());
 document.getElementById('btn-clear-gloss').addEventListener('click', () => clearAllGlossary());
 

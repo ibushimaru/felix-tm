@@ -10,7 +10,8 @@
     "sidePanel",
     "storage",
     "clipboardRead",
-    "identity"
+    "identity",
+    "contextMenus"
   ],
   "host_permissions": [
     "https://docs.google.com/spreadsheets/*",

@@ -3,12 +3,34 @@
  * Routes messages, manages storage, and handles content script injection.
  */
 
-// Open side panel on icon click
+// Click icon: open side panel. Right-click context menu: open floating window.
 chrome.action.onClicked.addListener((tab) => {
   chrome.sidePanel.open({ tabId: tab.id });
 });
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+
+// Context menu for floating window option
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'open-floating',
+    title: 'Open Felix TM (Floating Window)',
+    contexts: ['action'],
+  });
+});
+
+chrome.contextMenus.onClicked.addListener((info) => {
+  if (info.menuItemId === 'open-floating') {
+    chrome.windows.create({
+      url: 'sidepanel.html',
+      type: 'popup',
+      width: 400,
+      height: 700,
+      top: 100,
+      left: 100,
+    });
+  }
+});
 
 // Inject content script programmatically when needed
 async function ensureContentScript(tabId) {
