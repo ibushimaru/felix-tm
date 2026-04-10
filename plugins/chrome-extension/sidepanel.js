@@ -112,6 +112,8 @@ async function init() {
       document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
       tab.classList.add('active');
       document.getElementById(tab.dataset.panel).classList.add('active');
+      if (tab.dataset.panel === 'tm') renderTMList();
+      if (tab.dataset.panel === 'glossary') renderGlossaryList();
     });
   });
 
@@ -370,6 +372,51 @@ async function addGlossary() {
   renderGlossaryList();
 }
 
+function renderTMList() {
+  const filter = (document.getElementById('tm-filter').value || '').toLowerCase();
+  const el = document.getElementById('tm-list');
+  const countEl = document.getElementById('tm-list-count');
+
+  let filtered = tmData;
+  if (filter) {
+    filtered = tmData.filter(e =>
+      e.source.toLowerCase().includes(filter) ||
+      e.target.toLowerCase().includes(filter)
+    );
+  }
+
+  const showing = filtered.slice(0, 100);
+  countEl.textContent = `${showing.length} / ${tmData.length} entries`;
+
+  if (!showing.length) {
+    el.innerHTML = '<div class="empty">No entries</div>';
+    return;
+  }
+
+  el.innerHTML = showing.map((e, i) => {
+    const ref = e.refcount ? ` <span style="color:#9aa0a6">(${e.refcount}x)</span>` : '';
+    const idx = tmData.indexOf(e);
+    return `<div class="match" style="cursor:default;padding:8px" data-tm-del="${idx}">
+      <div class="match-source">${escH(e.source)}${ref}</div>
+      <div class="match-target">${escH(e.target)}</div>
+    </div>`;
+  }).join('');
+
+  // Long press or right-click to delete
+  el.querySelectorAll('[data-tm-del]').forEach(div => {
+    div.addEventListener('contextmenu', async (ev) => {
+      ev.preventDefault();
+      const idx = parseInt(div.getAttribute('data-tm-del'));
+      if (confirm(`Delete?\n${tmData[idx].source}\n→ ${tmData[idx].target}`)) {
+        tmData.splice(idx, 1);
+        await saveTM();
+        updateStats();
+        renderTMList();
+      }
+    });
+  });
+}
+
 function renderGlossaryList() {
   const el = document.getElementById('gloss-list');
   if (!glossaryData.length) {
@@ -587,6 +634,7 @@ document.getElementById('min-score').addEventListener('change', () => doSearch()
 document.getElementById('search-type').addEventListener('change', () => doSearch());
 document.getElementById('btn-register').addEventListener('click', () => registerTM());
 document.getElementById('btn-paste-import').addEventListener('click', () => pasteImport());
+document.getElementById('tm-filter').addEventListener('input', () => renderTMList());
 document.getElementById('btn-add-gloss').addEventListener('click', () => addGlossary());
 document.getElementById('btn-export-tm').addEventListener('click', () => exportTSV());
 document.getElementById('btn-export-gloss').addEventListener('click', () => exportGlossaryTSV());
