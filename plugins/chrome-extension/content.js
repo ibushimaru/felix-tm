@@ -62,9 +62,6 @@
 
   // === Create the overlay panel ===
   function createPanel() {
-    // Remove stale panel from previous extension version
-    const old = document.getElementById('felix-tm-panel');
-    if (old) old.remove();
 
     const host = document.createElement('div');
     host.id = 'felix-tm-panel';
@@ -192,9 +189,10 @@
   }
 
   function showPanel() {
-    let host = document.getElementById('felix-tm-panel');
-    if (!host) createPanel();
-    else host.style.display = 'block';
+    // Always remove old panel and create fresh (handles extension reload)
+    const old = document.getElementById('felix-tm-panel');
+    if (old) old.remove();
+    createPanel();
     panelVisible = true;
     loadData();
   }
@@ -477,7 +475,17 @@
   // === Listen for messages from background/side panel ===
   chrome.runtime.onMessage.addListener((m, sender, sendResponse) => {
     if (m.type === 'PING') { sendResponse({ pong: true }); return; }
-    if (m.type === 'TOGGLE_PANEL') { panelVisible ? (document.getElementById('felix-tm-panel').style.display = 'none', panelVisible = false) : showPanel(); sendResponse({ ok: true }); return; }
+    if (m.type === 'TOGGLE_PANEL') {
+      if (panelVisible) {
+        const p = document.getElementById('felix-tm-panel');
+        if (p) p.remove();
+        panelVisible = false;
+      } else {
+        showPanel();
+      }
+      sendResponse({ ok: true });
+      return;
+    }
     if (m.type === 'GET_CELL') { sendResponse({ value: getCellValue(), ref: getCellRef() }); return; }
     if (m.type === 'GET_LOGS') { sendResponse({ logs: [] }); return; }
     if (m.type === 'SHORTCUTS_UPDATED') {
