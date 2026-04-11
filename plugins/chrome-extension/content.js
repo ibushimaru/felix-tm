@@ -234,6 +234,9 @@
     return matches.slice(0, 20);
   }
 
+  // Cache: source value per row (populated when user is on source column)
+  let _sourceCache = {}; // { rowNum: value }
+
   function doSearch(query) {
     const s = getShadow();
     if (!s || !panelVisible) return;
@@ -243,9 +246,32 @@
     const reverse = isTargetColumn();
     const minScore = parseFloat(s.getElementById('min-score').value);
     const t0 = performance.now();
-    const matches = reverse
-      ? reverseSearch(query, tmData, minScore)
-      : FelixEngine.search(query, tmData, minScore);
+    let matches;
+
+    if (reverse) {
+      matches = reverseSearch(query, tmData, minScore);
+
+      // Re-rank by source similarity to the same row's source
+      const ref = getCellRef();
+      const rowMatch = ref ? ref.match(/(\d+)/i) : null;
+      const rowNum = rowMatch ? rowMatch[1] : null;
+      const rowSource = rowNum ? _sourceCache[rowNum] : null;
+
+      if (rowSource && matches.length > 1) {
+        const rCmp = FelixEngine.makeCmp(rowSource);
+        for (const m of matches) {
+          m._srcScore = FelixEngine.fuzzyScore(rCmp, FelixEngine.makeCmp(m.source), 0);
+        }
+        matches.sort((a, b) => {
+          // Primary: target match score desc, Secondary: source similarity desc
+          if (b.score !== a.score) return b.score - a.score;
+          return (b._srcScore || 0) - (a._srcScore || 0);
+        });
+      }
+    } else {
+      matches = FelixEngine.search(query, tmData, minScore);
+    }
+
     const ms = (performance.now() - t0).toFixed(1);
 
     const el = s.getElementById('results');
@@ -402,6 +428,12 @@
     if (value !== lastCellValue || ref !== lastCellRef) {
       lastCellValue = value;
       lastCellRef = ref;
+
+      // Cache source column values per row
+      const refMatch = ref ? ref.match(/([A-Z]+)(\d+)/i) : null;
+      if (refMatch && refMatch[1].toUpperCase() === (settings.sourceCol || 'A').toUpperCase()) {
+        _sourceCache[refMatch[2]] = value;
+      }
 
       const s = getShadow();
       if (s) {
