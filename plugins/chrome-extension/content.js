@@ -211,36 +211,77 @@
   }
 
   // === Search ===
+  // Auto-detects forward vs reverse based on which column is selected
+  function isTargetColumn() {
+    const ref = getCellRef();
+    const match = ref ? ref.match(/([A-Z]+)/i) : null;
+    if (!match) return false;
+    return match[1].toUpperCase() === (settings.targetCol || 'B').toUpperCase();
+  }
+
+  function reverseSearch(query, tmData, minScore) {
+    if (!query || !tmData || !tmData.length) return [];
+    const qCmp = FelixEngine.makeCmp(query);
+    const matches = [];
+    for (const entry of tmData) {
+      const tCmp = FelixEngine.makeCmp(entry.target);
+      const score = FelixEngine.fuzzyScore(qCmp, tCmp, minScore);
+      if (score >= minScore) {
+        matches.push({ ...entry, score });
+      }
+    }
+    matches.sort((a, b) => b.score - a.score);
+    return matches.slice(0, 20);
+  }
+
   function doSearch(query) {
     const s = getShadow();
     if (!s || !panelVisible) return;
     if (!query) query = lastCellValue;
     if (!query) return;
 
+    const reverse = isTargetColumn();
     const minScore = parseFloat(s.getElementById('min-score').value);
     const t0 = performance.now();
-    const matches = FelixEngine.search(query, tmData, minScore);
+    const matches = reverse
+      ? reverseSearch(query, tmData, minScore)
+      : FelixEngine.search(query, tmData, minScore);
     const ms = (performance.now() - t0).toFixed(1);
 
     const el = s.getElementById('results');
+    const label = reverse ? 'Reverse' : '';
     if (!matches.length) {
-      el.innerHTML = `<div class="empty">No matches (${ms}ms)</div>`;
+      el.innerHTML = `<div class="empty">No matches ${label} (${ms}ms)</div>`;
       return;
     }
 
-    el.innerHTML = matches.map((m, i) => {
+    el.innerHTML = (label ? `<div style="font-size:10px;color:#1a73e8;margin-bottom:4px">↔ Reverse Search</div>` : '') +
+    matches.map((m, i) => {
       const pct = Math.round(m.score * 100);
       const cls = pct >= 90 ? 'score-high' : pct >= 70 ? 'score-mid' : 'score-low';
-      const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.source) : null;
-      const srcHtml = diff ? diff.sourceHtml : esc(m.source);
       const meta = m.refcount ? `used ${m.refcount}x` : '';
-      return `<div class="match" data-idx="${i}" data-target="${escA(m.target)}">
-        <span class="score ${cls}">${pct}%</span>
-        ${i === 0 ? `<span style="float:right;font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
-        <div class="match-source">${srcHtml}</div>
-        <div class="match-target">${esc(m.target)}</div>
-        ${meta ? `<div class="match-meta">${meta}</div>` : ''}
-      </div>`;
+      if (reverse) {
+        // Reverse: show target (matched) on top, source below
+        const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.target) : null;
+        const tgtHtml = diff ? diff.sourceHtml : esc(m.target);
+        return `<div class="match" data-idx="${i}" data-target="${escA(m.source)}">
+          <span class="score ${cls}">${pct}%</span>
+          ${i === 0 ? `<span style="float:right;font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
+          <div class="match-source">${tgtHtml}</div>
+          <div class="match-target">${esc(m.source)}</div>
+          ${meta ? `<div class="match-meta">${meta}</div>` : ''}
+        </div>`;
+      } else {
+        const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.source) : null;
+        const srcHtml = diff ? diff.sourceHtml : esc(m.source);
+        return `<div class="match" data-idx="${i}" data-target="${escA(m.target)}">
+          <span class="score ${cls}">${pct}%</span>
+          ${i === 0 ? `<span style="float:right;font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
+          <div class="match-source">${srcHtml}</div>
+          <div class="match-target">${esc(m.target)}</div>
+          ${meta ? `<div class="match-meta">${meta}</div>` : ''}
+        </div>`;
+      }
     }).join('');
 
     el.querySelectorAll('.match').forEach(div => {
