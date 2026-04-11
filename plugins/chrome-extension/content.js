@@ -62,7 +62,9 @@
 
   // === Create the overlay panel ===
   function createPanel() {
-    if (document.getElementById('felix-tm-panel')) return;
+    // Remove stale panel from previous extension version
+    const old = document.getElementById('felix-tm-panel');
+    if (old) old.remove();
 
     const host = document.createElement('div');
     host.id = 'felix-tm-panel';
