@@ -243,50 +243,48 @@
     if (!query) query = lastCellValue;
     if (!query) return;
 
-    const reverse = isTargetColumn();
+    const onTarget = isTargetColumn();
     const minScore = parseFloat(s.getElementById('min-score').value);
-    const t0 = performance.now();
-    let matches;
 
-    if (reverse) {
-      matches = reverseSearch(query, tmData, minScore);
+    // When on target column: use cached source value for forward search
+    // This shows "what TM matches exist for this row's source text"
+    let searchQuery = query;
+    let isReverse = false;
 
-      // Re-rank by source similarity to the same row's source
+    if (onTarget) {
       const ref = getCellRef();
       const rowMatch = ref ? ref.match(/(\d+)/i) : null;
       const rowNum = rowMatch ? rowMatch[1] : null;
-      const rowSource = rowNum ? _sourceCache[rowNum] : null;
+      const cachedSource = rowNum ? _sourceCache[rowNum] : null;
 
-      if (rowSource && matches.length > 1) {
-        const rCmp = FelixEngine.makeCmp(rowSource);
-        for (const m of matches) {
-          m._srcScore = FelixEngine.fuzzyScore(rCmp, FelixEngine.makeCmp(m.source), 0);
-        }
-        matches.sort((a, b) => {
-          // Primary: target match score desc, Secondary: source similarity desc
-          if (b.score !== a.score) return b.score - a.score;
-          return (b._srcScore || 0) - (a._srcScore || 0);
-        });
+      if (cachedSource) {
+        // Use source value: forward search to show matches for this source
+        searchQuery = cachedSource;
+      } else {
+        // No cache: fall back to reverse search on target text
+        isReverse = true;
       }
-    } else {
-      matches = FelixEngine.search(query, tmData, minScore);
     }
 
+    const t0 = performance.now();
+    const matches = isReverse
+      ? reverseSearch(searchQuery, tmData, minScore)
+      : FelixEngine.search(searchQuery, tmData, minScore);
     const ms = (performance.now() - t0).toFixed(1);
 
     const el = s.getElementById('results');
-    const label = reverse ? 'Reverse' : '';
+    const label = onTarget ? (isReverse ? '↔ Reverse' : '← Source') : '';
     if (!matches.length) {
       el.innerHTML = `<div class="empty">No matches ${label} (${ms}ms)</div>`;
       return;
     }
 
-    el.innerHTML = (label ? `<div style="font-size:10px;color:#1a73e8;margin-bottom:4px">↔ Reverse Search</div>` : '') +
+    el.innerHTML = (label ? `<div style="font-size:10px;color:#1a73e8;margin-bottom:4px">${label}</div>` : '') +
     matches.map((m, i) => {
       const pct = Math.round(m.score * 100);
       const cls = pct >= 90 ? 'score-high' : pct >= 70 ? 'score-mid' : 'score-low';
       const meta = m.refcount ? `used ${m.refcount}x` : '';
-      if (reverse) {
+      if (isReverse) {
         // Reverse: show target (matched) on top, source below
         const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.target) : null;
         const tgtHtml = diff ? diff.sourceHtml : esc(m.target);
