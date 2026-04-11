@@ -263,20 +263,31 @@
   }
 
   // === Set (register to TM) ===
+  // Always reads source col + target col for the current row, regardless of which cell is selected.
   async function doSet() {
-    const source = lastCellValue;
-    if (!source) return;
-
-    // Read target cell value via Sheets API
     const ref = getCellRef();
     const match = ref ? ref.match(/([A-Z]+)(\d+)/i) : null;
     if (!match) return;
-    const targetRef = (settings.targetCol || 'B') + match[2];
+
+    const rowNum = match[2];
+    const sourceRef = (settings.sourceCol || 'A') + rowNum;
+    const targetRef = (settings.targetCol || 'B') + rowNum;
     const ssId = getSpreadsheetId();
     if (!ssId) return;
 
-    const resp = await msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: targetRef });
-    const target = resp && resp.value ? resp.value : '';
+    // Read both source and target from Sheets API
+    const [srcResp, tgtResp] = await Promise.all([
+      msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: sourceRef }),
+      msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: targetRef }),
+    ]);
+
+    const source = srcResp && srcResp.value ? srcResp.value : '';
+    const target = tgtResp && tgtResp.value ? tgtResp.value : '';
+
+    if (!source) {
+      showToast('Source cell (' + sourceRef + ') is empty');
+      return;
+    }
 
     if (!target) {
       showToast('Target cell is empty');
