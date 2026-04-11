@@ -298,7 +298,7 @@
           ${meta ? `<div class="match-meta">${meta}</div>` : ''}
         </div>`;
       } else {
-        const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.source) : null;
+        const diff = pct < 100 ? FelixEngine.diffHighlight(searchQuery, m.source) : null;
         const srcHtml = diff ? diff.sourceHtml : esc(m.source);
         return `<div class="match" data-idx="${i}" data-target="${escA(m.target)}">
           <span class="score ${cls}">${pct}%</span>
