@@ -522,6 +522,21 @@ var FelixEngine = (() => {
     }
     flushNum();
 
+    // If character-level diff didn't find number subs (e.g. 10→100),
+    // fall back to token-level number comparison
+    if (!subs.length) {
+      const numRe = /\d+(?:\.\d+)?/g;
+      const qNums = query.match(numRe) || [];
+      const sNums = tmSource.match(numRe) || [];
+      if (qNums.length && qNums.length === sNums.length) {
+        for (let k = 0; k < qNums.length; k++) {
+          if (qNums[k] !== sNums[k]) {
+            subs.push({ qStr: qNums[k], sStr: sNums[k] });
+          }
+        }
+      }
+    }
+
     if (!subs.length) return { placed: false };
 
     // Collect replacement positions first, then apply in reverse order
