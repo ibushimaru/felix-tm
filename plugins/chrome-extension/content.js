@@ -2,9 +2,25 @@
  * Content Script — Felix TM Overlay Panel
  * Injects a floating, draggable TM panel directly into Google Sheets.
  * Mouse Dictionary-style: always on top, no separate window needed.
+ *
+ * Supports clean re-injection: on extension update, the old instance is
+ * fully torn down (AbortController aborts all listeners, timer is cleared,
+ * DOM is removed) before the new instance starts.
  */
 
 (() => {
+  // === Cleanup previous instance ===
+  // When the extension is updated and this script is re-injected,
+  // the previous IIFE's closures are still alive. We use a global
+  // cleanup hook so the new instance can kill the old one.
+  if (window.__felixTMCleanup) {
+    try { window.__felixTMCleanup(); } catch (_) {}
+  }
+
+  // === AbortController for all document-level listeners ===
+  const ac = new AbortController();
+  const signal = ac.signal;
+
   // === State ===
   let tmData = [];
   let glossaryData = [];
@@ -14,6 +30,33 @@
   let lastCellRef = '';
   let panelVisible = false;
   let _pollTimer = null;
+
+  // Register cleanup for next re-injection
+  window.__felixTMCleanup = () => {
+    ac.abort();
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+    const old = document.getElementById('felix-tm-panel');
+    if (old) old.remove();
+  };
+
+  // === i18n ===
+  const I18N = {
+    en: {
+      activeCell: 'Active Cell', selectCell: 'Select a cell to search TM',
+      set: 'Set (register to TM)', noMatch: 'No matches',
+      used: 'used', registered: 'Registered!', alreadyExists: 'Already exists (+1)',
+      srcEmpty: 'Source cell is empty', tgtEmpty: 'Target cell is empty',
+      src: 'Src', tgt: 'Tgt',
+    },
+    ja: {
+      activeCell: 'アクティブセル', selectCell: 'セルを選択するとTM検索します',
+      set: 'Set（TMに登録）', noMatch: 'マッチなし',
+      used: '使用', registered: '登録しました', alreadyExists: '既に存在 (+1)',
+      srcEmpty: '原文セルが空です', tgtEmpty: '訳文セルが空です',
+      src: '原文', tgt: '訳文',
+    },
+  };
+  function t(key) { return (I18N[settings.lang] && I18N[settings.lang][key]) || I18N.en[key] || key; }
 
   // === Extension validity check ===
   function isValid() { try { return !!chrome.runtime.id; } catch (_) { return false; } }
@@ -25,11 +68,28 @@
   }
 
   // === Load data from storage ===
+  let _dataReady = false;
   async function loadData() {
-    tmData = await msg('TM_LOAD') || [];
-    glossaryData = await msg('GLOSSARY_LOAD') || [];
-    settings = await msg('SETTINGS_LOAD') || settings;
+    const [tm, gloss, sets] = await Promise.all([
+      msg('TM_LOAD'), msg('GLOSSARY_LOAD'), msg('SETTINGS_LOAD')
+    ]);
+    tmData = tm || [];
+    glossaryData = gloss || [];
+    settings = sets || settings;
+    _dataReady = true;
     updateBadge();
+    // Run initial search immediately after data is ready
+    const value = getCellValue();
+    if (value) {
+      lastCellValue = value;
+      lastCellRef = getCellRef();
+      const s = getShadow();
+      if (s) {
+        s.getElementById('cell-value').textContent = value;
+        s.getElementById('cell-ref').textContent = lastCellRef ? `(${lastCellRef})` : '';
+      }
+      doSearch(value);
+    }
   }
 
   // === Google Sheets DOM ===
@@ -72,11 +132,12 @@
       :host { all: initial; }
       * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
       #panel {
-        position: fixed; top: 80px; right: 20px; width: 360px; max-height: 80vh;
+        position: fixed; top: 80px; right: 20px; width: 360px;
         background: #fff; border: 1px solid #dadce0; border-radius: 12px;
         box-shadow: 0 8px 32px rgba(0,0,0,0.15); z-index: 999999;
         display: flex; flex-direction: column; overflow: hidden;
         font-size: 13px; color: #202124; resize: both;
+        min-width: 200px; min-height: 100px;
       }
       #header {
         display: flex; align-items: center; justify-content: space-between;
@@ -97,9 +158,9 @@
       .match:hover { border-color: #1a73e8; background: #e8f0fe; }
       .match.inserted { border-color: #34a853; opacity: 0.6; }
       .score { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 600; color: #fff; }
-      .score-high { background: #34a853; }
-      .score-mid { background: #f9ab00; }
-      .score-low { background: #ea4335; }
+      .score-high { background: #fff; color: #34a853; border: 1px solid #34a853; }
+      .score-mid { background: #fff; color: #f9ab00; border: 1px solid #f9ab00; }
+      .score-low { background: #fff; color: #ea4335; border: 1px solid #ea4335; }
       .match-source { color: #5f6368; font-size: 11px; margin-top: 3px; word-break: break-all; }
       .match-target { color: #202124; font-size: 12px; margin-top: 2px; word-break: break-all; }
       .match-meta { color: #9aa0a6; font-size: 10px; margin-top: 3px; }
@@ -110,30 +171,49 @@
       .toast { padding: 6px 10px; border-radius: 4px; font-size: 11px; margin-top: 6px; background: #e6f4ea; color: #137333; }
       .diff-match { color: #137333; }
       .diff-sub { background: #fef7cd; color: #8a6d00; border-radius: 2px; padding: 0 1px; }
-      .diff-del { background: #fce8e6; color: #c5221f; border-radius: 2px; padding: 0 1px; text-decoration: line-through; }
+      .diff-del { background: #fef7cd; color: #8a6d00; border-radius: 2px; padding: 0 2px; font-weight: 500; }
       .diff-ins { background: #e6f4ea; color: #137333; border-radius: 2px; padding: 0 1px; }
       .shortcut { font-size: 10px; color: #9aa0a6; }
+      .gloss_match { background: #e8f0fe; color: #1a73e8; border-radius: 2px; padding: 0 1px; cursor: help; border-bottom: 1px dashed #1a73e8; position: relative; }
+      .gloss-tip { display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
+      .gloss_match:hover .gloss-tip { display: block; }
+      .match-placed { border-color: #34a853; }
+      .match-placed:hover { border-color: #137333; }
+      .placed-badge { display: inline-block; background: #fff; color: #34a853; border: 1px solid #34a853; font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
+      .placed-original { font-size: 10px; color: #9aa0a6; margin-top: 2px; }
+      .placed-del { text-decoration: line-through; color: #c5221f; }
+      .placed-ins { color: #137333; font-weight: 500; }
+      .btn-del-tm:hover { color: #ea4335 !important; }
+      .col-input { width: 28px; padding: 4px; border: 1px solid #dadce0; border-radius: 3px; font-size: 11px; text-align: center; text-transform: uppercase; }
+      .col-input:focus { outline: none; border-color: #1a73e8; }
+      .col-label { font-size: 10px; color: #9aa0a6; }
+      .settings-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
     </style>
     <div id="panel">
       <div id="header">
         <h1>Felix TM</h1>
         <span>
           <span class="badge" id="badge">TM: 0</span>
+          <button class="btn-close" id="btn-manage" title="Manage TM/Glossary">⚙</button>
           <button class="btn-close" id="btn-min">−</button>
           <button class="btn-close" id="btn-close">✕</button>
         </span>
       </div>
       <div id="body">
-        <div class="cell-label">Active Cell <span id="cell-ref"></span></div>
+        <div class="cell-label"><span id="lbl-cell">Active Cell</span> <span id="cell-ref"></span></div>
         <div class="cell-preview" id="cell-value">—</div>
-        <div class="row">
-          <select id="min-score">
+        <div class="settings-row">
+          <select id="min-score" style="flex:1;padding:4px;font-size:11px">
             <option value="0.5">50%</option><option value="0.6">60%</option>
             <option value="0.7" selected>70%</option><option value="0.8">80%</option>
             <option value="0.9">90%</option>
           </select>
+          <span class="col-label" id="lbl-src">Src</span>
+          <input class="col-input" id="src-col" value="A" maxlength="2">
+          <span class="col-label" id="lbl-tgt">Tgt</span>
+          <input class="col-input" id="tgt-col" value="B" maxlength="2">
         </div>
-        <div id="results"><div class="empty">Select a cell to search TM</div></div>
+        <div id="results"><div class="empty" id="lbl-empty">Select a cell to search TM</div></div>
         <div class="set-bar">
           <button class="btn" id="btn-set" style="flex:1">Set (register to TM)</button>
           <span class="shortcut" id="shortcut-label"></span>
@@ -147,12 +227,18 @@
     const panel = shadow.getElementById('panel');
     const header = shadow.getElementById('header');
 
-    // Dragging
+    // Dragging — listeners use AbortController signal
+    // Disable iframe pointer events during drag/resize to prevent event stealing
     let isDragging = false, dx = 0, dy = 0;
+    function setIframeBlock(block) {
+      const f = shadow.getElementById('manage-frame');
+      if (f) f.style.pointerEvents = block ? 'none' : 'auto';
+    }
     header.addEventListener('mousedown', e => {
       isDragging = true;
       dx = e.clientX - panel.offsetLeft;
       dy = e.clientY - panel.offsetTop;
+      setIframeBlock(true);
       e.preventDefault();
     });
     document.addEventListener('mousemove', e => {
@@ -160,8 +246,21 @@
       panel.style.left = (e.clientX - dx) + 'px';
       panel.style.top = (e.clientY - dy) + 'px';
       panel.style.right = 'auto';
+    }, { signal });
+    document.addEventListener('mouseup', () => {
+      isDragging = false;
+      setIframeBlock(false);
+    }, { signal });
+    // Also block iframe during CSS resize (mousedown anywhere on panel edge)
+    panel.addEventListener('mousedown', (e) => {
+      const rect = panel.getBoundingClientRect();
+      const edge = 16;
+      if (e.clientX > rect.right - edge || e.clientY > rect.bottom - edge) {
+        setIframeBlock(true);
+        const up = () => { setIframeBlock(false); document.removeEventListener('mouseup', up); };
+        document.addEventListener('mouseup', up);
+      }
     });
-    document.addEventListener('mouseup', () => { isDragging = false; });
 
     // Close / Minimize
     shadow.getElementById('btn-close').addEventListener('click', () => { host.style.display = 'none'; panelVisible = false; });
@@ -170,8 +269,56 @@
       body.style.display = body.style.display === 'none' ? 'block' : 'none';
     });
 
-    // Score change
-    shadow.getElementById('min-score').addEventListener('change', () => doSearch());
+    // Score change — save to settings
+    shadow.getElementById('min-score').addEventListener('change', () => {
+      settings.minScore = parseFloat(shadow.getElementById('min-score').value);
+      msg('SETTINGS_SAVE', settings);
+      doSearch();
+    });
+
+    // Column inputs — update settings on change
+    const srcColInput = shadow.getElementById('src-col');
+    const tgtColInput = shadow.getElementById('tgt-col');
+    srcColInput.value = settings.sourceCol || 'A';
+    tgtColInput.value = settings.targetCol || 'B';
+    srcColInput.addEventListener('change', () => {
+      settings.sourceCol = srcColInput.value.toUpperCase();
+      srcColInput.value = settings.sourceCol;
+      msg('SETTINGS_SAVE', settings);
+    });
+    tgtColInput.addEventListener('change', () => {
+      settings.targetCol = tgtColInput.value.toUpperCase();
+      tgtColInput.value = settings.targetCol;
+      msg('SETTINGS_SAVE', settings);
+    });
+
+    // Manage button — toggle inline manage iframe
+    let _savedSize = null;
+    shadow.getElementById('btn-manage').addEventListener('click', () => {
+      const body = shadow.getElementById('body');
+      const iframe = shadow.getElementById('manage-frame');
+      if (iframe) {
+        // Close manage mode — restore search view with original size
+        iframe.remove();
+        body.style.display = 'block';
+        if (_savedSize) {
+          panel.style.width = _savedSize.w;
+          panel.style.height = _savedSize.h;
+        }
+      } else {
+        // Save current size before swapping
+        _savedSize = { w: panel.offsetWidth + 'px', h: panel.offsetHeight + 'px' };
+        // Open manage mode — hide search, show iframe; keep width, expand height
+        body.style.display = 'none';
+        const frame = document.createElement('iframe');
+        frame.id = 'manage-frame';
+        frame.src = chrome.runtime.getURL('manage.html');
+        frame.style.cssText = 'width:100%;flex:1;border:none;border-radius:0 0 12px 12px;';
+        frame.allow = 'clipboard-read';
+        panel.appendChild(frame);
+        panel.style.height = Math.max(panel.offsetHeight, 700) + 'px';
+      }
+    });
 
     // Set button
     shadow.getElementById('btn-set').addEventListener('click', () => doSet());
@@ -180,7 +327,19 @@
     host._shadow = shadow;
 
     updateShortcutLabel();
+    applyPanelLang();
     return shadow;
+  }
+
+  function applyPanelLang() {
+    const s = getShadow();
+    if (!s) return;
+    const set = (id, text) => { const el = s.getElementById(id); if (el) el.textContent = text; };
+    set('lbl-cell', t('activeCell'));
+    set('lbl-empty', t('selectCell'));
+    set('btn-set', t('set'));
+    set('lbl-src', t('src'));
+    set('lbl-tgt', t('tgt'));
   }
 
   function getShadow() {
@@ -199,7 +358,11 @@
 
   function updateBadge() {
     const s = getShadow();
-    if (s) s.getElementById('badge').textContent = `TM: ${tmData.length}`;
+    if (s) {
+      const parts = [`TM: ${tmData.length}`];
+      if (glossaryData.length) parts.push(`Gloss: ${glossaryData.length}`);
+      s.getElementById('badge').textContent = parts.join(' | ');
+    }
   }
 
   function updateShortcutLabel() {
@@ -219,23 +382,38 @@
     return match[1].toUpperCase() === (settings.targetCol || 'B').toUpperCase();
   }
 
-  function reverseSearch(query, tmData, minScore) {
-    if (!query || !tmData || !tmData.length) return [];
-    const qCmp = FelixEngine.makeCmp(query);
-    const matches = [];
-    for (const entry of tmData) {
-      const tCmp = FelixEngine.makeCmp(entry.target);
-      const score = FelixEngine.fuzzyScore(qCmp, tCmp, minScore);
-      if (score >= minScore) {
-        matches.push({ ...entry, score });
-      }
-    }
-    matches.sort((a, b) => b.score - a.score);
-    return matches.slice(0, 20);
-  }
-
   // Cache: source value per row (populated when user is on source column)
   let _sourceCache = {}; // { rowNum: value }
+
+  // Show placed target with changed parts in green
+  function placedHighlightHtml(original, placed) {
+    let pre = 0;
+    while (pre < original.length && pre < placed.length && original[pre] === placed[pre]) pre++;
+    let suf = 0;
+    while (suf < original.length - pre && suf < placed.length - pre &&
+           original[original.length - 1 - suf] === placed[placed.length - 1 - suf]) suf++;
+    const placedMid = placed.substring(pre, placed.length - suf);
+    const prefix = esc(placed.substring(0, pre));
+    const suffix = esc(placed.substring(placed.length - suf));
+    return prefix +
+      (placedMid ? `<span class="placed-ins">${esc(placedMid)}</span>` : '') +
+      suffix;
+  }
+
+  // Show original target with only the changed parts struck through
+  function placedDiffHtml(original, placed) {
+    let pre = 0;
+    while (pre < original.length && pre < placed.length && original[pre] === placed[pre]) pre++;
+    let suf = 0;
+    while (suf < original.length - pre && suf < placed.length - pre &&
+           original[original.length - 1 - suf] === placed[placed.length - 1 - suf]) suf++;
+    const origMid = original.substring(pre, original.length - suf);
+    const prefix = esc(original.substring(0, pre));
+    const suffix = esc(original.substring(original.length - suf));
+    return prefix +
+      (origMid ? `<span class="placed-del">${esc(origMid)}</span>` : '') +
+      suffix;
+  }
 
   function doSearch(query) {
     const s = getShadow();
@@ -268,49 +446,110 @@
 
     const t0 = performance.now();
     const matches = isReverse
-      ? reverseSearch(searchQuery, tmData, minScore)
+      ? FelixEngine.reverseSearch(searchQuery, tmData, minScore)
       : FelixEngine.search(searchQuery, tmData, minScore);
     const ms = (performance.now() - t0).toFixed(1);
 
-    const el = s.getElementById('results');
-    const label = onTarget ? (isReverse ? '↔ Reverse' : '← Source') : '';
-    if (!matches.length) {
-      el.innerHTML = `<div class="empty">No matches ${label} (${ms}ms)</div>`;
-      return;
+    // Glossary hits for the query (used for highlighting and placement)
+    const glossHits = glossaryData.length ? FelixEngine.glossarySearch(searchQuery, glossaryData) : [];
+
+    // Highlight glossary terms in the cell preview (Felix: GLOSS_MATCH on QUERY side)
+    const cellPreview = s.getElementById('cell-value');
+    if (glossHits.length && searchQuery) {
+      const marked = FelixEngine.markGlossaryInSource(searchQuery, glossHits);
+      if (marked) cellPreview.innerHTML = marked;
     }
 
-    el.innerHTML = (label ? `<div style="font-size:10px;color:#1a73e8;margin-bottom:4px">${label}</div>` : '') +
-    matches.map((m, i) => {
-      const pct = Math.round(m.score * 100);
-      const cls = pct >= 90 ? 'score-high' : pct >= 70 ? 'score-mid' : 'score-low';
-      const meta = m.refcount ? `used ${m.refcount}x` : '';
-      if (isReverse) {
-        // Reverse: show target (matched) on top, source below
-        const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.target) : null;
-        const tgtHtml = diff ? diff.sourceHtml : esc(m.target);
-        return `<div class="match" data-idx="${i}" data-target="${escA(m.source)}">
-          <span class="score ${cls}">${pct}%</span>
-          ${i === 0 ? `<span style="float:right;font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
-          <div class="match-source">${tgtHtml}</div>
-          <div class="match-target">${esc(m.source)}</div>
-          ${meta ? `<div class="match-meta">${meta}</div>` : ''}
-        </div>`;
-      } else {
-        const diff = pct < 100 ? FelixEngine.diffHighlight(searchQuery, m.source) : null;
-        const srcHtml = diff ? diff.sourceHtml : esc(m.source);
-        return `<div class="match" data-idx="${i}" data-target="${escA(m.target)}">
-          <span class="score ${cls}">${pct}%</span>
-          ${i === 0 ? `<span style="float:right;font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
-          <div class="match-source">${srcHtml}</div>
-          <div class="match-target">${esc(m.target)}</div>
-          ${meta ? `<div class="match-meta">${meta}</div>` : ''}
-        </div>`;
-      }
-    }).join('');
+    const el = s.getElementById('results');
+    const label = onTarget ? (isReverse ? '↔ Reverse' : '← Source') : '';
+    // Check if any match is 100% — if so, skip Placement entirely
+    const has100 = !isReverse && matches.some(m => Math.round(m.score * 100) === 100);
 
-    el.querySelectorAll('.match').forEach(div => {
-      div.addEventListener('click', () => doGet(div));
-    });
+    if (!matches.length) {
+      el.innerHTML = `<div class="empty">${t('noMatch')} ${label} (${ms}ms)</div>`;
+    } else {
+      el.innerHTML = (label ? `<div style="font-size:10px;color:#1a73e8;margin-bottom:4px">${label}</div>` : '') +
+      matches.map((m, i) => {
+        const pct = Math.round(m.score * 100);
+        const cls = pct >= 90 ? 'score-high' : pct >= 70 ? 'score-mid' : 'score-low';
+        const meta = m.refcount ? `${t('used')} ${m.refcount}x` : '';
+        const tmIdx = tmData.indexOf(m) !== -1 ? tmData.indexOf(m) : tmData.findIndex(e => e.source === m.source && e.target === m.target);
+
+        let srcHtml, tgtDisplay, insertTarget, placed = false;
+        if (isReverse) {
+          const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.target) : null;
+          srcHtml = diff ? diff.sourceHtml : esc(m.target);
+          tgtDisplay = esc(m.source);
+          insertTarget = m.source;
+        } else {
+          if (pct < 100) {
+            const diff = FelixEngine.diffHighlight(searchQuery, m.source);
+            srcHtml = diff ? diff.queryHtml : esc(m.source);
+          } else {
+            const glossMarkup = glossHits.length ? FelixEngine.markGlossaryInSource(m.source, glossHits) : null;
+            srcHtml = glossMarkup || esc(m.source);
+          }
+
+          insertTarget = m.target;
+          tgtDisplay = esc(m.target);
+          // Placement: only on the top result, and only if no 100% match
+          if (!has100 && i === 0 && pct < 100) {
+            let placedTarget = m.target;
+            let badges = [];
+
+            // 1. Glossary Placement
+            if (glossHits.length) {
+              const gpl = FelixEngine.glossaryPlacement(searchQuery, m.source, placedTarget, glossaryData);
+              if (gpl.placed) { placedTarget = gpl.target; badges.push('用語'); }
+            }
+            // 2. Number Placement (on top of glossary result)
+            const npl = FelixEngine.numberPlacement(searchQuery, m.source, placedTarget);
+            if (npl.placed) { placedTarget = npl.target; badges.push('数値'); }
+
+            if (badges.length) {
+              insertTarget = placedTarget;
+              placed = true;
+              tgtDisplay = placedHighlightHtml(m.target, placedTarget) + `<span class="placed-badge">${badges.join('+')}置換</span>`;
+            }
+          }
+        }
+
+        return `<div class="match${placed ? ' match-placed' : ''}" data-idx="${i}" data-target="${escA(insertTarget)}" data-tm-idx="${tmIdx}">
+          <span class="score ${cls}">${pct}%</span>
+          <span style="float:right;display:flex;align-items:center;gap:4px">
+            ${i === 0 ? `<span style="font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
+            <span class="btn-del-tm" data-del-idx="${tmIdx}" title="Delete from TM" style="font-size:11px;color:#dadce0;cursor:pointer">✕</span>
+          </span>
+          <div class="match-source">${srcHtml}</div>
+          <div class="match-target">${tgtDisplay}</div>
+          ${placed ? `<div class="placed-original">${placedDiffHtml(m.target, insertTarget)}</div>` : ''}
+          ${meta ? `<div class="match-meta">${meta}</div>` : ''}
+        </div>`;
+      }).join('');
+
+      // Click match → insert
+      el.querySelectorAll('.match').forEach(div => {
+        div.addEventListener('click', (e) => {
+          if (e.target.classList.contains('btn-del-tm')) return;
+          doGet(div);
+        });
+      });
+
+      // Delete button
+      el.querySelectorAll('.btn-del-tm').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const idx = parseInt(btn.getAttribute('data-del-idx'));
+          if (idx >= 0 && idx < tmData.length) {
+            tmData.splice(idx, 1);
+            await msg('TM_SAVE', tmData);
+            updateBadge();
+            doSearch();
+          }
+        });
+      });
+    }
+
   }
 
   // === Get (insert match, no TM registration) ===
@@ -350,31 +589,21 @@
     const target = tgtResp && tgtResp.value ? tgtResp.value : '';
 
     if (!source) {
-      showToast('Source cell (' + sourceRef + ') is empty');
+      showToast(t('srcEmpty') + ' (' + sourceRef + ')');
       return;
     }
 
     if (!target) {
-      showToast('Target cell is empty');
+      showToast(t('tgtEmpty'));
       return;
     }
 
     // Dedup and add
-    const sCmp = FelixEngine.makeCmp(source);
-    const tCmp = FelixEngine.makeCmp(target);
-    let action = 'added';
-    for (const e of tmData) {
-      if ((e.cmp || FelixEngine.makeCmp(e.source)) === sCmp && FelixEngine.makeCmp(e.target) === tCmp) {
-        e.refcount = (e.refcount || 0) + 1;
-        action = 'refcount';
-        break;
-      }
-    }
-    if (action === 'added') tmData.push({ source, target, context: '', cmp: sCmp, refcount: 0 });
+    const action = FelixEngine.addEntry(tmData, source, target);
 
     await msg('TM_SAVE', tmData);
     updateBadge();
-    showToast(action === 'refcount' ? 'Already exists (+1)' : 'Registered!');
+    showToast(action === 'refcount' ? t('alreadyExists') : t('registered'));
   }
 
   // === Write to target cell via Sheets API ===
@@ -383,10 +612,9 @@
     const match = ref ? ref.match(/([A-Z]+)(\d+)/i) : null;
     if (!match) return;
 
-    const sourceCol = match[1];
     const rowNum = parseInt(match[2]);
     const targetRef = (settings.targetCol || 'B') + rowNum;
-    const nextRef = sourceCol + (rowNum + 1);
+    const nextRef = (settings.sourceCol || 'A') + (rowNum + 1);
     const ssId = getSpreadsheetId();
     if (!ssId) return;
 
@@ -418,7 +646,7 @@
   // === Polling ===
   function checkForChanges() {
     if (!isValid()) { if (_pollTimer) clearInterval(_pollTimer); return; }
-    if (!panelVisible) return;
+    if (!panelVisible || !_dataReady) return;
 
     const value = getCellValue();
     const ref = getCellRef();
@@ -470,7 +698,7 @@
       e.preventDefault();
       doSet();
     }
-  });
+  }, { signal });
 
   // === Listen for messages from background/side panel ===
   chrome.runtime.onMessage.addListener((m, sender, sendResponse) => {
@@ -487,11 +715,22 @@
       return;
     }
     if (m.type === 'GET_CELL') { sendResponse({ value: getCellValue(), ref: getCellRef() }); return; }
-    if (m.type === 'GET_LOGS') { sendResponse({ logs: [] }); return; }
     if (m.type === 'SHORTCUTS_UPDATED') {
       if (m.get) settings.shortcutGet = m.get;
       if (m.set) settings.shortcutSet = m.set;
       updateShortcutLabel();
+      return;
+    }
+    if (m.type === 'SETTINGS_UPDATED' && m.settings) {
+      Object.assign(settings, m.settings);
+      updateShortcutLabel();
+      applyPanelLang();
+      const s = getShadow();
+      if (s) {
+        s.getElementById('src-col').value = settings.sourceCol || 'A';
+        s.getElementById('tgt-col').value = settings.targetCol || 'B';
+        s.getElementById('min-score').value = String(settings.minScore || 0.7);
+      }
       return;
     }
     if (m.type === 'WRITE_CELL') {
@@ -514,8 +753,27 @@
     }
   });
 
-  // === Background: toggle panel on icon click ===
-  // Show panel on load
+  // === Sync with storage changes (from manage page) ===
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.felixTM) { tmData = changes.felixTM.newValue || []; updateBadge(); if (lastCellValue) doSearch(); }
+    if (changes.felixGlossary) { glossaryData = changes.felixGlossary.newValue || []; updateBadge(); }
+    if (changes.felixSettings) {
+      const newSettings = changes.felixSettings.newValue;
+      if (newSettings) {
+        Object.assign(settings, newSettings);
+        updateShortcutLabel();
+        applyPanelLang();
+        const s = getShadow();
+        if (s) {
+          s.getElementById('src-col').value = settings.sourceCol || 'A';
+          s.getElementById('tgt-col').value = settings.targetCol || 'B';
+          s.getElementById('min-score').value = String(settings.minScore || 0.7);
+        }
+      }
+    }
+  });
+
+  // === Show panel on load ===
   setTimeout(() => {
     showPanel();
   }, 3000);

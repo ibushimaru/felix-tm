@@ -13,3 +13,5 @@ htmlcov/
 *.spec
 docs/manual-en/
 docs/manual-ja/
+.env
+.service-account.json

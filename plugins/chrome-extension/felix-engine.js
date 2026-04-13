@@ -123,13 +123,156 @@ var FelixEngine = (() => {
     return matches.slice(0, 20);
   }
 
-  function glossarySearch(query, glossaryData) {
+  // === Glossary Matching (Felix-faithful) ===
+
+  /**
+   * subdist_score: fuzzy substring match score.
+   * Checks if term appears (fuzzily) within the query text.
+   * Returns score (0-1) or 0 if below threshold.
+   */
+  function subdistScore(queryCmp, termCmp, minScore) {
+    if (!queryCmp || !termCmp) return 0;
+    // Exact substring check first (fast path)
+    if (queryCmp.includes(termCmp)) return 1.0;
+    if (termCmp.length > queryCmp.length) return 0;
+    // Slide term-sized window over query, find best fuzzy match
+    const tLen = termCmp.length;
+    const margin = Math.max(1, Math.floor(tLen * 0.3)); // allow window to vary
+    let bestScore = 0;
+    for (let i = 0; i <= queryCmp.length - tLen + margin; i++) {
+      const end = Math.min(i + tLen + margin, queryCmp.length);
+      const window = queryCmp.substring(i, end);
+      const score = edScore(termCmp, window, minScore);
+      if (score > bestScore) bestScore = score;
+    }
+    return bestScore >= minScore ? bestScore : 0;
+  }
+
+  /**
+   * Find glossary terms that appear in the query text.
+   * Fast path: exact substring match (covers most game translation cases).
+   * Slow path: fuzzy subdist only when explicitly requested.
+   * Returns matches sorted by longest-term-first (Felix GlossMatchComparator).
+   */
+  function glossarySearch(query, glossaryData, minScore) {
     if (!query || !glossaryData || !glossaryData.length) return [];
     const qCmp = makeCmp(query);
-    return glossaryData.filter(entry => {
+    const hits = [];
+    for (const entry of glossaryData) {
       const tCmp = entry.cmp || makeCmp(entry.term);
-      return qCmp.includes(tCmp) || tCmp.includes(qCmp);
-    });
+      if (qCmp.includes(tCmp)) {
+        hits.push({ ...entry, score: 1.0 });
+      }
+    }
+    // Sort: longest term first (greedy matching)
+    hits.sort((a, b) => b.term.length - a.term.length);
+    return hits;
+  }
+
+  /**
+   * Mark glossary matches in a source text string.
+   * Returns HTML with <span class="gloss_match"> wrapping matched terms.
+   * Longest match first, no overlapping.
+   */
+  function markGlossaryInSource(sourceText, glossHits) {
+    if (!glossHits.length || !sourceText) return null;
+    const lower = sourceText.toLowerCase();
+    // Collect all match positions (longest first, no overlap)
+    const regions = []; // [{start, end, term, translation}]
+    for (const g of glossHits) {
+      const termLower = g.term.toLowerCase();
+      let pos = 0;
+      while ((pos = lower.indexOf(termLower, pos)) !== -1) {
+        // Check no overlap with existing regions
+        const end = pos + termLower.length;
+        const overlaps = regions.some(r => pos < r.end && end > r.start);
+        if (!overlaps) {
+          regions.push({ start: pos, end, term: g.term, translation: g.translation });
+        }
+        pos = end;
+      }
+    }
+    if (!regions.length) return null;
+    // Sort by position
+    regions.sort((a, b) => a.start - b.start);
+    // Build HTML
+    let html = '';
+    let cursor = 0;
+    for (const r of regions) {
+      if (r.start > cursor) html += esc(sourceText.substring(cursor, r.start));
+      html += `<span class="gloss_match">${esc(sourceText.substring(r.start, r.end))}<span class="gloss-tip">${esc(r.translation)}</span></span>`;
+      cursor = r.end;
+    }
+    if (cursor < sourceText.length) html += esc(sourceText.substring(cursor));
+    return html;
+  }
+
+  /**
+   * Glossary Placement (Felix gloss_placement.cpp port).
+   * Given a TM match (source + target) and the query, find the "hole" (differing part),
+   * look up glossary translations for both holes, and substitute in the target.
+   *
+   * Returns { placed: true, target: "modified target" } or { placed: false }.
+   */
+  function glossaryPlacement(query, tmSource, tmTarget, glossaryData) {
+    if (!query || !tmSource || !tmTarget || !glossaryData.length) return { placed: false };
+    if (query === tmSource) return { placed: false }; // exact match, no placement needed
+
+    const qCmp = makeCmp(query);
+    const sCmp = makeCmp(tmSource);
+    if (qCmp === sCmp) return { placed: false };
+
+    // Find the differing segment (hole) between query and TM source
+    // Use token-level diff to locate substituted words
+    const useChar = containsCJK(query);
+    const qTokens = useChar ? Array.from(qCmp) : tokenize(qCmp);
+    const sTokens = useChar ? Array.from(sCmp) : tokenize(sCmp);
+
+    // Find common prefix and suffix
+    let prefixLen = 0;
+    while (prefixLen < qTokens.length && prefixLen < sTokens.length &&
+           qTokens[prefixLen] === sTokens[prefixLen]) prefixLen++;
+    let suffixLen = 0;
+    while (suffixLen < qTokens.length - prefixLen && suffixLen < sTokens.length - prefixLen &&
+           qTokens[qTokens.length - 1 - suffixLen] === sTokens[sTokens.length - 1 - suffixLen]) suffixLen++;
+
+    const qHoleTokens = qTokens.slice(prefixLen, qTokens.length - suffixLen);
+    const sHoleTokens = sTokens.slice(prefixLen, sTokens.length - suffixLen);
+    if (!qHoleTokens.length || !sHoleTokens.length) return { placed: false };
+
+    const sep = useChar ? '' : ' ';
+    const qHole = qHoleTokens.join(sep).trim();
+    const sHole = sHoleTokens.join(sep).trim();
+    if (!qHole || !sHole) return { placed: false };
+
+    // Look up glossary for both holes (exact match or fuzzy substring)
+    let qGlossTrans = null, sGlossTrans = null;
+    for (const g of glossaryData) {
+      const gCmp = g.cmp || makeCmp(g.term);
+      // Check if glossary term matches the hole (exact or contained within)
+      const qHoleCmp = makeCmp(qHole);
+      const sHoleCmp = makeCmp(sHole);
+      if (!qGlossTrans && (gCmp === qHoleCmp || qHoleCmp.includes(gCmp) || gCmp.includes(qHoleCmp))) {
+        qGlossTrans = g.translation;
+      }
+      if (!sGlossTrans && (gCmp === sHoleCmp || sHoleCmp.includes(gCmp) || gCmp.includes(sHoleCmp))) {
+        sGlossTrans = g.translation;
+      }
+    }
+
+    if (!qGlossTrans || !sGlossTrans) return { placed: false };
+
+    // Check that sGlossTrans appears exactly once in tmTarget
+    const tgtLower = tmTarget.toLowerCase();
+    const sTransLower = sGlossTrans.toLowerCase();
+    const idx = tgtLower.indexOf(sTransLower);
+    if (idx === -1) return { placed: false };
+    // Ensure exactly one occurrence
+    if (tgtLower.indexOf(sTransLower, idx + 1) !== -1) return { placed: false };
+
+    // Replace
+    const newTarget = tmTarget.substring(0, idx) + qGlossTrans + tmTarget.substring(idx + sGlossTrans.length);
+    return { placed: true, target: newTarget, from: sHole, to: qHole };
   }
 
   // === Diff Highlighting (backtrace from edit distance matrix) ===
@@ -230,8 +373,87 @@ var FelixEngine = (() => {
     return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  // === Reverse Search (search by target text) ===
+
+  function reverseSearch(query, tmData, minScore) {
+    if (!query || !tmData || !tmData.length) return [];
+    const qCmp = makeCmp(query);
+    const matches = [];
+    for (const entry of tmData) {
+      const tCmp = makeCmp(entry.target);
+      const score = fuzzyScore(qCmp, tCmp, minScore);
+      if (score >= minScore) {
+        matches.push({ ...entry, score });
+      }
+    }
+    matches.sort((a, b) => b.score - a.score);
+    return matches.slice(0, 20);
+  }
+
+  // === TM Entry Management (dedup + add) ===
+
+  /**
+   * Add a source/target pair to tmData with dedup.
+   * Returns 'added' if new, 'refcount' if duplicate (refcount incremented).
+   */
+  function addEntry(tmData, source, target, context) {
+    const sCmp = makeCmp(source);
+    const tCmp = makeCmp(target);
+
+    for (const entry of tmData) {
+      const entrySCmp = entry.cmp || makeCmp(entry.source);
+      const entryTCmp = entry.targetCmp || makeCmp(entry.target);
+      if (entrySCmp === sCmp && entryTCmp === tCmp) {
+        entry.refcount = (entry.refcount || 0) + 1;
+        return 'refcount';
+      }
+    }
+
+    tmData.push({
+      source, target, context: context || '',
+      cmp: sCmp, targetCmp: tCmp, refcount: 0,
+    });
+    return 'added';
+  }
+
+  /**
+   * Number Placement (Felix placement.cpp section 6.1).
+   * Finds numeric differences between query and TM source,
+   * and substitutes the query's numbers into the TM target.
+   *
+   * Example: query "ATK +15", TM source "ATK +10", TM target "攻撃力 +10"
+   *   → "攻撃力 +15"
+   */
+  function numberPlacement(query, tmSource, tmTarget) {
+    if (!query || !tmSource || !tmTarget) return { placed: false };
+    if (query === tmSource) return { placed: false };
+
+    // Extract all numbers from query and source
+    const qNums = query.match(/\d+\.?\d*/g) || [];
+    const sNums = tmSource.match(/\d+\.?\d*/g) || [];
+    if (!qNums.length || !sNums.length || qNums.length !== sNums.length) return { placed: false };
+
+    // Find which numbers differ
+    let result = tmTarget;
+    let didPlace = false;
+    for (let i = 0; i < qNums.length; i++) {
+      if (qNums[i] !== sNums[i]) {
+        // Replace sNums[i] with qNums[i] in target (first occurrence only)
+        const idx = result.indexOf(sNums[i]);
+        if (idx !== -1) {
+          result = result.substring(0, idx) + qNums[i] + result.substring(idx + sNums[i].length);
+          didPlace = true;
+        }
+      }
+    }
+
+    return didPlace ? { placed: true, target: result } : { placed: false };
+  }
+
   // === Public API ===
-  return { makeCmp, search, glossarySearch, fuzzyScore, edScore, diffHighlight, tokenize, containsCJK };
+  return { makeCmp, search, reverseSearch, glossarySearch, glossaryPlacement,
+           numberPlacement, markGlossaryInSource, fuzzyScore, edScore,
+           diffHighlight, tokenize, containsCJK, addEntry, esc };
 })();
 
 // Make available in different contexts

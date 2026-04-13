@@ -1,11 +1,11 @@
 /**
- * Side Panel logic — TM search, registration, glossary management.
- * All search is client-side (instant). Storage via chrome.storage.local.
+ * Manage page — TM/Glossary management, import/export, settings.
+ * Opened as a popup window from the floating panel's ⚙ button.
+ * Storage via chrome.storage.local (shared with content script).
  */
 
 let tmData = [];
 let glossaryData = [];
-let lastSearchValue = '';
 let settings = { sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en' };
 
 // ============================================================
@@ -14,35 +14,37 @@ let settings = { sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en' };
 
 const I18N = {
   en: {
-    search: 'Search', tm: 'TM', glossary: 'Glossary',
-    activeCell: 'Active Cell', selectCell: 'Select a cell to auto-search',
-    noMatch: 'No matches', registerToTM: 'Register to TM',
+    tm: 'TM', glossary: 'Glossary', settings: 'Settings',
+    register: 'Register', registerToTM: 'Register to TM',
     source: 'Source', target: 'Target', registered: 'Registered!',
     alreadyExists: 'Already exists (refcount +1)',
-    buildTM: 'Build TM from Sheet', bulkDesc: 'Paste TSV data (source[TAB]target per line) to bulk import.',
-    bulkImport: 'Bulk Import', imported: 'Imported',
+    import: 'Import', bulkDesc: 'Select source+target columns in the sheet, copy (Ctrl+C), then click Import.',
+    pasteImport: 'Paste from Clipboard', imported: 'Imported',
+    browseTM: 'Browse TM', filter: 'Filter...',
     addTerm: 'Add Term', termSrc: 'Term (source)', termTgt: 'Translation',
-    add: 'Add', added: 'Added!', dupGloss: 'Already exists', noGloss: 'No glossary entries',
-    importTM: 'Import TM', dropFile: 'Drop file here or click to browse',
+    add: 'Add', browse: 'Browse',
+    glossImport: 'Import', glossDesc: 'Select term+translation columns, copy (Ctrl+C), then click Import.',
+    dropFile: 'Drop TMX/TSV file',
     export: 'Export', exportTM: 'Export TM as TSV', exportGloss: 'Export Glossary as TSV',
-    settings: 'Settings', save: 'Save', saved: 'Saved!',
-    clearTM: 'Clear all TM', clearGloss: 'Clear all Glossary',
+    save: 'Save', saved: 'Saved!',
+    danger: 'Danger Zone', clearTM: 'Clear TM', clearGloss: 'Clear Glossary',
     confirmClear: 'Delete all entries? This cannot be undone.',
   },
   ja: {
-    search: '検索', tm: 'TM', glossary: '用語集',
-    activeCell: 'アクティブセル', selectCell: 'セルを選択すると自動検索します',
-    noMatch: 'マッチなし', registerToTM: 'TMに登録',
+    tm: 'TM', glossary: '用語集', settings: '設定',
+    register: '登録', registerToTM: 'TMに登録',
     source: '原文', target: '訳文', registered: '登録しました',
     alreadyExists: '既に存在 (refcount +1)',
-    buildTM: 'シートからTMを構築', bulkDesc: 'TSVデータを貼り付けて一括インポート（原文[TAB]訳文、1行ずつ）',
-    bulkImport: '一括インポート', imported: 'インポート完了',
+    import: 'インポート', bulkDesc: 'シートで原文+訳文列を選択し、コピー(Ctrl+C)してインポート',
+    pasteImport: 'クリップボードから貼り付け', imported: 'インポート完了',
+    browseTM: 'TMブラウズ', filter: 'フィルタ...',
     addTerm: '用語を追加', termSrc: '用語（原文）', termTgt: '訳語',
-    add: '追加', added: '追加しました', dupGloss: '既に登録済み', noGloss: '用語集は空です',
-    importTM: 'TMインポート', dropFile: 'ここにファイルをドロップ、またはクリック',
+    add: '追加', browse: 'ブラウズ',
+    glossImport: 'インポート', glossDesc: '用語+訳語列を選択し、コピー(Ctrl+C)してインポート',
+    dropFile: 'TMX/TSVファイルをドロップ',
     export: 'エクスポート', exportTM: 'TMをTSVでエクスポート', exportGloss: '用語集をTSVでエクスポート',
-    settings: '設定', save: '保存', saved: '保存しました',
-    clearTM: 'TMを全削除', clearGloss: '用語集を全削除',
+    save: '保存', saved: '保存しました',
+    danger: '危険な操作', clearTM: 'TMを全削除', clearGloss: '用語集を全削除',
     confirmClear: '全エントリを削除しますか？この操作は元に戻せません。',
   },
 };
@@ -56,40 +58,38 @@ function applyLang() {
   const ph = (id, text) => { const el = document.getElementById(id); if (el) el.placeholder = text; };
 
   // Tabs
-  set('tab-search', t('search'));
   set('tab-tm', t('tm'));
   set('tab-glossary', t('glossary'));
-  // Cell preview
-  set('lbl-active-cell', t('activeCell'));
-  // Search
-  set('empty-search', t('selectCell'));
-  // Register
+  set('tab-settings', t('settings'));
+  // TM
   set('h-register', t('registerToTM'));
+  set('btn-register', t('register'));
   ph('reg-source', t('source'));
   ph('reg-target', t('target'));
-  set('btn-register', t('register'));
-  set('h-build', t('buildTM'));
+  set('h-build', t('import'));
   set('p-bulk-desc', t('bulkDesc'));
-  set('btn-bulk', t('bulkImport'));
+  set('btn-paste-import', t('pasteImport'));
+  set('h-browse-tm', t('browseTM'));
+  ph('tm-filter', t('filter'));
+  set('drop-text', t('dropFile'));
+  set('h-export', t('export'));
+  set('btn-export-tm', t('exportTM'));
   // Glossary
   set('h-add-term', t('addTerm'));
   ph('gloss-term', t('termSrc'));
   ph('gloss-trans', t('termTgt'));
   set('btn-add-gloss', t('add'));
-  // Import
-  set('h-import', t('importTM'));
-  set('drop-text', t('dropFile'));
-  set('h-export', t('export'));
-  set('btn-export-tm', t('exportTM'));
+  set('h-gloss-import', t('glossImport'));
+  set('p-gloss-desc', t('glossDesc'));
+  set('btn-paste-gloss', t('pasteImport'));
+  set('h-browse-gloss', t('browse'));
   set('btn-export-gloss', t('exportGloss'));
   // Settings
   set('h-settings', t('settings'));
   set('btn-save-settings', t('save'));
+  set('h-danger', t('danger'));
   set('btn-clear-tm', t('clearTM'));
   set('btn-clear-gloss', t('clearGloss'));
-  // Update Set button label with current shortcut
-  const setKey = (settings.shortcutSet || 'Cmd+Shift+S').replace('Cmd', '⌘').replace('Shift', '⇧').replace('Ctrl', '⌃');
-  set('btn-set-tm', 'Set (register to TM) — ' + setKey);
 }
 
 // ============================================================
@@ -97,13 +97,13 @@ function applyLang() {
 // ============================================================
 
 async function init() {
-  // Load settings, TM and glossary from storage
   settings = await sendBg('SETTINGS_LOAD') || settings;
   tmData = await sendBg('TM_LOAD') || [];
   glossaryData = await sendBg('GLOSSARY_LOAD') || [];
   updateStats();
   applyLang();
   loadSettingsUI();
+  renderTMList();
 
   // Setup tabs
   document.querySelectorAll('.tab').forEach(tab => {
@@ -117,166 +117,29 @@ async function init() {
     });
   });
 
-  // Listen for messages
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === 'CELL_CHANGED') {
-      onCellChanged(msg.value, msg.ref);
-    }
-    if (msg.type === 'INSERT_TOP_MATCH') {
-      insertTopMatch();
-    }
-    if (msg.type === 'SET_TO_TM') {
-      setToTM();
-    }
+  // Listen for storage changes from content script (e.g. Set registered new TM)
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.felixTM) { tmData = changes.felixTM.newValue || []; updateStats(); renderTMList(); }
+    if (changes.felixGlossary) { glossaryData = changes.felixGlossary.newValue || []; updateStats(); renderGlossaryList(); }
+    if (changes.felixSettings) { settings = changes.felixSettings.newValue || settings; applyLang(); loadSettingsUI(); }
   });
-
-  // Auto-inject content script and get initial cell
-  try {
-    await sendBg('ENSURE_CONTENT_SCRIPT');
-    setTimeout(async () => {
-      const resp = await sendBgPayload('GET_CELL');
-      if (resp && resp.value) onCellChanged(resp.value, resp.ref);
-    }, 1000);
-  } catch (_) {}
-}
-
-// ============================================================
-// Cell Change Handler — Real-time search
-// ============================================================
-
-function onCellChanged(value, ref) {
-  document.getElementById('cell-value').textContent = value || '—';
-  document.getElementById('cell-ref').textContent = ref ? `(${ref})` : '';
-
-  // Auto-fill register fields
-  document.getElementById('reg-source').value = value || '';
-
-  // Auto-search if value changed
-  if (value && value !== lastSearchValue) {
-    lastSearchValue = value;
-    doSearch(value);
-  }
-}
-
-function doSearch(query) {
-  if (!query) query = document.getElementById('cell-value').textContent;
-  if (!query || query === '—') return;
-
-  const minScore = parseFloat(document.getElementById('min-score').value);
-  const searchType = document.getElementById('search-type').value;
-
-  const t0 = performance.now();
-
-  let matches;
-  if (searchType === 'glossary') {
-    matches = FelixEngine.glossarySearch(query, glossaryData);
-  } else {
-    matches = FelixEngine.search(query, tmData, minScore);
-  }
-
-  const ms = (performance.now() - t0).toFixed(1);
-  renderResults(matches, ms);
-}
-
-function renderResults(matches, ms) {
-  const el = document.getElementById('results');
-  if (!matches || !matches.length) {
-    el.innerHTML = `<div class="empty">No matches${ms ? ` (${ms}ms)` : ''}</div>`;
-    return;
-  }
-
-  const query = lastSearchValue || '';
-  el.innerHTML = matches.map((m, i) => {
-    const pct = Math.round(m.score * 100);
-    const cls = pct >= 90 ? 'score-high' : pct >= 70 ? 'score-mid' : 'score-low';
-    const meta = m.refcount ? `used ${m.refcount}x` : '';
-    // Diff highlight: show differences between query and TM source
-    const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.source) : null;
-    const sourceDisplay = diff ? diff.sourceHtml : escH(m.source);
-    return `<div class="match" data-idx="${i}" data-target="${esc(m.target)}">
-      <span class="score ${cls}">${pct}%</span>
-      ${ms && i === 0 ? `<span style="float:right;font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
-      <div class="match-source">${sourceDisplay}</div>
-      <div class="match-target">${escH(m.target)}</div>
-      ${meta ? `<div class="match-meta">${meta}</div>` : ''}
-    </div>`;
-  }).join('');
-
-  // Click to insert
-  el.querySelectorAll('.match').forEach(el => {
-    el.addEventListener('click', () => insertMatch(el));
-  });
-}
-
-/**
- * Get (Felix-style): Insert match into target cell. Does NOT register to TM.
- * Translator should review and modify the translation, then explicitly Set.
- */
-async function insertMatch(el) {
-  const target = el.getAttribute('data-target');
-  el.classList.add('inserted');
-
-  // Write to target column cell only — no TM registration
-  chrome.runtime.sendMessage({
-    type: 'WRITE_TO_SHEET',
-    value: target,
-    targetCol: settings.targetCol || 'B',
-  });
-}
-
-/** Insert the top match — called by keyboard shortcut (Cmd+Shift+S = Get) */
-async function insertTopMatch() {
-  const firstMatch = document.querySelector('.match');
-  if (firstMatch) {
-    await insertMatch(firstMatch);
-  }
-}
-
-/**
- * Set (Felix-style): Register current source+target pair to TM.
- * Called explicitly by the translator after reviewing the translation.
- * Reads the actual cell values from the sheet (source col + target col).
- */
-async function setToTM() {
-  // Read current source from active cell preview
-  const source = lastSearchValue;
-  if (!source) return;
-
-  // Read target from sheet (the translator may have edited it)
-  const resp = await sendBgPayload('GET_TARGET_CELL');
-  const target = resp && resp.value ? resp.value : '';
-
-  if (!target) {
-    showToast('results', '<div class="toast" style="background:#fce8e6;color:#c5221f">Target cell is empty</div>');
-    return;
-  }
-
-  const action = addToTMInternal(source, target);
-  await saveTM();
-  updateStats();
-
-  const msg = action === 'refcount' ? t('alreadyExists') : t('registered');
-  showToast('results', '<div class="toast">' + msg + ': ' + escH(source.substring(0, 30)) + '...</div>');
 }
 
 // ============================================================
 // TM Operations
 // ============================================================
 
-function addToTMInternal(source, target, context) {
-  return FelixEngine.addEntry(tmData, source, target, context);
-}
-
 async function registerTM() {
   const source = document.getElementById('reg-source').value.trim();
   const target = document.getElementById('reg-target').value.trim();
   if (!source || !target) return;
 
-  const action = addToTMInternal(source, target);
+  const action = FelixEngine.addEntry(tmData, source, target);
   await saveTM();
   updateStats();
+  renderTMList();
 
-  showToast('reg-toast', action === 'refcount' ? 'Already exists (refcount +1)' : 'Registered!');
+  showToast('reg-toast', action === 'refcount' ? t('alreadyExists') : t('registered'));
   document.getElementById('reg-target').value = '';
 }
 
@@ -284,14 +147,13 @@ async function pasteImport() {
   try {
     const text = await navigator.clipboard.readText();
     if (!text || !text.trim()) {
-      showToast('bulk-toast', t('noData') || 'No data in clipboard');
+      showToast('bulk-toast', 'No data in clipboard');
       return;
     }
 
     const lines = text.split('\n');
     let added = 0, updated = 0, skipped = 0;
 
-    // Detect if first line is a header
     const firstLine = lines[0].split('\t');
     const startIdx = (firstLine.length >= 2 &&
       /^(source|原文|en|src)/i.test(firstLine[0].trim())) ? 1 : 0;
@@ -299,7 +161,7 @@ async function pasteImport() {
     for (let i = startIdx; i < lines.length; i++) {
       const parts = lines[i].split('\t');
       if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
-        const action = addToTMInternal(parts[0].trim(), parts[1].trim());
+        const action = FelixEngine.addEntry(tmData, parts[0].trim(), parts[1].trim());
         if (action === 'added') added++;
         else updated++;
       } else {
@@ -309,55 +171,19 @@ async function pasteImport() {
 
     await saveTM();
     updateStats();
+    renderTMList();
 
-    const preview = document.getElementById('paste-preview');
-    preview.textContent = `${lines.length - startIdx} rows parsed`;
-
+    document.getElementById('paste-preview').textContent = `${lines.length - startIdx} rows parsed`;
     showToast('bulk-toast',
-      `${t('imported') || 'Imported'}: ${added} ${t('added') || 'new'}, ${updated} ${t('alreadyExists') ? 'updated' : 'updated'}${skipped ? `, ${skipped} skipped` : ''}`
+      `${t('imported')}: ${added} new, ${updated} updated${skipped ? `, ${skipped} skipped` : ''}`
     );
-
-    // Re-search current cell with new TM
-    if (lastSearchValue) doSearch(lastSearchValue);
-
   } catch (err) {
-    showToast('bulk-toast', 'Clipboard access denied. Try Ctrl+V in the text area below.');
+    showToast('bulk-toast', 'Clipboard access denied');
   }
 }
 
 async function saveTM() {
   await sendBg('TM_SAVE', tmData);
-}
-
-// ============================================================
-// Glossary Operations
-// ============================================================
-
-async function addGlossary() {
-  const term = document.getElementById('gloss-term').value.trim();
-  const trans = document.getElementById('gloss-trans').value.trim();
-  if (!term || !trans) return;
-
-  const tCmp = FelixEngine.makeCmp(term);
-
-  // Dedup
-  const exists = glossaryData.some(e =>
-    (e.cmp || FelixEngine.makeCmp(e.term)) === tCmp &&
-    FelixEngine.makeCmp(e.translation) === FelixEngine.makeCmp(trans)
-  );
-
-  if (!exists) {
-    glossaryData.push({ term, translation: trans, notes: '', cmp: tCmp });
-    await sendBg('GLOSSARY_SAVE', glossaryData);
-    updateStats();
-    showToast('gloss-toast', 'Added!');
-  } else {
-    showToast('gloss-toast', 'Already exists');
-  }
-
-  document.getElementById('gloss-term').value = '';
-  document.getElementById('gloss-trans').value = '';
-  renderGlossaryList();
 }
 
 function renderTMList() {
@@ -381,7 +207,7 @@ function renderTMList() {
     return;
   }
 
-  el.innerHTML = showing.map((e, i) => {
+  el.innerHTML = showing.map((e) => {
     const ref = e.refcount ? ` <span style="color:#9aa0a6">(${e.refcount}x)</span>` : '';
     const idx = tmData.indexOf(e);
     return `<div class="match" style="cursor:default;padding:8px;position:relative" data-tm-idx="${idx}">
@@ -401,6 +227,35 @@ function renderTMList() {
       renderTMList();
     });
   });
+}
+
+// ============================================================
+// Glossary Operations
+// ============================================================
+
+async function addGlossary() {
+  const term = document.getElementById('gloss-term').value.trim();
+  const trans = document.getElementById('gloss-trans').value.trim();
+  if (!term || !trans) return;
+
+  const tCmp = FelixEngine.makeCmp(term);
+  const exists = glossaryData.some(e =>
+    (e.cmp || FelixEngine.makeCmp(e.term)) === tCmp &&
+    FelixEngine.makeCmp(e.translation) === FelixEngine.makeCmp(trans)
+  );
+
+  if (!exists) {
+    glossaryData.push({ term, translation: trans, notes: '', cmp: tCmp });
+    await sendBg('GLOSSARY_SAVE', glossaryData);
+    updateStats();
+    showToast('gloss-toast', 'Added!');
+  } else {
+    showToast('gloss-toast', 'Already exists');
+  }
+
+  document.getElementById('gloss-term').value = '';
+  document.getElementById('gloss-trans').value = '';
+  renderGlossaryList();
 }
 
 async function pasteGlossary() {
@@ -481,12 +336,8 @@ function handleFile(file) {
   reader.onload = (e) => {
     const text = e.target.result;
     const ext = file.name.split('.').pop().toLowerCase();
-
-    if (ext === 'tmx') {
-      importTMX(text);
-    } else {
-      importTSV(text);
-    }
+    if (ext === 'tmx') importTMX(text);
+    else importTSV(text);
   };
   reader.readAsText(file, 'utf-8');
 }
@@ -502,15 +353,13 @@ function importTMX(xml) {
     if (tuvs.length >= 2) {
       const src = tuvs[0].querySelector('seg')?.textContent || '';
       const tgt = tuvs[1].querySelector('seg')?.textContent || '';
-      if (src && tgt) {
-        addToTMInternal(src, tgt);
-        added++;
-      }
+      if (src && tgt) { FelixEngine.addEntry(tmData, src, tgt); added++; }
     }
   });
 
   saveTM();
   updateStats();
+  renderTMList();
   showToast('import-toast', `Imported ${added} entries from TMX`);
 }
 
@@ -522,13 +371,14 @@ function importTSV(text) {
   for (let i = startLine; i < lines.length; i++) {
     const parts = lines[i].split('\t');
     if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
-      addToTMInternal(parts[0].trim(), parts[1].trim());
+      FelixEngine.addEntry(tmData, parts[0].trim(), parts[1].trim());
       added++;
     }
   }
 
   saveTM();
   updateStats();
+  renderTMList();
   showToast('import-toast', `Imported ${added} entries from TSV`);
 }
 
@@ -570,23 +420,13 @@ function sendBg(type, data) {
   });
 }
 
-/** Send a message to the content script via background relay */
-function sendBgPayload(contentType, extra) {
-  return new Promise(resolve => {
-    chrome.runtime.sendMessage({
-      type: 'TO_CONTENT',
-      payload: { type: contentType, targetCol: settings.targetCol || 'B', ...extra }
-    }, resolve);
-  });
-}
-
 function updateStats() {
-  document.getElementById('stats-badge').innerHTML =
-    `<span class="live-dot"></span>TM: ${tmData.length} | Gloss: ${glossaryData.length}`;
+  document.getElementById('stats-badge').textContent = `TM: ${tmData.length} | Gloss: ${glossaryData.length}`;
 }
 
 function showToast(elId, msg) {
   const el = document.getElementById(elId);
+  if (!el) return;
   el.innerHTML = `<div class="toast">${msg}</div>`;
   setTimeout(() => el.innerHTML = '', 3000);
 }
@@ -600,7 +440,6 @@ function loadSettingsUI() {
   document.getElementById('set-source-col').value = settings.sourceCol || 'A';
   document.getElementById('set-target-col').value = settings.targetCol || 'B';
   document.getElementById('set-min-score').value = String(settings.minScore || 0.7);
-  document.getElementById('min-score').value = String(settings.minScore || 0.7);
   document.getElementById('set-shortcut-get').value = settings.shortcutGet || 'Cmd+Shift+J';
   document.getElementById('set-shortcut-set').value = settings.shortcutSet || 'Cmd+Shift+U';
 }
@@ -612,12 +451,11 @@ async function saveSettingsUI() {
   settings.minScore = parseFloat(document.getElementById('set-min-score').value);
   settings.shortcutGet = document.getElementById('set-shortcut-get').value;
   settings.shortcutSet = document.getElementById('set-shortcut-set').value;
-  document.getElementById('min-score').value = String(settings.minScore);
   await sendBg('SETTINGS_SAVE', settings);
-  // Notify content script of shortcut changes
+  // Notify content script of changes
   chrome.runtime.sendMessage({
     type: 'BROADCAST',
-    payload: { type: 'SHORTCUTS_UPDATED', get: settings.shortcutGet, set: settings.shortcutSet },
+    payload: { type: 'SETTINGS_UPDATED', settings },
   }).catch(() => {});
   applyLang();
   showToast('settings-toast', t('saved'));
@@ -628,6 +466,7 @@ async function clearAllTM() {
   tmData = [];
   await saveTM();
   updateStats();
+  renderTMList();
   showToast('settings-toast', 'TM cleared');
 }
 
@@ -640,15 +479,12 @@ async function clearAllGlossary() {
   showToast('settings-toast', 'Glossary cleared');
 }
 
-function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
 function escH(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 // ============================================================
-// Event Bindings (no inline onclick — required by Manifest V3 CSP)
+// Event Bindings
 // ============================================================
 
-document.getElementById('min-score').addEventListener('change', () => doSearch());
-document.getElementById('search-type').addEventListener('change', () => doSearch());
 document.getElementById('btn-register').addEventListener('click', () => registerTM());
 document.getElementById('btn-paste-import').addEventListener('click', () => pasteImport());
 document.getElementById('tm-filter').addEventListener('input', () => renderTMList());
@@ -656,11 +492,7 @@ document.getElementById('btn-add-gloss').addEventListener('click', () => addGlos
 document.getElementById('btn-export-tm').addEventListener('click', () => exportTSV());
 document.getElementById('btn-paste-gloss').addEventListener('click', () => pasteGlossary());
 document.getElementById('btn-export-gloss').addEventListener('click', () => exportGlossaryTSV());
-document.getElementById('btn-set-tm').addEventListener('click', () => setToTM());
 document.getElementById('btn-save-settings').addEventListener('click', () => saveSettingsUI());
-document.getElementById('btn-float').addEventListener('click', () => {
-  chrome.windows.create({ url: 'sidepanel.html', type: 'popup', width: 400, height: 700 });
-});
 document.getElementById('btn-clear-tm').addEventListener('click', () => clearAllTM());
 document.getElementById('btn-clear-gloss').addEventListener('click', () => clearAllGlossary());
 

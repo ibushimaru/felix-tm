@@ -10,18 +10,31 @@ chrome.action.onClicked.addListener((tab) => {
   });
 });
 
-// Right-click: open side panel as fallback
+// Right-click: open manage page
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
-    id: 'open-sidepanel',
-    title: 'Open Felix TM (Side Panel)',
+    id: 'open-manage',
+    title: 'Felix TM — Manage',
     contexts: ['action'],
+  });
+
+  // Re-inject content script into all open Google Sheets tabs
+  // so users don't need to manually reload after extension update
+  chrome.tabs.query({ url: 'https://docs.google.com/spreadsheets/*' }, (tabs) => {
+    for (const tab of tabs) {
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['felix-engine.js', 'content.js'],
+      }).catch(() => {});
+    }
   });
 });
 
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'open-sidepanel') {
-    chrome.sidePanel.open({ tabId: tab.id });
+chrome.contextMenus.onClicked.addListener((info) => {
+  if (info.menuItemId === 'open-manage') {
+    chrome.windows.create({
+      url: 'manage.html', type: 'popup', width: 420, height: 700,
+    });
   }
 });
 
@@ -48,7 +61,7 @@ async function ensureContentScript(tabId) {
 // Message routing
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
-  // Cell change: forward to all listeners (side panel)
+  // Cell change: forward to all listeners
   if (msg.type === 'CELL_CHANGED') {
     chrome.runtime.sendMessage(msg).catch(() => {});
     return;

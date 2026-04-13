@@ -7,7 +7,6 @@
     "activeTab",
     "tabs",
     "scripting",
-    "sidePanel",
     "storage",
     "clipboardRead",
     "identity",
@@ -33,9 +32,10 @@
       "run_at": "document_idle"
     }
   ],
-  "side_panel": {
-    "default_path": "sidepanel.html"
-  },
+  "web_accessible_resources": [{
+    "resources": ["manage.html", "manage.js", "felix-engine.js"],
+    "matches": ["https://docs.google.com/*"]
+  }],
   "action": {
     "default_title": "Felix TM",
     "default_icon": {
