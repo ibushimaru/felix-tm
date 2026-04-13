@@ -463,9 +463,9 @@ var FelixEngine = (() => {
     if (!query || !tmSource || !tmTarget) return { placed: false };
     if (query === tmSource) return { placed: false };
 
-    // Extract all numbers from query and source
-    const qNums = query.match(/\d+\.?\d*/g) || [];
-    const sNums = tmSource.match(/\d+\.?\d*/g) || [];
+    // Extract all numbers from query and source (decimal only if followed by digit)
+    const qNums = query.match(/\d+(?:\.\d+)?/g) || [];
+    const sNums = tmSource.match(/\d+(?:\.\d+)?/g) || [];
     if (!qNums.length || !sNums.length || qNums.length !== sNums.length) return { placed: false };
 
     // Find which numbers differ
