@@ -245,19 +245,14 @@ var FelixEngine = (() => {
     const sHole = sHoleTokens.join(sep).trim();
     if (!qHole || !sHole) return { placed: false };
 
-    // Look up glossary for both holes (exact match or fuzzy substring)
+    // Look up glossary for both holes (exact match only — Felix uses get_perfect_matches)
     let qGlossTrans = null, sGlossTrans = null;
+    const qHoleCmp = makeCmp(qHole);
+    const sHoleCmp = makeCmp(sHole);
     for (const g of glossaryData) {
       const gCmp = g.cmp || makeCmp(g.term);
-      // Check if glossary term matches the hole (exact or contained within)
-      const qHoleCmp = makeCmp(qHole);
-      const sHoleCmp = makeCmp(sHole);
-      if (!qGlossTrans && (gCmp === qHoleCmp || qHoleCmp.includes(gCmp) || gCmp.includes(qHoleCmp))) {
-        qGlossTrans = g.translation;
-      }
-      if (!sGlossTrans && (gCmp === sHoleCmp || sHoleCmp.includes(gCmp) || gCmp.includes(sHoleCmp))) {
-        sGlossTrans = g.translation;
-      }
+      if (!qGlossTrans && gCmp === qHoleCmp) qGlossTrans = g.translation;
+      if (!sGlossTrans && gCmp === sHoleCmp) sGlossTrans = g.translation;
     }
 
     if (!qGlossTrans || !sGlossTrans) return { placed: false };
