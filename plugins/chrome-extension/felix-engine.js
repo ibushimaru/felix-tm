@@ -344,18 +344,58 @@ var FelixEngine = (() => {
 
     // Build HTML
     let qParts = [], sParts = [];
+
+    // Build glossary position map on the query text for underlining
+    let glossRegions = []; // char positions in original query that are glossary terms
+    if (arguments[2] && arguments[2].length) {
+      const glossHits = arguments[2];
+      const qLower = query.toLowerCase();
+      for (const g of glossHits) {
+        const tLower = g.term.toLowerCase();
+        let pos = 0;
+        while ((pos = qLower.indexOf(tLower, pos)) !== -1) {
+          const end = pos + tLower.length;
+          const overlaps = glossRegions.some(r => pos < r.end && end > r.start);
+          if (!overlaps) glossRegions.push({ start: pos, end, translation: g.translation });
+          pos = end;
+        }
+      }
+    }
+
+    // Map each query token to its char position in the original query
+    let qCharPos = 0;
+    const qTokenPositions = []; // for each op that has qTok, its start pos in query
     for (const op of ops) {
+      if (op.qTok) {
+        const idx = query.indexOf(op.qTok, qCharPos);
+        qTokenPositions.push(idx >= 0 ? idx : qCharPos);
+        if (idx >= 0) qCharPos = idx + op.qTok.length;
+      } else {
+        qTokenPositions.push(-1);
+      }
+    }
+
+    let opIdx = 0;
+    for (const op of ops) {
+      const charPos = qTokenPositions[opIdx++];
+      // Check if this query token falls within a glossary region
+      const inGloss = op.qTok && glossRegions.find(r =>
+        charPos >= r.start && charPos + op.qTok.length <= r.end
+      );
+      const glossWrap = (html, g) =>
+        `<span class="gloss_match">${html}<span class="gloss-tip">${esc(g.translation)}</span></span>`;
+
       switch (op.type) {
         case 'match':
-          qParts.push(`<span class="diff-match">${esc(op.qTok)}</span>`);
+          qParts.push(inGloss ? glossWrap(`<span class="diff-match">${esc(op.qTok)}</span>`, inGloss) : `<span class="diff-match">${esc(op.qTok)}</span>`);
           sParts.push(`<span class="diff-match">${esc(op.sTok)}</span>`);
           break;
         case 'sub':
-          qParts.push(`<span class="diff-sub">${esc(op.qTok)}</span>`);
+          qParts.push(inGloss ? glossWrap(`<span class="diff-sub">${esc(op.qTok)}</span>`, inGloss) : `<span class="diff-sub">${esc(op.qTok)}</span>`);
           sParts.push(`<span class="diff-sub">${esc(op.sTok)}</span>`);
           break;
         case 'del':
-          qParts.push(`<span class="diff-del">${esc(op.qTok)}</span>`);
+          qParts.push(inGloss ? glossWrap(`<span class="diff-del">${esc(op.qTok)}</span>`, inGloss) : `<span class="diff-del">${esc(op.qTok)}</span>`);
           break;
         case 'ins':
           sParts.push(`<span class="diff-ins">${esc(op.sTok)}</span>`);

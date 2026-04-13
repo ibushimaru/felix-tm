@@ -78,6 +78,8 @@
     settings = sets || settings;
     _dataReady = true;
     updateBadge();
+    // Preload source column cache via Sheets API
+    preloadSourceCache();
     // Run initial search immediately after data is ready
     const value = getCellValue();
     if (value) {
@@ -89,6 +91,20 @@
         s.getElementById('cell-ref').textContent = lastCellRef ? `(${lastCellRef})` : '';
       }
       doSearch(value);
+    }
+  }
+
+  async function preloadSourceCache() {
+    const ssId = getSpreadsheetId();
+    if (!ssId) return;
+    const col = settings.sourceCol || 'A';
+    const range = `${col}1:${col}1000`;
+    const resp = await msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range });
+    if (resp && resp.values) {
+      for (let i = 0; i < resp.values.length; i++) {
+        const val = resp.values[i];
+        if (val) _sourceCache[String(i + 1)] = val;
+      }
     }
   }
 
@@ -154,14 +170,17 @@
       .row { display: flex; gap: 6px; margin-bottom: 8px; }
       .row > * { flex: 1; }
       select { width: 100%; padding: 6px; border: 1px solid #dadce0; border-radius: 4px; font-size: 12px; }
-      .match { background: #f8f9fa; border: 1px solid #e8eaed; border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; transition: all 0.1s; }
-      .match:hover { border-color: #1a73e8; background: #e8f0fe; }
+      .match { background: #f8f9fa; border: 1px solid #e8eaed; border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; transition: all 0.1s; position: relative; }
+      .match:hover { border-color: #1a73e8; }
       .match.inserted { border-color: #34a853; opacity: 0.6; }
+      .match.hover-left { cursor: pointer; border-color: #1a73e8 !important; }
+      .match.hover-right { cursor: text; border-color: #f9ab00 !important; }
       .score { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 600; color: #fff; }
-      .score-high { background: #fff; color: #34a853; border: 1px solid #34a853; }
-      .score-mid { background: #fff; color: #f9ab00; border: 1px solid #f9ab00; }
-      .score-low { background: #fff; color: #ea4335; border: 1px solid #ea4335; }
+      .score-high { background: #fff; color: #202124; border: 1px solid #34a853; }
+      .score-mid { background: #fff; color: #202124; border: 1px solid #f9ab00; }
+      .score-low { background: #fff; color: #202124; border: 1px solid #ea4335; }
       .match-source { color: #5f6368; font-size: 11px; margin-top: 3px; word-break: break-all; }
+      .diff-missing { margin-left: 4px; }
       .match-target { color: #202124; font-size: 12px; margin-top: 2px; word-break: break-all; }
       .match-meta { color: #9aa0a6; font-size: 10px; margin-top: 3px; }
       .empty { text-align: center; color: #9aa0a6; padding: 16px 8px; font-size: 12px; }
@@ -174,7 +193,7 @@
       .diff-del { background: #fef7cd; color: #8a6d00; border-radius: 2px; padding: 0 2px; font-weight: 500; }
       .diff-ins { background: #e6f4ea; color: #137333; border-radius: 2px; padding: 0 1px; }
       .shortcut { font-size: 10px; color: #9aa0a6; }
-      .gloss_match { background: #e8f0fe; color: #1a73e8; border-radius: 2px; padding: 0 1px; cursor: help; border-bottom: 1px dashed #1a73e8; position: relative; }
+      .gloss_match { text-decoration: underline; text-decoration-color: #1a73e8; text-underline-offset: 2px; cursor: help; position: relative; }
       .gloss-tip { display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
       .gloss_match:hover .gloss-tip { display: block; }
       .match-placed { border-color: #34a853; }
@@ -285,6 +304,8 @@
       settings.sourceCol = srcColInput.value.toUpperCase();
       srcColInput.value = settings.sourceCol;
       msg('SETTINGS_SAVE', settings);
+      _sourceCache = {};
+      preloadSourceCache();
     });
     tgtColInput.addEventListener('change', () => {
       settings.targetCol = tgtColInput.value.toUpperCase();
@@ -482,12 +503,11 @@
           tgtDisplay = esc(m.source);
           insertTarget = m.source;
         } else {
-          if (pct < 100) {
-            const diff = FelixEngine.diffHighlight(searchQuery, m.source);
-            srcHtml = diff ? diff.queryHtml : esc(m.source);
+          if (pct === 100) {
+            srcHtml = esc(m.source);
           } else {
-            const glossMarkup = glossHits.length ? FelixEngine.markGlossaryInSource(m.source, glossHits) : null;
-            srcHtml = glossMarkup || esc(m.source);
+            const diff = FelixEngine.diffHighlight(searchQuery, m.source, glossHits);
+            srcHtml = diff ? diff.queryHtml : esc(m.source);
           }
 
           insertTarget = m.target;
@@ -527,11 +547,23 @@
         </div>`;
       }).join('');
 
-      // Click match → insert
+      // Click: left half → next row, right half → edit target
       el.querySelectorAll('.match').forEach(div => {
+        div.addEventListener('mousemove', (e) => {
+          const rect = div.getBoundingClientRect();
+          const isRight = (e.clientX - rect.left) > rect.width / 2;
+          div.classList.toggle('hover-left', !isRight);
+          div.classList.toggle('hover-right', isRight);
+        });
+        div.addEventListener('mouseleave', () => {
+          div.classList.remove('hover-left', 'hover-right');
+        });
         div.addEventListener('click', (e) => {
           if (e.target.classList.contains('btn-del-tm')) return;
-          doGet(div);
+          const rect = div.getBoundingClientRect();
+          const isRight = (e.clientX - rect.left) > rect.width / 2;
+          div.classList.add('inserted');
+          doGet(div, isRight);
         });
       });
 
@@ -553,17 +585,19 @@
   }
 
   // === Get (insert match, no TM registration) ===
-  async function doGet(el) {
+  async function doGet(el, editMode) {
     const target = el.getAttribute('data-target');
-    el.classList.add('inserted');
-    await writeToTarget(target);
+    await writeToTarget(target, editMode);
   }
 
   function doGetTop() {
     const s = getShadow();
     if (!s) return;
     const first = s.querySelector('.match');
-    if (first) doGet(first);
+    if (first) {
+      first.classList.add('inserted');
+      doGet(first, false);
+    }
   }
 
   // === Set (register to TM) ===
@@ -607,23 +641,32 @@
   }
 
   // === Write to target cell via Sheets API ===
-  async function writeToTarget(value) {
+  async function writeToTarget(value, editMode) {
     const ref = getCellRef();
     const match = ref ? ref.match(/([A-Z]+)(\d+)/i) : null;
     if (!match) return;
 
     const rowNum = parseInt(match[2]);
     const targetRef = (settings.targetCol || 'B') + rowNum;
-    const nextRef = (settings.sourceCol || 'A') + (rowNum + 1);
     const ssId = getSpreadsheetId();
     if (!ssId) return;
 
     // Write via background
-    msg('SHEETS_API_WRITE', { spreadsheetId: ssId, range: targetRef, value });
+    await msg('SHEETS_API_WRITE', { spreadsheetId: ssId, range: targetRef, value });
 
-    // Move to next row
     const nameBox = findNameBox();
-    if (nameBox) {
+    if (!nameBox) return;
+
+    if (editMode) {
+      // Navigate to target cell
+      nameBox.focus();
+      if (nameBox.select) nameBox.select();
+      nameBox.value = targetRef;
+      nameBox.dispatchEvent(new Event('input', { bubbles: true }));
+      nameBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    } else {
+      // Move to next row's source cell
+      const nextRef = (settings.sourceCol || 'A') + (rowNum + 1);
       nameBox.focus();
       if (nameBox.select) nameBox.select();
       nameBox.value = nextRef;
@@ -667,7 +710,20 @@
         s.getElementById('cell-ref').textContent = ref ? `(${ref})` : '';
       }
 
-      if (value) doSearch(value);
+      if (value) {
+        doSearch(value);
+      } else if (isTargetColumn()) {
+        // Empty target cell: search using cached source for this row
+        const refMatch2 = ref ? ref.match(/(\d+)/i) : null;
+        const cached = refMatch2 ? _sourceCache[refMatch2[1]] : null;
+        if (cached) {
+          doSearch(cached);
+        } else {
+          // No cache, clear results
+          const rs = s.getElementById('results');
+          if (rs) rs.innerHTML = `<div class="empty">${t('selectCell')}</div>`;
+        }
+      }
     }
   }
 
@@ -760,6 +816,7 @@
     if (changes.felixSettings) {
       const newSettings = changes.felixSettings.newValue;
       if (newSettings) {
+        const oldSourceCol = settings.sourceCol;
         Object.assign(settings, newSettings);
         updateShortcutLabel();
         applyPanelLang();
@@ -768,6 +825,10 @@
           s.getElementById('src-col').value = settings.sourceCol || 'A';
           s.getElementById('tgt-col').value = settings.targetCol || 'B';
           s.getElementById('min-score').value = String(settings.minScore || 0.7);
+        }
+        if (settings.sourceCol !== oldSourceCol) {
+          _sourceCache = {};
+          preloadSourceCache();
         }
       }
     }

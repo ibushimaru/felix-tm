@@ -147,6 +147,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // Sheets API batch read (single column)
+  if (msg.type === 'SHEETS_API_READ_BATCH') {
+    const d = msg.data || msg;
+    chrome.identity.getAuthToken({ interactive: false }, (token) => {
+      if (!token) { sendResponse({ values: [] }); return; }
+      const range = encodeURIComponent(d.range);
+      fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values/${range}`,
+        { headers: { 'Authorization': 'Bearer ' + token } }
+      ).then(r => r.json()).then(data => {
+        const values = (data.values || []).map(row => row[0] || '');
+        sendResponse({ values });
+      }).catch(() => sendResponse({ values: [] }));
+    });
+    return true;
+  }
+
   // Sheets API read (from content script directly)
   if (msg.type === 'SHEETS_API_READ_DIRECT' || msg.type === 'SHEETS_API_READ') {
     const d = msg.data || msg;
