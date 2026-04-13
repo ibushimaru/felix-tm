@@ -452,34 +452,95 @@ var FelixEngine = (() => {
   }
 
   /**
-   * Number Placement (Felix placement.cpp section 6.1).
-   * Finds numeric differences between query and TM source,
-   * and substitutes the query's numbers into the TM target.
-   *
-   * Example: query "ATK +15", TM source "ATK +10", TM target "攻撃力 +10"
-   *   → "攻撃力 +15"
+   * Number Placement (Felix MatchStringPairing.cpp port).
+   * Uses diff ops to find positions where both query and source have numbers,
+   * then substitutes query numbers into the TM target.
+   * Language-agnostic: works with full-width digits, any script.
    */
   function numberPlacement(query, tmSource, tmTarget) {
     if (!query || !tmSource || !tmTarget) return { placed: false };
     if (query === tmSource) return { placed: false };
 
-    // Extract all numbers from query and source (decimal only if followed by digit)
-    const qNums = query.match(/\d+(?:\.\d+)?/g) || [];
-    const sNums = tmSource.match(/\d+(?:\.\d+)?/g) || [];
-    if (!qNums.length || !sNums.length || qNums.length !== sNums.length) return { placed: false };
+    // Felix is_num_or_null: digit, period, comma, hyphen (both half/full-width)
+    function isNumChar(c) {
+      if (!c) return true; // epsilon
+      const code = c.charCodeAt(0);
+      // ASCII digits, full-width digits (０-９), period, full-width period, comma, hyphen
+      return (code >= 0x30 && code <= 0x39) || (code >= 0xFF10 && code <= 0xFF19) ||
+             c === '.' || c === '．' || c === ',' || c === '-';
+    }
+    function isNumStr(s) { return s && Array.from(s).every(isNumChar); }
+    // Normalize full-width digits to half-width for comparison
+    function narrowNum(s) {
+      return s.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+    }
 
-    // Find which numbers differ
-    let result = tmTarget;
-    let didPlace = false;
-    for (let i = 0; i < qNums.length; i++) {
-      if (qNums[i] !== sNums[i]) {
-        // Replace sNums[i] with qNums[i] in target (first occurrence only)
-        const idx = result.indexOf(sNums[i]);
-        if (idx !== -1) {
-          result = result.substring(0, idx) + qNums[i] + result.substring(idx + sNums[i].length);
-          didPlace = true;
-        }
+    // Use character-level diff to find substitution pairs
+    const qChars = Array.from(query);
+    const sChars = Array.from(tmSource);
+
+    // Build DP matrix
+    const n = qChars.length, m = sChars.length;
+    const dp = [];
+    for (let i = 0; i <= n; i++) { dp[i] = new Array(m + 1); dp[i][0] = i; }
+    for (let j = 0; j <= m; j++) dp[0][j] = j;
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        const cost = qChars[i-1] === sChars[j-1] ? 0 : 1;
+        dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost);
       }
+    }
+
+    // Backtrace to find substitution pairs
+    const subs = []; // { qStr, sStr } — consecutive number substitutions
+    let i = n, j = m, curQ = '', curS = '';
+    function flushNum() {
+      if (curQ && curS && isNumStr(curQ) && isNumStr(curS) && narrowNum(curQ) !== narrowNum(curS)) {
+        subs.push({ qStr: curQ, sStr: curS });
+      }
+      curQ = ''; curS = '';
+    }
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && dp[i][j] === dp[i-1][j-1] + (qChars[i-1] === sChars[j-1] ? 0 : 1)) {
+        if (qChars[i-1] === sChars[j-1]) {
+          flushNum(); // match — end of any number run
+        } else {
+          // substitution — accumulate if both are number chars
+          curQ = qChars[i-1] + curQ;
+          curS = sChars[j-1] + curS;
+        }
+        i--; j--;
+      } else if (i > 0 && dp[i][j] === dp[i-1][j] + 1) {
+        curQ = qChars[i-1] + curQ;
+        i--;
+      } else if (j > 0 && dp[i][j] === dp[i][j-1] + 1) {
+        curS = sChars[j-1] + curS;
+        j--;
+      } else {
+        break;
+      }
+    }
+    flushNum();
+
+    if (!subs.length) return { placed: false };
+
+    // Collect replacement positions first, then apply in reverse order
+    // to avoid position shifts
+    let result = tmTarget;
+    const replacements = []; // { idx, len, replacement }
+    for (const sub of subs) {
+      const sNarrow = narrowNum(sub.sStr);
+      const idx = result.indexOf(sNarrow);
+      if (idx !== -1 && result.indexOf(sNarrow, idx + sNarrow.length) === -1) {
+        replacements.push({ idx, len: sNarrow.length, replacement: narrowNum(sub.qStr) });
+      }
+    }
+    // Apply from end to start so indices stay valid
+    replacements.sort((a, b) => b.idx - a.idx);
+    let didPlace = false;
+    for (const r of replacements) {
+      result = result.substring(0, r.idx) + r.replacement + result.substring(r.idx + r.len);
+      didPlace = true;
     }
 
     return didPlace ? { placed: true, target: result } : { placed: false };
