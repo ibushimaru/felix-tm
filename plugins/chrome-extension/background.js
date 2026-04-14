@@ -6,6 +6,17 @@
 // Import IndexedDB wrapper
 importScripts('db.js');
 
+// Track the last active Google Sheets tab
+let _lastSheetsTabId = null;
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  chrome.tabs.get(tabId, (tab) => {
+    if (tab && tab.url && tab.url.includes('docs.google.com/spreadsheets/')) {
+      _lastSheetsTabId = tabId;
+    }
+  });
+});
+
 // Click icon: toggle in-page overlay panel
 chrome.action.onClicked.addListener((tab) => {
   chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_PANEL' }, () => {
@@ -189,6 +200,48 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // Helper: find the correct Sheets tab (last active, or fallback to any)
+  function findSheetsTab(callback) {
+    if (_lastSheetsTabId) {
+      chrome.tabs.get(_lastSheetsTabId, (tab) => {
+        if (chrome.runtime.lastError || !tab || !tab.url || !tab.url.includes('docs.google.com/spreadsheets/')) {
+          // Fallback
+          chrome.tabs.query({ url: 'https://docs.google.com/spreadsheets/*' }, (tabs) => {
+            callback(tabs.length ? tabs[0].id : null);
+          });
+        } else {
+          callback(tab.id);
+        }
+      });
+    } else {
+      chrome.tabs.query({ url: 'https://docs.google.com/spreadsheets/*' }, (tabs) => {
+        callback(tabs.length ? tabs[0].id : null);
+      });
+    }
+  }
+
+  // Get selection from Google Sheets content script
+  if (msg.type === 'GET_SELECTION') {
+    findSheetsTab((tabId) => {
+      if (!tabId) { sendResponse({}); return; }
+      chrome.tabs.sendMessage(tabId, { type: 'GET_SELECTION' }, (resp) => {
+        sendResponse(resp || {});
+      });
+    });
+    return true;
+  }
+
+  // Get spreadsheet info from the Google Sheets content script
+  if (msg.type === 'GET_SHEET_INFO') {
+    findSheetsTab((tabId) => {
+      if (!tabId) { sendResponse({}); return; }
+      chrome.tabs.sendMessage(tabId, { type: 'GET_SHEET_INFO' }, (resp) => {
+        sendResponse(resp || {});
+      });
+    });
+    return true;
+  }
+
   // Storage operations (IndexedDB)
   if (msg.type === 'TM_SAVE') {
     tmSaveAll(msg.data).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
@@ -212,6 +265,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === 'GLOSSARY_LOAD') {
     glossaryGetAll().then(data => sendResponse(data)).catch(() => sendResponse([]));
+    return true;
+  }
+  if (msg.type === 'RULES_SAVE') {
+    rulesSaveAll(msg.data).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
+    return true;
+  }
+  if (msg.type === 'RULES_LOAD') {
+    rulesGetAll().then(data => sendResponse(data)).catch(() => sendResponse([]));
     return true;
   }
   if (msg.type === 'SETTINGS_SAVE') {

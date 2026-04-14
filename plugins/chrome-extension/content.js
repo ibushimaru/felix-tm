@@ -24,11 +24,14 @@
   // === State ===
   let tmData = [];
   let glossaryData = [];
+  let rulesData = [];
   let settings = { sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en',
                     shortcutGet: 'Cmd+Shift+J', shortcutSet: 'Cmd+Shift+U' };
   let lastCellValue = '';
   let lastCellRef = '';
   let panelVisible = false;
+  let panelMode = 'translate'; // 'translate' | 'review'
+  let concRegex = false;
   let _pollTimer = null;
 
   // Register cleanup for next re-injection
@@ -70,11 +73,12 @@
   // === Load data from storage ===
   let _dataReady = false;
   async function loadData() {
-    const [tm, gloss, sets] = await Promise.all([
-      msg('TM_LOAD'), msg('GLOSSARY_LOAD'), msg('SETTINGS_LOAD')
+    const [tm, gloss, rules, sets] = await Promise.all([
+      msg('TM_LOAD'), msg('GLOSSARY_LOAD'), msg('RULES_LOAD'), msg('SETTINGS_LOAD')
     ]);
     tmData = tm || [];
     glossaryData = gloss || [];
+    rulesData = rules || [];
     settings = sets || settings;
     _dataReady = true;
     updateBadge();
@@ -123,7 +127,9 @@
 
   function getCellValue() {
     const bar = findFormulaBar();
-    return bar ? (bar.textContent || bar.innerText || '').trim() : '';
+    if (!bar) return '';
+    // innerText preserves line breaks from <br> / <div> in the formula bar
+    return (bar.innerText || bar.textContent || '').trim();
   }
 
   function getCellRef() {
@@ -148,7 +154,7 @@
       :host { all: initial; }
       * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
       #panel {
-        position: fixed; top: 80px; right: 20px; width: 360px;
+        position: fixed; top: 80px; right: 20px; width: 360px; max-height: calc(100vh - 100px);
         background: #fff; border: 1px solid #dadce0; border-radius: 12px;
         box-shadow: 0 8px 32px rgba(0,0,0,0.15); z-index: 999999;
         display: flex; flex-direction: column; overflow: hidden;
@@ -164,9 +170,9 @@
       .badge { background: #e8eaed; color: #5f6368; padding: 2px 8px; border-radius: 12px; font-size: 10px; }
       .btn-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #5f6368; padding: 0 4px; }
       .btn-close:hover { color: #202124; }
-      #body { padding: 10px 14px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; }
+      #body { padding: 10px 14px; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
       #results-wrap { flex: 1; overflow-y: auto; }
-      .cell-preview { background: #f1f3f4; border-radius: 4px; padding: 6px 10px; font-size: 12px; color: #3c4043; margin-bottom: 8px; min-height: 20px; word-break: break-all; }
+      .cell-preview { background: #f1f3f4; border-radius: 4px; padding: 6px 10px; font-size: 12px; line-height: 1.4; color: #3c4043; margin-bottom: 8px; min-height: calc(1.4em + 12px); flex-shrink: 0; word-break: break-all; }
       .cell-label { font-size: 10px; color: #9aa0a6; margin-bottom: 2px; }
       .row { display: flex; gap: 6px; margin-bottom: 8px; }
       .row > * { flex: 1; }
@@ -208,6 +214,15 @@
       .col-input:focus { outline: none; border-color: #1a73e8; }
       .col-label { font-size: 10px; color: #9aa0a6; }
       .settings-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+      .mode-toggle { display: flex; border: 1px solid #dadce0; border-radius: 4px; overflow: hidden; }
+      .mode-btn { padding: 3px 8px; font-size: 10px; cursor: pointer; color: #5f6368; user-select: none; }
+      .mode-btn.mode-active { background: #1a73e8; color: #fff; }
+      .conc-row { display: flex; gap: 4px; margin-bottom: 6px; }
+      .conc-input { flex: 1; padding: 4px 6px; border: 1px solid #dadce0; border-radius: 4px; font-size: 11px; }
+      .conc-input:focus { outline: none; border-color: #1a73e8; }
+      .conc-highlight { background: #fef7cd; border-radius: 2px; padding: 0 1px; }
+      .regex-toggle { padding: 3px 6px; border: 1px solid #dadce0; border-radius: 4px; font-size: 11px; font-family: monospace; cursor: pointer; color: #9aa0a6; user-select: none; }
+      .regex-toggle.active { background: #1a73e8; color: #fff; border-color: #1a73e8; }
     </style>
     <div id="panel">
       <div id="header">
@@ -223,6 +238,10 @@
         <div class="cell-label"><span id="lbl-cell">Active Cell</span> <span id="cell-ref"></span></div>
         <div class="cell-preview" id="cell-value">—</div>
         <div class="settings-row">
+          <div class="mode-toggle" id="mode-toggle">
+            <span class="mode-btn mode-active" data-mode="translate" id="mode-translate">Translate</span>
+            <span class="mode-btn" data-mode="review" id="mode-review">Review</span>
+          </div>
           <select id="min-score" style="flex:1;padding:4px;font-size:11px">
             <option value="0.5">50%</option><option value="0.6">60%</option>
             <option value="0.7" selected>70%</option><option value="0.8">80%</option>
@@ -232,6 +251,10 @@
           <input class="col-input" id="src-col" value="A" maxlength="2">
           <span class="col-label" id="lbl-tgt">Tgt</span>
           <input class="col-input" id="tgt-col" value="B" maxlength="2">
+        </div>
+        <div class="conc-row">
+          <input class="conc-input" id="conc-query" placeholder="Concordance (Enter)">
+          <span class="regex-toggle" id="btn-regex" title="Regular Expression">.*</span>
         </div>
         <div id="results-wrap"><div id="results"><div class="empty" id="lbl-empty">Select a cell to search TM</div></div></div>
         <div class="set-bar">
@@ -344,6 +367,34 @@
     // Set button
     shadow.getElementById('btn-set').addEventListener('click', () => doSet());
 
+    // Mode toggle (Translate ↔ Review)
+    shadow.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        panelMode = btn.dataset.mode;
+        shadow.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('mode-active'));
+        btn.classList.add('mode-active');
+        doSearch();
+      });
+    });
+
+    // Regex toggle
+    shadow.getElementById('btn-regex').addEventListener('click', (e) => {
+      concRegex = !concRegex;
+      e.target.classList.toggle('active', concRegex);
+    });
+
+    // Concordance search — live as you type
+    const concInput = shadow.getElementById('conc-query');
+    let _concTimer = null;
+    concInput.addEventListener('input', () => {
+      clearTimeout(_concTimer);
+      _concTimer = setTimeout(() => doConcordance(), 150);
+    });
+    concInput.addEventListener('keydown', (e) => e.stopPropagation());
+    concInput.addEventListener('paste', (e) => e.stopPropagation());
+    concInput.addEventListener('copy', (e) => e.stopPropagation());
+    concInput.addEventListener('cut', (e) => e.stopPropagation());
+
     // Store shadow ref for updates
     host._shadow = shadow;
 
@@ -445,23 +496,41 @@
     const onTarget = isTargetColumn();
     const minScore = parseFloat(s.getElementById('min-score').value);
 
-    // When on target column: use cached source value for forward search
-    // This shows "what TM matches exist for this row's source text"
     let searchQuery = query;
     let isReverse = false;
 
-    if (onTarget) {
-      const ref = getCellRef();
-      const rowMatch = ref ? ref.match(/(\d+)/i) : null;
-      const rowNum = rowMatch ? rowMatch[1] : null;
-      const cachedSource = rowNum ? _sourceCache[rowNum] : null;
-
-      if (cachedSource) {
-        // Use source value: forward search to show matches for this source
-        searchQuery = cachedSource;
+    if (panelMode === 'review') {
+      // Review mode: reverse search using target cell value
+      if (onTarget) {
+        // On target column — use this cell's value directly
+        searchQuery = query;
       } else {
-        // No cache: fall back to reverse search on target text
-        isReverse = true;
+        // On source column — read the target cell from cache or API
+        const ref = getCellRef();
+        const rowMatch = ref ? ref.match(/(\d+)/i) : null;
+        const rowNum = rowMatch ? rowMatch[1] : null;
+        const tgtCol = s.getElementById('tgt-col').value || settings.targetCol || 'B';
+        const cachedTarget = rowNum ? _sourceCache[`${tgtCol}${rowNum}`] : null;
+        if (cachedTarget) {
+          searchQuery = cachedTarget;
+        } else {
+          // No cached target — just reverse search with source text as fallback
+          searchQuery = query;
+        }
+      }
+      isReverse = true;
+    } else {
+      // Translate mode: forward search
+      if (onTarget) {
+        const ref = getCellRef();
+        const rowMatch = ref ? ref.match(/(\d+)/i) : null;
+        const rowNum = rowMatch ? rowMatch[1] : null;
+        const cachedSource = rowNum ? _sourceCache[rowNum] : null;
+        if (cachedSource) {
+          searchQuery = cachedSource;
+        } else {
+          isReverse = true;
+        }
       }
     }
 
@@ -482,7 +551,7 @@
     }
 
     const el = s.getElementById('results');
-    const label = onTarget ? (isReverse ? '↔ Reverse' : '← Source') : '';
+    const label = panelMode === 'review' ? '↔ Review' : (onTarget ? (isReverse ? '↔ Reverse' : '← Source') : '');
     // Check if any match is 100% — if so, skip Placement entirely
     const has100 = !isReverse && matches.some(m => Math.round(m.score * 100) === 100);
 
@@ -525,6 +594,11 @@
             // 2. Number Placement (on top of glossary result)
             const npl = FelixEngine.numberPlacement(searchQuery, m.source, placedTarget);
             if (npl.placed) { placedTarget = npl.target; badges.push('数値'); }
+            // 3. Rule-based Placement
+            if (rulesData.length) {
+              const rpl = FelixEngine.rulePlacement(searchQuery, m.source, placedTarget, rulesData);
+              if (rpl.placed) { placedTarget = rpl.target; badges.push('ルール'); }
+            }
 
             if (badges.length) {
               insertTarget = placedTarget;
@@ -583,6 +657,77 @@
     }
 
   }
+
+  // === Concordance Search ===
+  function doConcordance() {
+    const s = getShadow();
+    if (!s) return;
+    const input = s.getElementById('conc-query');
+    const query = input.value.trim();
+    if (!query) { doSearch(); return; }
+
+    // Validate regex if enabled
+    if (concRegex) {
+      try { new RegExp(query, 'i'); } catch (_) {
+        s.getElementById('results').innerHTML = `<div class="empty">Invalid regex</div>`;
+        return;
+      }
+    }
+
+    const t0 = performance.now();
+    const hits = FelixEngine.concordanceSearch(query, tmData, 50, concRegex);
+    const ms = (performance.now() - t0).toFixed(1);
+
+    const el = s.getElementById('results');
+    if (!hits.length) {
+      el.innerHTML = `<div class="empty">No concordance results (${ms}ms)</div>`;
+      return;
+    }
+
+    const re = concRegex ? new RegExp(query, 'gi') : null;
+    const qLower = concRegex ? null : query.toLowerCase();
+    function highlightTerm(text) {
+      if (re) {
+        let result = '', lastIdx = 0;
+        for (const m of text.matchAll(re)) {
+          result += esc(text.substring(lastIdx, m.index));
+          result += `<span class="conc-highlight">${esc(m[0])}</span>`;
+          lastIdx = m.index + m[0].length;
+        }
+        result += esc(text.substring(lastIdx));
+        return result;
+      }
+      const lower = text.toLowerCase();
+      let result = '', cursor = 0;
+      let pos;
+      while ((pos = lower.indexOf(qLower, cursor)) !== -1) {
+        result += esc(text.substring(cursor, pos));
+        result += `<span class="conc-highlight">${esc(text.substring(pos, pos + query.length))}</span>`;
+        cursor = pos + query.length;
+      }
+      result += esc(text.substring(cursor));
+      return result;
+    }
+
+    el.innerHTML = `<div style="font-size:10px;color:#1a73e8;margin-bottom:4px">Concordance: ${hits.length} hits (${ms}ms)</div>` +
+      hits.map((h, i) => {
+        const tmIdx = tmData.findIndex(e => e.source === h.source && e.target === h.target);
+        return `<div class="match" data-idx="${i}" data-target="${escA(h.target)}" data-tm-idx="${tmIdx}">
+          <div class="match-source">${highlightTerm(h.source)}</div>
+          <div class="match-target">${highlightTerm(h.target)}</div>
+        </div>`;
+      }).join('');
+
+    // Click on concordance result → insert target
+    el.querySelectorAll('.match').forEach(div => {
+      div.addEventListener('click', () => {
+        const target = div.getAttribute('data-target');
+        writeToTarget(target, false);
+      });
+    });
+  }
+
+
 
   // === Get (insert match, no TM registration) ===
   async function doGet(el, editMode) {
@@ -698,6 +843,9 @@
       lastCellValue = value;
       lastCellRef = ref;
 
+      // Broadcast selection to manage page (for import range auto-fill)
+      chrome.runtime.sendMessage({ type: 'BROADCAST', payload: { type: 'SELECTION_CHANGED', ref } }).catch(() => {});
+
       // Cache source column values per row
       const refMatch = ref ? ref.match(/([A-Z]+)(\d+)/i) : null;
       if (refMatch && refMatch[1].toUpperCase() === (settings.sourceCol || 'A').toUpperCase()) {
@@ -771,6 +919,17 @@
       return;
     }
     if (m.type === 'GET_CELL') { sendResponse({ value: getCellValue(), ref: getCellRef() }); return; }
+    if (m.type === 'GET_SELECTION') {
+      sendResponse({ selection: getCellRef() });
+      return;
+    }
+    if (m.type === 'GET_SHEET_INFO') {
+      // Read active sheet tab name from Google Sheets DOM
+      const activeTab = document.querySelector('.docs-sheet-tab.docs-sheet-active-tab .docs-sheet-tab-name');
+      const sheetName = activeTab ? activeTab.textContent.trim() : '';
+      sendResponse({ spreadsheetId: getSpreadsheetId(), sheetName });
+      return;
+    }
     if (m.type === 'SHORTCUTS_UPDATED') {
       if (m.get) settings.shortcutGet = m.get;
       if (m.set) settings.shortcutSet = m.set;
@@ -815,6 +974,7 @@
     if (m2.type === 'DATA_CHANGED') {
       msg('TM_LOAD').then(data => { tmData = data || []; updateBadge(); if (lastCellValue) doSearch(); });
       msg('GLOSSARY_LOAD').then(data => { glossaryData = data || []; updateBadge(); });
+      msg('RULES_LOAD').then(data => { rulesData = data || []; });
     }
     if (m2.type === 'SETTINGS_CHANGED') {
       msg('SETTINGS_LOAD').then(data => {

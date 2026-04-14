@@ -370,30 +370,49 @@ var FelixEngine = (() => {
       }
     }
 
+    // Merge consecutive same-type ops to avoid per-character span padding
+    const merged = []; // { type, qToks: [], sToks: [], glossHit }
     let opIdx = 0;
     for (const op of ops) {
       const charPos = qTokenPositions[opIdx++];
-      // Check if this query token falls within a glossary region
       const inGloss = op.qTok && glossRegions.find(r =>
         charPos >= r.start && charPos + op.qTok.length <= r.end
       );
-      const glossWrap = (html, g) =>
-        `<span class="gloss_match">${html}<span class="gloss-tip">${esc(g.translation)}</span></span>`;
+      const prev = merged.length ? merged[merged.length - 1] : null;
+      // Merge if same type and same gloss state (both in same gloss region or both not)
+      if (prev && prev.type === op.type && prev.glossHit === inGloss) {
+        if (op.qTok) prev.qToks.push(op.qTok);
+        if (op.sTok) prev.sToks.push(op.sTok);
+      } else {
+        merged.push({
+          type: op.type,
+          qToks: op.qTok ? [op.qTok] : [],
+          sToks: op.sTok ? [op.sTok] : [],
+          glossHit: inGloss,
+        });
+      }
+    }
 
-      switch (op.type) {
+    const glossWrap = (html, g) =>
+      `<span class="gloss_match">${html}<span class="gloss-tip">${esc(g.translation)}</span></span>`;
+
+    for (const m of merged) {
+      const qText = m.qToks.join(sep);
+      const sText = m.sToks.join(sep);
+      switch (m.type) {
         case 'match':
-          qParts.push(inGloss ? glossWrap(`<span class="diff-match">${esc(op.qTok)}</span>`, inGloss) : `<span class="diff-match">${esc(op.qTok)}</span>`);
-          sParts.push(`<span class="diff-match">${esc(op.sTok)}</span>`);
+          qParts.push(m.glossHit ? glossWrap(`<span class="diff-match">${esc(qText)}</span>`, m.glossHit) : `<span class="diff-match">${esc(qText)}</span>`);
+          sParts.push(`<span class="diff-match">${esc(sText)}</span>`);
           break;
         case 'sub':
-          qParts.push(inGloss ? glossWrap(`<span class="diff-sub">${esc(op.qTok)}</span>`, inGloss) : `<span class="diff-sub">${esc(op.qTok)}</span>`);
-          sParts.push(`<span class="diff-sub">${esc(op.sTok)}</span>`);
+          qParts.push(m.glossHit ? glossWrap(`<span class="diff-sub">${esc(qText)}</span>`, m.glossHit) : `<span class="diff-sub">${esc(qText)}</span>`);
+          sParts.push(`<span class="diff-sub">${esc(sText)}</span>`);
           break;
         case 'del':
-          qParts.push(inGloss ? glossWrap(`<span class="diff-del">${esc(op.qTok)}</span>`, inGloss) : `<span class="diff-del">${esc(op.qTok)}</span>`);
+          qParts.push(m.glossHit ? glossWrap(`<span class="diff-del">${esc(qText)}</span>`, m.glossHit) : `<span class="diff-del">${esc(qText)}</span>`);
           break;
         case 'ins':
-          sParts.push(`<span class="diff-ins">${esc(op.sTok)}</span>`);
+          sParts.push(`<span class="diff-ins">${esc(sText)}</span>`);
           break;
       }
     }
@@ -406,6 +425,29 @@ var FelixEngine = (() => {
 
   function esc(s) {
     return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // === Concordance Search (substring match in source or target) ===
+
+  function concordanceSearch(query, tmData, maxResults, useRegex) {
+    if (!query || !tmData || !tmData.length) return [];
+
+    let re = null;
+    if (useRegex) {
+      try { re = new RegExp(query, 'i'); } catch (_) { return []; }
+    }
+
+    const hits = [];
+    const qLower = useRegex ? null : query.toLowerCase();
+    for (const entry of tmData) {
+      const inSource = re ? re.test(entry.source) : entry.source.toLowerCase().includes(qLower);
+      const inTarget = re ? re.test(entry.target) : entry.target.toLowerCase().includes(qLower);
+      if (inSource || inTarget) {
+        hits.push({ ...entry, matchField: inSource ? 'source' : 'target' });
+      }
+      if (hits.length >= (maxResults || 50)) break;
+    }
+    return hits;
   }
 
   // === Reverse Search (search by target text) ===
@@ -561,10 +603,59 @@ var FelixEngine = (() => {
     return didPlace ? { placed: true, target: result } : { placed: false };
   }
 
+  /**
+   * Rule-based Placement (Felix Rule Manager port).
+   * Each rule has a source regex and a target template with \1, \2 backreferences.
+   * Algorithm:
+   *   1. Apply rule source regex to TM source → get captured groups → build "source replacement"
+   *   2. Apply rule source regex to query → get captured groups → build "query replacement"
+   *   3. In TM target, find "source replacement" and substitute with "query replacement"
+   *
+   * Returns { placed: true, target: "modified target" } or { placed: false }.
+   */
+  function rulePlacement(query, tmSource, tmTarget, rules) {
+    if (!query || !tmSource || !tmTarget || !rules || !rules.length) return { placed: false };
+    if (query === tmSource) return { placed: false };
+
+    function applyTemplate(template, groups) {
+      return template.replace(/\\(\d+)/g, (_, n) => {
+        const idx = parseInt(n);
+        return idx < groups.length ? groups[idx] : '';
+      });
+    }
+
+    let result = tmTarget;
+    let didPlace = false;
+
+    for (const rule of rules) {
+      if (rule.enabled === false) continue;
+      let re;
+      try { re = new RegExp(rule.sourcePattern); } catch (_) { continue; }
+
+      const sMatch = tmSource.match(re);
+      const qMatch = query.match(re);
+      if (!sMatch || !qMatch) continue;
+
+      const sReplacement = applyTemplate(rule.targetTemplate, sMatch);
+      const qReplacement = applyTemplate(rule.targetTemplate, qMatch);
+      if (sReplacement === qReplacement) continue;
+
+      const idx = result.indexOf(sReplacement);
+      if (idx === -1) continue;
+      // Ensure unique occurrence
+      if (result.indexOf(sReplacement, idx + sReplacement.length) !== -1) continue;
+
+      result = result.substring(0, idx) + qReplacement + result.substring(idx + sReplacement.length);
+      didPlace = true;
+    }
+
+    return didPlace ? { placed: true, target: result } : { placed: false };
+  }
+
   // === Public API ===
-  return { makeCmp, search, reverseSearch, glossarySearch, glossaryPlacement,
-           numberPlacement, markGlossaryInSource, fuzzyScore, edScore,
-           diffHighlight, tokenize, containsCJK, addEntry, esc };
+  return { makeCmp, search, reverseSearch, concordanceSearch, glossarySearch,
+           glossaryPlacement, numberPlacement, rulePlacement, markGlossaryInSource,
+           fuzzyScore, edScore, diffHighlight, tokenize, containsCJK, addEntry, esc };
 })();
 
 // Make available in different contexts

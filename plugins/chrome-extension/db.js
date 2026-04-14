@@ -9,7 +9,7 @@
  */
 
 const DB_NAME = 'FelixTM';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let _db = null;
 
@@ -36,6 +36,11 @@ function openDB() {
       // Settings store
       if (!db.objectStoreNames.contains('settings')) {
         db.createObjectStore('settings', { keyPath: 'key' });
+      }
+
+      // Rules store (v2) — placement rules with regex
+      if (!db.objectStoreNames.contains('rules')) {
+        db.createObjectStore('rules', { keyPath: 'id', autoIncrement: true });
       }
     };
     req.onsuccess = (e) => { _db = e.target.result; resolve(_db); };
@@ -119,6 +124,30 @@ async function glossarySaveAll(entries) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('glossary', 'readwrite');
     const store = tx.objectStore('glossary');
+    store.clear();
+    for (const entry of entries) store.put(entry);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// === Rules Operations ===
+
+async function rulesGetAll() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('rules', 'readonly');
+    const req = tx.objectStore('rules').getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function rulesSaveAll(entries) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('rules', 'readwrite');
+    const store = tx.objectStore('rules');
     store.clear();
     for (const entry of entries) store.put(entry);
     tx.oncomplete = () => resolve();
