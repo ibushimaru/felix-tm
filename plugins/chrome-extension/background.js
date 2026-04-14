@@ -242,6 +242,70 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // Sheets API write with rich text formatting (bold/color on specific ranges)
+  if (msg.type === 'SHEETS_API_WRITE_FORMATTED') {
+    const d = msg.data || msg;
+    chrome.identity.getAuthToken({ interactive: true }, (token) => {
+      if (!token) { sendResponse({ error: 'No token' }); return; }
+
+      // First: get sheetId from sheet name
+      const ssId = d.spreadsheetId;
+      const rangeMatch = d.range.match(/^'?([^'!]+)'?!([A-Z]+)(\d+)$/i);
+      if (!rangeMatch) { sendResponse({ error: 'Invalid range' }); return; }
+
+      const sheetName = rangeMatch[1];
+      const col = rangeMatch[2].toUpperCase().charCodeAt(0) - 65;
+      const row = parseInt(rangeMatch[3]) - 1;
+
+      // Get sheet ID
+      fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}?fields=sheets.properties`, {
+        headers: { 'Authorization': 'Bearer ' + token },
+      }).then(r => r.json()).then(meta => {
+        const sheet = meta.sheets.find(s => s.properties.title === sheetName);
+        const sheetId = sheet ? sheet.properties.sheetId : 0;
+
+        // Build textFormatRuns
+        const runs = [{ startIndex: 0, format: {} }];
+        if (d.highlights && d.highlights.length) {
+          // Sort by start position
+          const sorted = [...d.highlights].sort((a, b) => a.start - b.start);
+          const allRuns = [];
+          let lastEnd = 0;
+          for (const h of sorted) {
+            if (h.start > lastEnd) allRuns.push({ startIndex: lastEnd, format: {} });
+            allRuns.push({ startIndex: h.start, format: { foregroundColorStyle: { rgbColor: { red: 0.77, green: 0.13, blue: 0.12 } } } });
+            lastEnd = h.end;
+          }
+          if (lastEnd < d.value.length) allRuns.push({ startIndex: lastEnd, format: {} });
+          runs.length = 0;
+          runs.push(...allRuns);
+        }
+
+        const body = {
+          requests: [{
+            updateCells: {
+              rows: [{ values: [{
+                userEnteredValue: { stringValue: d.value },
+                textFormatRuns: runs,
+              }] }],
+              range: { sheetId, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: col, endColumnIndex: col + 1 },
+              fields: 'userEnteredValue,textFormatRuns',
+            }
+          }]
+        };
+
+        return fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}:batchUpdate`, {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      }).then(r => r.json()).then(data => {
+        sendResponse(data);
+      }).catch(err => sendResponse({ error: err.message }));
+    });
+    return true;
+  }
+
   // Storage operations (IndexedDB)
   if (msg.type === 'TM_SAVE') {
     tmSaveAll(msg.data).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));

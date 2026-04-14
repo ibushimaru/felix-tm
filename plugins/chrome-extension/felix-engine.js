@@ -393,6 +393,35 @@ var FelixEngine = (() => {
       }
     }
 
+    // Expand sub spans to cover full number tokens:
+    // If a 'sub' contains digits and is adjacent to 'match' that also contains digits,
+    // absorb those digit chars from the match into the sub.
+    const isDigit = c => c >= '0' && c <= '9';
+    for (let mi = 0; mi < merged.length; mi++) {
+      if (merged[mi].type !== 'sub') continue;
+      const qText = merged[mi].qToks.join(sep);
+      const sText = merged[mi].sToks.join(sep);
+      if (!qText.split('').some(isDigit) && !sText.split('').some(isDigit)) continue;
+      // Absorb trailing digits from preceding match
+      if (mi > 0 && merged[mi - 1].type === 'match') {
+        const prev = merged[mi - 1];
+        while (prev.qToks.length && isDigit(prev.qToks[prev.qToks.length - 1])) {
+          merged[mi].qToks.unshift(prev.qToks.pop());
+          if (prev.sToks.length) merged[mi].sToks.unshift(prev.sToks.pop());
+        }
+        if (!prev.qToks.length && !prev.sToks.length) { merged.splice(mi - 1, 1); mi--; }
+      }
+      // Absorb leading digits from following match
+      if (mi + 1 < merged.length && merged[mi + 1].type === 'match') {
+        const next = merged[mi + 1];
+        while (next.qToks.length && isDigit(next.qToks[0])) {
+          merged[mi].qToks.push(next.qToks.shift());
+          if (next.sToks.length) merged[mi].sToks.push(next.sToks.shift());
+        }
+        if (!next.qToks.length && !next.sToks.length) merged.splice(mi + 1, 1);
+      }
+    }
+
     const glossWrap = (html, g) =>
       `<span class="gloss_match">${html}<span class="gloss-tip">${esc(g.translation)}</span></span>`;
 
@@ -495,112 +524,61 @@ var FelixEngine = (() => {
 
   /**
    * Number Placement (Felix MatchStringPairing.cpp port).
-   * Uses diff ops to find positions where both query and source have numbers,
-   * then substitutes query numbers into the TM target.
-   * Language-agnostic: works with full-width digits, any script.
+   * Extracts number tokens from query, source, and target by position order,
+   * then substitutes where source and query differ.
    */
   function numberPlacement(query, tmSource, tmTarget) {
     if (!query || !tmSource || !tmTarget) return { placed: false };
     if (query === tmSource) return { placed: false };
 
-    // Felix is_num_or_null: digit, period, comma, hyphen (both half/full-width)
-    function isNumChar(c) {
-      if (!c) return true; // epsilon
-      const code = c.charCodeAt(0);
-      // ASCII digits, full-width digits (０-９), period, full-width period, comma, hyphen
-      return (code >= 0x30 && code <= 0x39) || (code >= 0xFF10 && code <= 0xFF19) ||
-             c === '.' || c === '．' || c === ',' || c === '-';
-    }
-    function isNumStr(s) { return s && Array.from(s).every(isNumChar); }
-    // Normalize full-width digits to half-width for comparison
+    // Normalize full-width digits to half-width
     function narrowNum(s) {
       return s.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
     }
 
-    // Use character-level diff to find substitution pairs
-    const qChars = Array.from(query);
-    const sChars = Array.from(tmSource);
+    // Extract all number tokens with their positions: [{ value, index, length }]
+    const numRe = /(?:\d+(?:[.,]\d+)*|[０-９]+(?:[．，][０-９]+)*)/g;
+    function extractNums(text) {
+      const nums = [];
+      let m;
+      while ((m = numRe.exec(text)) !== null) {
+        nums.push({ value: narrowNum(m[0]), index: m.index, length: m[0].length });
+      }
+      return nums;
+    }
 
-    // Build DP matrix
-    const n = qChars.length, m = sChars.length;
-    const dp = [];
-    for (let i = 0; i <= n; i++) { dp[i] = new Array(m + 1); dp[i][0] = i; }
-    for (let j = 0; j <= m; j++) dp[0][j] = j;
-    for (let i = 1; i <= n; i++) {
-      for (let j = 1; j <= m; j++) {
-        const cost = qChars[i-1] === sChars[j-1] ? 0 : 1;
-        dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost);
+    const qNums = extractNums(query);
+    const sNums = extractNums(tmSource);
+    const tNums = extractNums(tmTarget);
+
+    // Source and query must have the same count of number tokens
+    if (!qNums.length || qNums.length !== sNums.length) return { placed: false };
+    // Target must have the same count for reliable positional matching
+    if (tNums.length !== sNums.length) return { placed: false };
+
+    // Position-based replacement: source[k] ↔ target[k]
+    // If source[k] ≠ query[k], replace target[k] with query[k]
+    const replacements = [];
+    for (let k = 0; k < sNums.length; k++) {
+      if (qNums[k].value !== sNums[k].value) {
+        replacements.push({
+          tgtIdx: tNums[k].index,
+          tgtLen: tNums[k].length,
+          newValue: qNums[k].value,
+        });
       }
     }
 
-    // Backtrace to find substitution pairs
-    const subs = []; // { qStr, sStr } — consecutive number substitutions
-    let i = n, j = m, curQ = '', curS = '';
-    function flushNum() {
-      if (curQ && curS && isNumStr(curQ) && isNumStr(curS) && narrowNum(curQ) !== narrowNum(curS)) {
-        subs.push({ qStr: curQ, sStr: curS });
-      }
-      curQ = ''; curS = '';
-    }
-    while (i > 0 || j > 0) {
-      if (i > 0 && j > 0 && dp[i][j] === dp[i-1][j-1] + (qChars[i-1] === sChars[j-1] ? 0 : 1)) {
-        if (qChars[i-1] === sChars[j-1]) {
-          flushNum(); // match — end of any number run
-        } else {
-          // substitution — accumulate if both are number chars
-          curQ = qChars[i-1] + curQ;
-          curS = sChars[j-1] + curS;
-        }
-        i--; j--;
-      } else if (i > 0 && dp[i][j] === dp[i-1][j] + 1) {
-        curQ = qChars[i-1] + curQ;
-        i--;
-      } else if (j > 0 && dp[i][j] === dp[i][j-1] + 1) {
-        curS = sChars[j-1] + curS;
-        j--;
-      } else {
-        break;
-      }
-    }
-    flushNum();
+    if (!replacements.length) return { placed: false };
 
-    // If character-level diff didn't find number subs (e.g. 10→100),
-    // fall back to token-level number comparison
-    if (!subs.length) {
-      const numRe = /\d+(?:\.\d+)?/g;
-      const qNums = query.match(numRe) || [];
-      const sNums = tmSource.match(numRe) || [];
-      if (qNums.length && qNums.length === sNums.length) {
-        for (let k = 0; k < qNums.length; k++) {
-          if (qNums[k] !== sNums[k]) {
-            subs.push({ qStr: qNums[k], sStr: sNums[k] });
-          }
-        }
-      }
-    }
-
-    if (!subs.length) return { placed: false };
-
-    // Collect replacement positions first, then apply in reverse order
-    // to avoid position shifts
-    let result = tmTarget;
-    const replacements = []; // { idx, len, replacement }
-    for (const sub of subs) {
-      const sNarrow = narrowNum(sub.sStr);
-      const idx = result.indexOf(sNarrow);
-      if (idx !== -1 && result.indexOf(sNarrow, idx + sNarrow.length) === -1) {
-        replacements.push({ idx, len: sNarrow.length, replacement: narrowNum(sub.qStr) });
-      }
-    }
     // Apply from end to start so indices stay valid
-    replacements.sort((a, b) => b.idx - a.idx);
-    let didPlace = false;
+    replacements.sort((a, b) => b.tgtIdx - a.tgtIdx);
+    let result = tmTarget;
     for (const r of replacements) {
-      result = result.substring(0, r.idx) + r.replacement + result.substring(r.idx + r.len);
-      didPlace = true;
+      result = result.substring(0, r.tgtIdx) + r.newValue + result.substring(r.tgtIdx + r.tgtLen);
     }
 
-    return didPlace ? { placed: true, target: result } : { placed: false };
+    return { placed: true, target: result };
   }
 
   /**
@@ -652,10 +630,61 @@ var FelixEngine = (() => {
     return didPlace ? { placed: true, target: result } : { placed: false };
   }
 
+  /**
+   * Extract non-numeric substitution pairs from query vs source diff.
+   * Returns [{ qText, sText }] — parts that changed but aren't numbers.
+   * Used to highlight "needs manual fix" in placed targets.
+   */
+  function nonNumericDiffs(query, tmSource) {
+    if (!query || !tmSource || query === tmSource) return [];
+    const useChar = containsCJK(query) || query.indexOf(' ') === -1;
+    const qTokens = useChar ? Array.from(query) : tokenize(query);
+    const sTokens = useChar ? Array.from(tmSource) : tokenize(tmSource);
+    const sep = useChar ? '' : ' ';
+
+    const n = qTokens.length, m = sTokens.length;
+    const dp = [];
+    for (let i = 0; i <= n; i++) { dp[i] = new Array(m + 1); dp[i][0] = i; }
+    for (let j = 0; j <= m; j++) dp[0][j] = j;
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        const cost = (useChar ? qTokens[i-1] === sTokens[j-1] : qTokens[i-1].toLowerCase() === sTokens[j-1].toLowerCase()) ? 0 : 1;
+        dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost);
+      }
+    }
+
+    // Backtrace — collect non-numeric substitution runs
+    const diffs = [];
+    let i = n, j = m, curQ = [], curS = [];
+    function flush() {
+      if (curQ.length && curS.length) {
+        const q = curQ.join(sep), s = curS.join(sep);
+        // Skip if both are purely numeric
+        if (!(/^\d+[.,]?\d*$/.test(q) && /^\d+[.,]?\d*$/.test(s))) {
+          diffs.push({ qText: q, sText: s });
+        }
+      }
+      curQ = []; curS = [];
+    }
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0) {
+        const match = useChar ? qTokens[i-1] === sTokens[j-1] : qTokens[i-1].toLowerCase() === sTokens[j-1].toLowerCase();
+        if (match && dp[i][j] === dp[i-1][j-1]) { flush(); i--; j--; continue; }
+        if (dp[i][j] === dp[i-1][j-1] + 1) { curQ.unshift(qTokens[i-1]); curS.unshift(sTokens[j-1]); i--; j--; continue; }
+      }
+      if (i > 0 && dp[i][j] === dp[i-1][j] + 1) { curQ.unshift(qTokens[i-1]); i--; continue; }
+      if (j > 0 && dp[i][j] === dp[i][j-1] + 1) { curS.unshift(sTokens[j-1]); j--; continue; }
+      break;
+    }
+    flush();
+    return diffs;
+  }
+
   // === Public API ===
   return { makeCmp, search, reverseSearch, concordanceSearch, glossarySearch,
-           glossaryPlacement, numberPlacement, rulePlacement, markGlossaryInSource,
-           fuzzyScore, edScore, diffHighlight, tokenize, containsCJK, addEntry, esc };
+           glossaryPlacement, numberPlacement, rulePlacement, nonNumericDiffs,
+           markGlossaryInSource, fuzzyScore, edScore, diffHighlight, tokenize,
+           containsCJK, addEntry, esc };
 })();
 
 // Make available in different contexts

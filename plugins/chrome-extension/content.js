@@ -32,6 +32,7 @@
   let panelVisible = false;
   let panelMode = 'translate'; // 'translate' | 'review'
   let concRegex = false;
+  const _undoStack = []; // { ssId, range, oldValue, newValue }
   let _pollTimer = null;
 
   // Register cleanup for next re-injection
@@ -102,7 +103,7 @@
     const ssId = getSpreadsheetId();
     if (!ssId) return;
     const col = settings.sourceCol || 'A';
-    const range = `${col}1:${col}1000`;
+    const range = sheetRef(`${col}1:${col}1000`);
     const resp = await msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range });
     if (resp && resp.values) {
       for (let i = 0; i < resp.values.length; i++) {
@@ -140,6 +141,18 @@
   function getSpreadsheetId() {
     const m = location.pathname.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
     return m ? m[1] : null;
+  }
+
+  function getActiveSheetName() {
+    const tab = document.querySelector('.docs-sheet-tab.docs-sheet-active-tab .docs-sheet-tab-name');
+    return tab ? tab.textContent.trim() : '';
+  }
+
+  /** Prepend active sheet name to a cell reference (e.g. "B5" → "くれさが!B5") */
+  function sheetRef(ref) {
+    const name = getActiveSheetName();
+    if (!name || ref.includes('!')) return ref;
+    return `'${name}'!${ref}`;
   }
 
   // === Create the overlay panel ===
@@ -196,9 +209,9 @@
       .btn:hover { background: #f1f3f4; }
       .toast { padding: 6px 10px; border-radius: 4px; font-size: 11px; margin-top: 6px; background: #e6f4ea; color: #137333; }
       .diff-match { color: #137333; }
-      .diff-sub { background: #fef7cd; color: #8a6d00; border-radius: 2px; padding: 0 1px; }
-      .diff-del { background: #fef7cd; color: #8a6d00; border-radius: 2px; padding: 0 2px; font-weight: 500; }
-      .diff-ins { background: #e6f4ea; color: #137333; border-radius: 2px; padding: 0 1px; }
+      .diff-sub { background: #fce8e6; color: #c5221f; border-radius: 2px; padding: 0 1px; }
+      .diff-del { background: #fce8e6; color: #c5221f; border-radius: 2px; padding: 0 2px; }
+      .diff-ins { background: #fce8e6; color: #c5221f; border-radius: 2px; padding: 0 1px; }
       .shortcut { font-size: 10px; color: #9aa0a6; }
       .gloss_match { text-decoration: underline; text-decoration-color: #1a73e8; text-underline-offset: 2px; cursor: help; position: relative; }
       .gloss-tip { display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
@@ -208,7 +221,10 @@
       .placed-badge { display: inline-block; background: #fff; color: #34a853; border: 1px solid #34a853; font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
       .placed-original { font-size: 10px; color: #9aa0a6; margin-top: 2px; }
       .placed-del { text-decoration: line-through; color: #c5221f; }
-      .placed-ins { color: #137333; font-weight: 500; }
+      .placed-ins { background: #e8f0fe; color: #1a73e8; border-radius: 2px; padding: 0 1px; }
+      .placed-manual { background: #fce8e6; color: #c5221f; border-radius: 2px; padding: 0 1px; font-weight: 500; position: relative; cursor: help; }
+      .placed-manual-tip { display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
+      .placed-manual:hover .placed-manual-tip { display: block; }
       .btn-del-tm:hover { color: #ea4335 !important; }
       .col-input { width: 28px; padding: 4px; border: 1px solid #dadce0; border-radius: 3px; font-size: 11px; text-align: center; text-transform: uppercase; }
       .col-input:focus { outline: none; border-color: #1a73e8; }
@@ -258,6 +274,7 @@
         </div>
         <div id="results-wrap"><div id="results"><div class="empty" id="lbl-empty">Select a cell to search TM</div></div></div>
         <div class="set-bar">
+          <button class="btn" id="btn-undo" title="Undo last write" style="padding:6px 8px;color:#5f6368">↩</button>
           <button class="btn" id="btn-set" style="flex:1">Set (register to TM)</button>
           <span class="shortcut" id="shortcut-label"></span>
         </div>
@@ -345,7 +362,7 @@
       if (iframe) {
         // Close manage mode — restore search view with original size
         iframe.remove();
-        body.style.display = 'block';
+        body.style.display = '';
         if (_savedSize) {
           panel.style.width = _savedSize.w;
           panel.style.height = _savedSize.h;
@@ -364,8 +381,9 @@
       }
     });
 
-    // Set button
+    // Set & Undo buttons
     shadow.getElementById('btn-set').addEventListener('click', () => doSet());
+    shadow.getElementById('btn-undo').addEventListener('click', () => undoLastWrite());
 
     // Mode toggle (Translate ↔ Review)
     shadow.querySelectorAll('.mode-btn').forEach(btn => {
@@ -458,33 +476,54 @@
   let _sourceCache = {}; // { rowNum: value }
 
   // Show placed target with changed parts in green
-  function placedHighlightHtml(original, placed) {
-    let pre = 0;
-    while (pre < original.length && pre < placed.length && original[pre] === placed[pre]) pre++;
-    let suf = 0;
-    while (suf < original.length - pre && suf < placed.length - pre &&
-           original[original.length - 1 - suf] === placed[placed.length - 1 - suf]) suf++;
-    const placedMid = placed.substring(pre, placed.length - suf);
-    const prefix = esc(placed.substring(0, pre));
-    const suffix = esc(placed.substring(placed.length - suf));
-    return prefix +
-      (placedMid ? `<span class="placed-ins">${esc(placedMid)}</span>` : '') +
-      suffix;
+  // Find number token positions that differ between original and placed text
+  function findNumDiffRegions(original, placed) {
+    const numRe = /(?:\d+(?:[.,]\d+)*|[０-９]+(?:[．，][０-９]+)*)/g;
+    function extract(t) { const r = []; let m; while ((m = numRe.exec(t)) !== null) r.push({ val: m[0], idx: m.index, len: m[0].length }); return r; }
+    const oNums = extract(original);
+    const pNums = extract(placed);
+    const oDiffs = [], pDiffs = []; // { idx, len } regions that changed
+    const len = Math.min(oNums.length, pNums.length);
+    for (let i = 0; i < len; i++) {
+      if (oNums[i].val !== pNums[i].val) {
+        oDiffs.push({ idx: oNums[i].idx, len: oNums[i].len });
+        pDiffs.push({ idx: pNums[i].idx, len: pNums[i].len });
+      }
+    }
+    return { oDiffs, pDiffs };
   }
 
-  // Show original target with only the changed parts struck through
+  function markRegions(text, regions, cls) {
+    if (!regions.length) return esc(text);
+    let html = '', cursor = 0;
+    for (const r of regions) {
+      html += esc(text.substring(cursor, r.idx));
+      html += `<span class="${cls}">${esc(text.substring(r.idx, r.idx + r.len))}</span>`;
+      cursor = r.idx + r.len;
+    }
+    html += esc(text.substring(cursor));
+    return html;
+  }
+
+  function placedHighlightHtml(original, placed, manualDiffs) {
+    const { pDiffs } = findNumDiffRegions(original, placed);
+    let html = markRegions(placed, pDiffs, 'placed-ins');
+    // Mark non-numeric diffs that still need manual fixing
+    if (manualDiffs && manualDiffs.length) {
+      for (const d of manualDiffs) {
+        const sEsc = esc(d.sText);
+        const qEsc = esc(d.qText);
+        if (sEsc && html.includes(sEsc)) {
+          html = html.replace(sEsc, `<span class="placed-manual">${sEsc}<span class="placed-manual-tip">→ ${qEsc}</span></span>`);
+        }
+      }
+    }
+    return html;
+  }
+
   function placedDiffHtml(original, placed) {
-    let pre = 0;
-    while (pre < original.length && pre < placed.length && original[pre] === placed[pre]) pre++;
-    let suf = 0;
-    while (suf < original.length - pre && suf < placed.length - pre &&
-           original[original.length - 1 - suf] === placed[placed.length - 1 - suf]) suf++;
-    const origMid = original.substring(pre, original.length - suf);
-    const prefix = esc(original.substring(0, pre));
-    const suffix = esc(original.substring(original.length - suf));
-    return prefix +
-      (origMid ? `<span class="placed-del">${esc(origMid)}</span>` : '') +
-      suffix;
+    const { oDiffs } = findNumDiffRegions(original, placed);
+    return markRegions(original, oDiffs, 'placed-del');
   }
 
   function doSearch(query) {
@@ -565,7 +604,7 @@
         const meta = m.refcount ? `${t('used')} ${m.refcount}x` : '';
         const tmIdx = tmData.indexOf(m) !== -1 ? tmData.indexOf(m) : tmData.findIndex(e => e.source === m.source && e.target === m.target);
 
-        let srcHtml, tgtDisplay, insertTarget, placed = false;
+        let srcHtml, tgtDisplay, insertTarget, placed = false, insertHighlights = null;
         if (isReverse) {
           const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.target) : null;
           srcHtml = diff ? diff.sourceHtml : esc(m.target);
@@ -601,14 +640,24 @@
             }
 
             if (badges.length) {
-              insertTarget = placedTarget;
               placed = true;
-              tgtDisplay = placedHighlightHtml(m.target, placedTarget) + `<span class="placed-badge">${badges.join('+')}置換</span>`;
+              insertTarget = placedTarget;
+              const manualDiffs = FelixEngine.nonNumericDiffs(searchQuery, m.source);
+              // Calculate highlight positions for cell formatting
+              if (manualDiffs.length) {
+                const hl = [];
+                for (const d of manualDiffs) {
+                  const idx = insertTarget.indexOf(d.sText);
+                  if (idx >= 0) hl.push({ start: idx, end: idx + d.sText.length });
+                }
+                if (hl.length) insertHighlights = hl;
+              }
+              tgtDisplay = placedHighlightHtml(m.target, placedTarget, manualDiffs) + `<span class="placed-badge">${badges.join('+')}置換</span>`;
             }
           }
         }
 
-        return `<div class="match${placed ? ' match-placed' : ''}" data-idx="${i}" data-target="${escA(insertTarget)}" data-tm-idx="${tmIdx}">
+        return `<div class="match${placed ? ' match-placed' : ''}" data-idx="${i}" data-target="${escA(insertTarget)}" data-highlights="${insertHighlights ? escA(JSON.stringify(insertHighlights)) : ''}" data-tm-idx="${tmIdx}">
           <span class="score ${cls}">${pct}%</span>
           <span style="float:right;display:flex;align-items:center;gap:4px">
             ${i === 0 ? `<span style="font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
@@ -732,7 +781,9 @@
   // === Get (insert match, no TM registration) ===
   async function doGet(el, editMode) {
     const target = el.getAttribute('data-target');
-    await writeToTarget(target, editMode);
+    const hlAttr = el.getAttribute('data-highlights');
+    const highlights = hlAttr ? JSON.parse(hlAttr) : null;
+    await writeToTarget(target, editMode, highlights);
   }
 
   function doGetTop() {
@@ -760,8 +811,8 @@
 
     // Read both source and target from Sheets API
     const [srcResp, tgtResp] = await Promise.all([
-      msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: sourceRef }),
-      msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: targetRef }),
+      msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: sheetRef(sourceRef) }),
+      msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: sheetRef(targetRef) }),
     ]);
 
     const source = srcResp && srcResp.value ? srcResp.value : '';
@@ -786,7 +837,7 @@
   }
 
   // === Write to target cell via Sheets API ===
-  async function writeToTarget(value, editMode) {
+  async function writeToTarget(value, editMode, highlights) {
     const ref = getCellRef();
     const match = ref ? ref.match(/([A-Z]+)(\d+)/i) : null;
     if (!match) return;
@@ -796,8 +847,18 @@
     const ssId = getSpreadsheetId();
     if (!ssId) return;
 
-    // Write via background
-    await msg('SHEETS_API_WRITE', { spreadsheetId: ssId, range: targetRef, value });
+    // Read old value for undo
+    const fullRange = sheetRef(targetRef);
+    const oldResp = await msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: fullRange });
+    const oldValue = oldResp && oldResp.value ? oldResp.value : '';
+    _undoStack.push({ ssId, range: fullRange, oldValue, newValue: value });
+
+    // Write via background (with formatting if highlights exist)
+    if (highlights && highlights.length) {
+      await msg('SHEETS_API_WRITE_FORMATTED', { spreadsheetId: ssId, range: fullRange, value, highlights });
+    } else {
+      await msg('SHEETS_API_WRITE', { spreadsheetId: ssId, range: fullRange, value });
+    }
 
     const nameBox = findNameBox();
     if (!nameBox) return;
@@ -818,6 +879,13 @@
       nameBox.dispatchEvent(new Event('input', { bubbles: true }));
       nameBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
     }
+  }
+
+  async function undoLastWrite() {
+    const entry = _undoStack.pop();
+    if (!entry) { showToast('Nothing to undo'); return; }
+    await msg('SHEETS_API_WRITE', { spreadsheetId: entry.ssId, range: entry.range, value: entry.oldValue });
+    showToast(`Undo: ${entry.range}`);
   }
 
   function showToast(text) {
@@ -959,7 +1027,7 @@
       if (match) {
         const targetRef = (m.targetCol || settings.targetCol || 'B') + match[2];
         const ssId = getSpreadsheetId();
-        msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: targetRef }).then(r => {
+        msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: sheetRef(targetRef) }).then(r => {
           sendResponse({ value: r && r.value ? r.value : '', ref: targetRef });
         });
         return true;
