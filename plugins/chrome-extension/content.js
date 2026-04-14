@@ -335,7 +335,6 @@
         frame.id = 'manage-frame';
         frame.src = chrome.runtime.getURL('manage.html');
         frame.style.cssText = 'width:100%;flex:1;border:none;border-radius:0 0 12px 12px;';
-        frame.allow = 'clipboard-read';
         panel.appendChild(frame);
         panel.style.height = Math.max(panel.offsetHeight, 700) + 'px';
       }
@@ -809,28 +808,32 @@
     }
   });
 
-  // === Sync with storage changes (from manage page) ===
-  chrome.storage.onChanged.addListener((changes) => {
-    if (changes.felixTM) { tmData = changes.felixTM.newValue || []; updateBadge(); if (lastCellValue) doSearch(); }
-    if (changes.felixGlossary) { glossaryData = changes.felixGlossary.newValue || []; updateBadge(); }
-    if (changes.felixSettings) {
-      const newSettings = changes.felixSettings.newValue;
-      if (newSettings) {
-        const oldSourceCol = settings.sourceCol;
-        Object.assign(settings, newSettings);
-        updateShortcutLabel();
-        applyPanelLang();
-        const s = getShadow();
-        if (s) {
-          s.getElementById('src-col').value = settings.sourceCol || 'A';
-          s.getElementById('tgt-col').value = settings.targetCol || 'B';
-          s.getElementById('min-score').value = String(settings.minScore || 0.7);
+  // === Sync with data changes (from manage page, via broadcast) ===
+  // IndexedDB has no onChanged event, so manage page broadcasts DATA_CHANGED
+  chrome.runtime.onMessage.addListener((m2) => {
+    if (m2.type === 'DATA_CHANGED') {
+      msg('TM_LOAD').then(data => { tmData = data || []; updateBadge(); if (lastCellValue) doSearch(); });
+      msg('GLOSSARY_LOAD').then(data => { glossaryData = data || []; updateBadge(); });
+    }
+    if (m2.type === 'SETTINGS_CHANGED') {
+      msg('SETTINGS_LOAD').then(data => {
+        if (data && Object.keys(data).length) {
+          const oldSourceCol = settings.sourceCol;
+          Object.assign(settings, data);
+          updateShortcutLabel();
+          applyPanelLang();
+          const s = getShadow();
+          if (s) {
+            s.getElementById('src-col').value = settings.sourceCol || 'A';
+            s.getElementById('tgt-col').value = settings.targetCol || 'B';
+            s.getElementById('min-score').value = String(settings.minScore || 0.7);
+          }
+          if (settings.sourceCol !== oldSourceCol) {
+            _sourceCache = {};
+            preloadSourceCache();
+          }
         }
-        if (settings.sourceCol !== oldSourceCol) {
-          _sourceCache = {};
-          preloadSourceCache();
-        }
-      }
+      });
     }
   });
 

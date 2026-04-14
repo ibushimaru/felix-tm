@@ -1,7 +1,10 @@
 /**
  * Background Service Worker
- * Routes messages, manages storage, and handles content script injection.
+ * Routes messages, manages storage (IndexedDB), and handles content script injection.
  */
+
+// Import IndexedDB wrapper
+importScripts('db.js');
 
 // Click icon: toggle in-page overlay panel
 chrome.action.onClicked.addListener((tab) => {
@@ -16,6 +19,11 @@ chrome.runtime.onInstalled.addListener(() => {
     id: 'open-manage',
     title: 'Felix TM — Manage',
     contexts: ['action'],
+  });
+
+  // Migrate data from chrome.storage.local to IndexedDB (one-time)
+  migrateFromChromeStorage().then(migrated => {
+    if (migrated) console.log('[FelixTM] Migration to IndexedDB complete');
   });
 
   // Re-inject content script into all open Google Sheets tabs
@@ -181,31 +189,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // Storage operations
+  // Storage operations (IndexedDB)
   if (msg.type === 'TM_SAVE') {
-    chrome.storage.local.set({ felixTM: msg.data }, () => sendResponse({ ok: true }));
+    tmSaveAll(msg.data).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
     return true;
   }
   if (msg.type === 'TM_LOAD') {
-    chrome.storage.local.get('felixTM', (r) => sendResponse(r.felixTM || []));
+    tmGetAll().then(data => sendResponse(data)).catch(() => sendResponse([]));
+    return true;
+  }
+  if (msg.type === 'TM_DELETE') {
+    tmDelete(msg.data).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
+    return true;
+  }
+  if (msg.type === 'TM_COUNT') {
+    tmCount().then(n => sendResponse({ count: n })).catch(() => sendResponse({ count: 0 }));
     return true;
   }
   if (msg.type === 'GLOSSARY_SAVE') {
-    chrome.storage.local.set({ felixGlossary: msg.data }, () => sendResponse({ ok: true }));
+    glossarySaveAll(msg.data).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
     return true;
   }
   if (msg.type === 'GLOSSARY_LOAD') {
-    chrome.storage.local.get('felixGlossary', (r) => sendResponse(r.felixGlossary || []));
+    glossaryGetAll().then(data => sendResponse(data)).catch(() => sendResponse([]));
     return true;
   }
   if (msg.type === 'SETTINGS_SAVE') {
-    chrome.storage.local.set({ felixSettings: msg.data }, () => sendResponse({ ok: true }));
+    settingsSave(msg.data).then(() => sendResponse({ ok: true })).catch(e => sendResponse({ error: e.message }));
     return true;
   }
   if (msg.type === 'SETTINGS_LOAD') {
-    chrome.storage.local.get('felixSettings', (r) => {
-      sendResponse(r.felixSettings || { sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en' });
-    });
+    settingsGet().then(data => {
+      const defaults = { sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en' };
+      sendResponse(Object.keys(data).length ? data : defaults);
+    }).catch(() => sendResponse({ sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en' }));
     return true;
   }
 });

@@ -117,11 +117,16 @@ async function init() {
     });
   });
 
-  // Listen for storage changes from content script (e.g. Set registered new TM)
-  chrome.storage.onChanged.addListener((changes) => {
-    if (changes.felixTM) { tmData = changes.felixTM.newValue || []; updateStats(); renderTMList(); }
-    if (changes.felixGlossary) { glossaryData = changes.felixGlossary.newValue || []; updateStats(); renderGlossaryList(); }
-    if (changes.felixSettings) { settings = changes.felixSettings.newValue || settings; applyLang(); loadSettingsUI(); }
+  // Listen for data changes from content script (via broadcast)
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'DATA_CHANGED') {
+      // Reload from DB
+      sendBg('TM_LOAD').then(data => { tmData = data || []; updateStats(); renderTMList(); });
+      sendBg('GLOSSARY_LOAD').then(data => { glossaryData = data || []; updateStats(); renderGlossaryList(); });
+    }
+    if (msg.type === 'SETTINGS_CHANGED') {
+      sendBg('SETTINGS_LOAD').then(data => { if (data && Object.keys(data).length) { settings = data; applyLang(); loadSettingsUI(); } });
+    }
   });
 }
 
@@ -143,47 +148,37 @@ async function registerTM() {
   document.getElementById('reg-target').value = '';
 }
 
-async function pasteImport() {
-  try {
-    const text = await navigator.clipboard.readText();
-    if (!text || !text.trim()) {
-      showToast('bulk-toast', 'No data in clipboard');
-      return;
-    }
-
-    const lines = text.split('\n');
-    let added = 0, updated = 0, skipped = 0;
-
-    const firstLine = lines[0].split('\t');
-    const startIdx = (firstLine.length >= 2 &&
-      /^(source|原文|en|src)/i.test(firstLine[0].trim())) ? 1 : 0;
-
-    for (let i = startIdx; i < lines.length; i++) {
-      const parts = lines[i].split('\t');
-      if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
-        const action = FelixEngine.addEntry(tmData, parts[0].trim(), parts[1].trim());
-        if (action === 'added') added++;
-        else updated++;
-      } else {
-        skipped++;
-      }
-    }
-
-    await saveTM();
-    updateStats();
-    renderTMList();
-
-    document.getElementById('paste-preview').textContent = `${lines.length - startIdx} rows parsed`;
-    showToast('bulk-toast',
-      `${t('imported')}: ${added} new, ${updated} updated${skipped ? `, ${skipped} skipped` : ''}`
-    );
-  } catch (err) {
-    showToast('bulk-toast', 'Clipboard access denied');
+function processTMText(text) {
+  if (!text || !text.trim()) return;
+  const lines = text.split('\n');
+  let added = 0, updated = 0, skipped = 0;
+  const firstLine = lines[0].split('\t');
+  const startIdx = (firstLine.length >= 2 &&
+    /^(source|原文|en|src)/i.test(firstLine[0].trim())) ? 1 : 0;
+  for (let i = startIdx; i < lines.length; i++) {
+    const parts = lines[i].split('\t');
+    if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
+      const action = FelixEngine.addEntry(tmData, parts[0].trim(), parts[1].trim());
+      if (action === 'added') added++;
+      else updated++;
+    } else { skipped++; }
   }
+  saveTM();
+  updateStats();
+  renderTMList();
+  document.getElementById('paste-preview').textContent = `${lines.length - startIdx} rows parsed`;
+  showToast('bulk-toast', `${t('imported')}: ${added} new, ${updated} updated${skipped ? `, ${skipped} skipped` : ''}`);
 }
+
 
 async function saveTM() {
   await sendBg('TM_SAVE', tmData);
+  chrome.runtime.sendMessage({ type: 'BROADCAST', payload: { type: 'DATA_CHANGED' } }).catch(() => {});
+}
+
+async function saveGlossary() {
+  await sendBg('GLOSSARY_SAVE', glossaryData);
+  chrome.runtime.sendMessage({ type: 'BROADCAST', payload: { type: 'DATA_CHANGED' } }).catch(() => {});
 }
 
 function renderTMList() {
@@ -246,7 +241,7 @@ async function addGlossary() {
 
   if (!exists) {
     glossaryData.push({ term, translation: trans, notes: '', cmp: tCmp });
-    await sendBg('GLOSSARY_SAVE', glossaryData);
+    await saveGlossary();
     updateStats();
     showToast('gloss-toast', 'Added!');
   } else {
@@ -258,69 +253,68 @@ async function addGlossary() {
   renderGlossaryList();
 }
 
-async function pasteGlossary() {
-  try {
-    const text = await navigator.clipboard.readText();
-    if (!text || !text.trim()) {
-      showToast('gloss-toast', 'No data in clipboard');
-      return;
+function processGlossaryText(text) {
+  if (!text || !text.trim()) return;
+  const lines = text.split('\n');
+  const startIdx = (lines[0] && /^(term|用語|source|en|src)/i.test(lines[0].split('\t')[0].trim())) ? 1 : 0;
+  let added = 0, dup = 0;
+  for (let i = startIdx; i < lines.length; i++) {
+    const parts = lines[i].split('\t');
+    if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
+      const term = parts[0].trim();
+      const trans = parts[1].trim();
+      const notes = parts.length >= 3 ? parts[2].trim() : '';
+      const tCmp = FelixEngine.makeCmp(term);
+      const exists = glossaryData.some(e =>
+        (e.cmp || FelixEngine.makeCmp(e.term)) === tCmp &&
+        FelixEngine.makeCmp(e.translation) === FelixEngine.makeCmp(trans)
+      );
+      if (!exists) { glossaryData.push({ term, translation: trans, notes, cmp: tCmp }); added++; }
+      else { dup++; }
     }
-
-    const lines = text.split('\n');
-    const startIdx = (lines[0] && /^(term|用語|source|en|src)/i.test(lines[0].split('\t')[0].trim())) ? 1 : 0;
-    let added = 0, dup = 0;
-
-    for (let i = startIdx; i < lines.length; i++) {
-      const parts = lines[i].split('\t');
-      if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
-        const term = parts[0].trim();
-        const trans = parts[1].trim();
-        const notes = parts.length >= 3 ? parts[2].trim() : '';
-        const tCmp = FelixEngine.makeCmp(term);
-
-        const exists = glossaryData.some(e =>
-          (e.cmp || FelixEngine.makeCmp(e.term)) === tCmp &&
-          FelixEngine.makeCmp(e.translation) === FelixEngine.makeCmp(trans)
-        );
-
-        if (!exists) {
-          glossaryData.push({ term, translation: trans, notes, cmp: tCmp });
-          added++;
-        } else {
-          dup++;
-        }
-      }
-    }
-
-    await sendBg('GLOSSARY_SAVE', glossaryData);
-    updateStats();
-    renderGlossaryList();
-    showToast('gloss-toast', `${added} added, ${dup} duplicates`);
-  } catch (err) {
-    showToast('gloss-toast', 'Clipboard access denied');
   }
+  saveGlossary();
+  updateStats();
+  renderGlossaryList();
+  showToast('gloss-toast', `${added} added, ${dup} duplicates`);
 }
 
+
 function renderGlossaryList() {
+  const filter = (document.getElementById('gloss-filter').value || '').toLowerCase();
   const el = document.getElementById('gloss-list');
-  if (!glossaryData.length) {
+  const countEl = document.getElementById('gloss-list-count');
+
+  let filtered = glossaryData;
+  if (filter) {
+    filtered = glossaryData.filter(g =>
+      g.term.toLowerCase().includes(filter) ||
+      g.translation.toLowerCase().includes(filter)
+    );
+  }
+
+  const showing = filtered.slice(0, 100);
+  countEl.textContent = `${showing.length} / ${glossaryData.length} entries`;
+
+  if (!showing.length) {
     el.innerHTML = '<div class="empty">No glossary entries</div>';
     return;
   }
-  el.innerHTML = glossaryData.map((g, i) =>
-    `<div class="match" style="cursor:default">
+  el.innerHTML = showing.map((g) => {
+    const idx = glossaryData.indexOf(g);
+    return `<div class="match" style="cursor:default;padding:8px;position:relative">
+      <span style="position:absolute;top:6px;right:8px;font-size:11px;color:#ea4335;cursor:pointer" data-del="${idx}">✕</span>
       <div class="match-source">${escH(g.term)}</div>
       <div class="match-target">${escH(g.translation)}</div>
-      <span style="float:right;font-size:11px;color:#ea4335;cursor:pointer" data-del="${i}">✕</span>
-    </div>`
-  ).join('');
+    </div>`;
+  }).join('');
 
   el.querySelectorAll('[data-del]').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const idx = parseInt(btn.getAttribute('data-del'));
       glossaryData.splice(idx, 1);
-      await sendBg('GLOSSARY_SAVE', glossaryData);
+      await saveGlossary();
       updateStats();
       renderGlossaryList();
     });
@@ -330,6 +324,14 @@ function renderGlossaryList() {
 // ============================================================
 // File Import
 // ============================================================
+
+function handleGlossaryFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    processGlossaryText(e.target.result);
+  };
+  reader.readAsText(file, 'utf-8');
+}
 
 function handleFile(file) {
   const reader = new FileReader();
@@ -452,10 +454,9 @@ async function saveSettingsUI() {
   settings.shortcutGet = document.getElementById('set-shortcut-get').value;
   settings.shortcutSet = document.getElementById('set-shortcut-set').value;
   await sendBg('SETTINGS_SAVE', settings);
-  // Notify content script of changes
   chrome.runtime.sendMessage({
     type: 'BROADCAST',
-    payload: { type: 'SETTINGS_UPDATED', settings },
+    payload: { type: 'SETTINGS_CHANGED' },
   }).catch(() => {});
   applyLang();
   showToast('settings-toast', t('saved'));
@@ -473,7 +474,7 @@ async function clearAllTM() {
 async function clearAllGlossary() {
   if (!confirm(t('confirmClear'))) return;
   glossaryData = [];
-  await sendBg('GLOSSARY_SAVE', glossaryData);
+  await saveGlossary();
   updateStats();
   renderGlossaryList();
   showToast('settings-toast', 'Glossary cleared');
@@ -486,12 +487,32 @@ function escH(s) { const d = document.createElement('div'); d.textContent = s; r
 // ============================================================
 
 document.getElementById('btn-register').addEventListener('click', () => registerTM());
-document.getElementById('btn-paste-import').addEventListener('click', () => pasteImport());
+document.getElementById('tm-paste-zone').addEventListener('paste', (e) => {
+  e.preventDefault();
+  const text = e.clipboardData.getData('text/plain');
+  processTMText(text);
+  e.target.textContent = 'Ctrl+V';
+});
 document.getElementById('tm-filter').addEventListener('input', () => renderTMList());
 document.getElementById('btn-add-gloss').addEventListener('click', () => addGlossary());
 document.getElementById('btn-export-tm').addEventListener('click', () => exportTSV());
-document.getElementById('btn-paste-gloss').addEventListener('click', () => pasteGlossary());
+document.getElementById('gloss-paste-zone').addEventListener('paste', (e) => {
+  e.preventDefault();
+  const text = e.clipboardData.getData('text/plain');
+  processGlossaryText(text);
+  e.target.textContent = 'Ctrl+V';
+});
+document.getElementById('gloss-filter').addEventListener('input', () => renderGlossaryList());
 document.getElementById('btn-export-gloss').addEventListener('click', () => exportGlossaryTSV());
+
+// Glossary file drop
+const glossDropZone = document.getElementById('gloss-drop-zone');
+const glossFileInput = document.getElementById('gloss-file-input');
+glossDropZone.addEventListener('click', () => glossFileInput.click());
+glossDropZone.addEventListener('dragover', e => { e.preventDefault(); glossDropZone.style.borderColor = '#1a73e8'; });
+glossDropZone.addEventListener('dragleave', () => { glossDropZone.style.borderColor = '#dadce0'; });
+glossDropZone.addEventListener('drop', e => { e.preventDefault(); glossDropZone.style.borderColor = '#dadce0'; handleGlossaryFile(e.dataTransfer.files[0]); });
+glossFileInput.addEventListener('change', () => { if (glossFileInput.files[0]) handleGlossaryFile(glossFileInput.files[0]); });
 document.getElementById('btn-save-settings').addEventListener('click', () => saveSettingsUI());
 document.getElementById('btn-clear-tm').addEventListener('click', () => clearAllTM());
 document.getElementById('btn-clear-gloss').addEventListener('click', () => clearAllGlossary());
