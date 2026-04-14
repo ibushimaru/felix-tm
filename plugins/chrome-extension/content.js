@@ -164,7 +164,8 @@
       .badge { background: #e8eaed; color: #5f6368; padding: 2px 8px; border-radius: 12px; font-size: 10px; }
       .btn-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #5f6368; padding: 0 4px; }
       .btn-close:hover { color: #202124; }
-      #body { padding: 10px 14px; overflow-y: auto; flex: 1; }
+      #body { padding: 10px 14px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; }
+      #results-wrap { flex: 1; overflow-y: auto; }
       .cell-preview { background: #f1f3f4; border-radius: 4px; padding: 6px 10px; font-size: 12px; color: #3c4043; margin-bottom: 8px; min-height: 20px; word-break: break-all; }
       .cell-label { font-size: 10px; color: #9aa0a6; margin-bottom: 2px; }
       .row { display: flex; gap: 6px; margin-bottom: 8px; }
@@ -184,7 +185,7 @@
       .match-target { color: #202124; font-size: 12px; margin-top: 2px; word-break: break-all; }
       .match-meta { color: #9aa0a6; font-size: 10px; margin-top: 3px; }
       .empty { text-align: center; color: #9aa0a6; padding: 16px 8px; font-size: 12px; }
-      .set-bar { display: flex; gap: 6px; margin-top: 6px; padding-top: 6px; border-top: 1px solid #e8eaed; }
+      .set-bar { display: flex; gap: 6px; padding-top: 6px; border-top: 1px solid #e8eaed; flex-shrink: 0; }
       .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid #dadce0; cursor: pointer; font-size: 11px; font-weight: 500; background: #fff; color: #1a73e8; }
       .btn:hover { background: #f1f3f4; }
       .toast { padding: 6px 10px; border-radius: 4px; font-size: 11px; margin-top: 6px; background: #e6f4ea; color: #137333; }
@@ -232,7 +233,7 @@
           <span class="col-label" id="lbl-tgt">Tgt</span>
           <input class="col-input" id="tgt-col" value="B" maxlength="2">
         </div>
-        <div id="results"><div class="empty" id="lbl-empty">Select a cell to search TM</div></div>
+        <div id="results-wrap"><div id="results"><div class="empty" id="lbl-empty">Select a cell to search TM</div></div></div>
         <div class="set-bar">
           <button class="btn" id="btn-set" style="flex:1">Set (register to TM)</button>
           <span class="shortcut" id="shortcut-label"></span>
@@ -679,7 +680,7 @@
     if (!s) return;
     const el = s.getElementById('toast-area');
     el.innerHTML = `<div class="toast">${esc(text)}</div>`;
-    setTimeout(() => el.innerHTML = '', 3000);
+    setTimeout(() => el.innerHTML = '', 1000);
   }
 
   function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -840,6 +841,6 @@
   // === Show panel on load ===
   setTimeout(() => {
     showPanel();
-  }, 3000);
+  }, 2000);
 
 })();
