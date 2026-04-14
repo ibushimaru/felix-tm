@@ -209,22 +209,23 @@
       .btn:hover { background: #f1f3f4; }
       .toast { padding: 6px 10px; border-radius: 4px; font-size: 11px; margin-top: 6px; background: #e6f4ea; color: #137333; }
       .diff-match { color: #137333; }
-      .diff-sub { background: #fce8e6; color: #c5221f; border-radius: 2px; padding: 0 1px; }
-      .diff-del { background: #fce8e6; color: #c5221f; border-radius: 2px; padding: 0 2px; }
-      .diff-ins { background: #fce8e6; color: #c5221f; border-radius: 2px; padding: 0 1px; }
+      .diff-sub { background: #fce8e6; color: #c5221f; }
+      .diff-del { background: #fce8e6; color: #c5221f; }
+      .diff-ins { background: #fce8e6; color: #c5221f; }
       .shortcut { font-size: 10px; color: #9aa0a6; }
-      .gloss_match { text-decoration: underline; text-decoration-color: #1a73e8; text-underline-offset: 2px; cursor: help; position: relative; }
-      .gloss-tip { display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
-      .gloss_match:hover .gloss-tip { display: block; }
+      .gloss_match { text-decoration: underline; text-decoration-color: #1a73e8; text-underline-offset: 2px; cursor: pointer; position: relative; }
+      .gloss_match::after { content: attr(data-tip); display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
+      .gloss_match:hover::after { display: block; }
+      .gloss-copied { background: #e6f4ea; transition: background 0.3s; }
       .match-placed { border-color: #34a853; }
       .match-placed:hover { border-color: #137333; }
       .placed-badge { display: inline-block; background: #fff; color: #34a853; border: 1px solid #34a853; font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
       .placed-original { font-size: 10px; color: #9aa0a6; margin-top: 2px; }
       .placed-del { text-decoration: line-through; color: #c5221f; }
       .placed-ins { background: #e8f0fe; color: #1a73e8; border-radius: 2px; padding: 0 1px; }
-      .placed-manual { background: #fce8e6; color: #c5221f; border-radius: 2px; padding: 0 1px; font-weight: 500; position: relative; cursor: help; }
-      .placed-manual-tip { display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
-      .placed-manual:hover .placed-manual-tip { display: block; }
+      .placed-manual { background: #fce8e6; color: #c5221f; font-weight: 500; position: relative; cursor: help; }
+      .placed-manual::after { content: attr(data-tip); display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
+      .placed-manual:hover::after { display: block; }
       .btn-del-tm:hover { color: #ea4335 !important; }
       .col-input { width: 28px; padding: 4px; border: 1px solid #dadce0; border-radius: 3px; font-size: 11px; text-align: center; text-transform: uppercase; }
       .col-input:focus { outline: none; border-color: #1a73e8; }
@@ -514,7 +515,7 @@
         const sEsc = esc(d.sText);
         const qEsc = esc(d.qText);
         if (sEsc && html.includes(sEsc)) {
-          html = html.replace(sEsc, `<span class="placed-manual">${sEsc}<span class="placed-manual-tip">→ ${qEsc}</span></span>`);
+          html = html.replace(sEsc, `<span class="placed-manual" data-tip="→ ${qEsc}">${sEsc}</span>`);
         }
       }
     }
@@ -580,7 +581,10 @@
     const ms = (performance.now() - t0).toFixed(1);
 
     // Glossary hits for the query (used for highlighting and placement)
-    const glossHits = glossaryData.length ? FelixEngine.glossarySearch(searchQuery, glossaryData) : [];
+    // Filter: only keep hits whose term is findable in the original text (not just in makeCmp)
+    const glossHitsRaw = glossaryData.length ? FelixEngine.glossarySearch(searchQuery, glossaryData) : [];
+    const qLower = searchQuery.toLowerCase();
+    const glossHits = glossHitsRaw.filter(g => qLower.includes(g.term.toLowerCase()));
 
     // Highlight glossary terms in the cell preview (Felix: GLOSS_MATCH on QUERY side)
     const cellPreview = s.getElementById('cell-value');
@@ -643,15 +647,6 @@
               placed = true;
               insertTarget = placedTarget;
               const manualDiffs = FelixEngine.nonNumericDiffs(searchQuery, m.source);
-              // Calculate highlight positions for cell formatting
-              if (manualDiffs.length) {
-                const hl = [];
-                for (const d of manualDiffs) {
-                  const idx = insertTarget.indexOf(d.sText);
-                  if (idx >= 0) hl.push({ start: idx, end: idx + d.sText.length });
-                }
-                if (hl.length) insertHighlights = hl;
-              }
               tgtDisplay = placedHighlightHtml(m.target, placedTarget, manualDiffs) + `<span class="placed-badge">${badges.join('+')}置換</span>`;
             }
           }
@@ -704,6 +699,32 @@
         });
       });
     }
+
+    // Glossary term click → copy translation to clipboard
+    el.querySelectorAll('.gloss_match').forEach(span => {
+      span.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const text = span.getAttribute('data-tip');
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => {
+          span.classList.add('gloss-copied');
+          showToast(`Copied: ${text}`);
+          setTimeout(() => span.classList.remove('gloss-copied'), 500);
+        }).catch(() => {});
+      });
+    });
+
+    // Manual-fix term click → copy correct value
+    el.querySelectorAll('.placed-manual').forEach(span => {
+      span.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const text = (span.getAttribute('data-tip') || '').replace(/^→\s*/, '');
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => {
+          showToast(`Copied: ${text}`);
+        }).catch(() => {});
+      });
+    });
 
   }
 

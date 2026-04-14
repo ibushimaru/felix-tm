@@ -174,33 +174,34 @@ var FelixEngine = (() => {
    * Returns HTML with <span class="gloss_match"> wrapping matched terms.
    * Longest match first, no overlapping.
    */
-  function markGlossaryInSource(sourceText, glossHits) {
-    if (!glossHits.length || !sourceText) return null;
-    const lower = sourceText.toLowerCase();
-    // Collect all match positions (longest first, no overlap)
-    const regions = []; // [{start, end, term, translation}]
+  /** Build non-overlapping glossary regions for a text. Single source of truth. */
+  function glossRegionsForText(text, glossHits) {
+    if (!glossHits.length || !text) return [];
+    const lower = text.toLowerCase();
+    const regions = [];
     for (const g of glossHits) {
       const termLower = g.term.toLowerCase();
       let pos = 0;
       while ((pos = lower.indexOf(termLower, pos)) !== -1) {
-        // Check no overlap with existing regions
         const end = pos + termLower.length;
         const overlaps = regions.some(r => pos < r.end && end > r.start);
-        if (!overlaps) {
-          regions.push({ start: pos, end, term: g.term, translation: g.translation });
-        }
+        if (!overlaps) regions.push({ start: pos, end, translation: g.translation });
         pos = end;
       }
     }
-    if (!regions.length) return null;
-    // Sort by position
     regions.sort((a, b) => a.start - b.start);
+    return regions;
+  }
+
+  function markGlossaryInSource(sourceText, glossHits) {
+    const regions = glossRegionsForText(sourceText, glossHits);
+    if (!regions.length) return null;
     // Build HTML
     let html = '';
     let cursor = 0;
     for (const r of regions) {
       if (r.start > cursor) html += esc(sourceText.substring(cursor, r.start));
-      html += `<span class="gloss_match">${esc(sourceText.substring(r.start, r.end))}<span class="gloss-tip">${esc(r.translation)}</span></span>`;
+      html += `<span class="gloss_match" data-tip="${esc(r.translation)}">${esc(sourceText.substring(r.start, r.end))}</span>`;
       cursor = r.end;
     }
     if (cursor < sourceText.length) html += esc(sourceText.substring(cursor));
@@ -340,47 +341,16 @@ var FelixEngine = (() => {
     // Build HTML
     let qParts = [], sParts = [];
 
-    // Build glossary position map on the query text for underlining
-    let glossRegions = []; // char positions in original query that are glossary terms
-    if (arguments[2] && arguments[2].length) {
-      const glossHits = arguments[2];
-      const qLower = query.toLowerCase();
-      for (const g of glossHits) {
-        const tLower = g.term.toLowerCase();
-        let pos = 0;
-        while ((pos = qLower.indexOf(tLower, pos)) !== -1) {
-          const end = pos + tLower.length;
-          const overlaps = glossRegions.some(r => pos < r.end && end > r.start);
-          if (!overlaps) glossRegions.push({ start: pos, end, translation: g.translation });
-          pos = end;
-        }
-      }
-    }
-
-    // Map each query token to its char position in the original query
-    let qCharPos = 0;
-    const qTokenPositions = []; // for each op that has qTok, its start pos in query
-    for (const op of ops) {
-      if (op.qTok) {
-        const idx = query.indexOf(op.qTok, qCharPos);
-        qTokenPositions.push(idx >= 0 ? idx : qCharPos);
-        if (idx >= 0) qCharPos = idx + op.qTok.length;
-      } else {
-        qTokenPositions.push(-1);
-      }
-    }
+    // Build glossary position map on the query text (same logic as markGlossaryInSource)
+    const glossRegions = arguments[2] && arguments[2].length
+      ? glossRegionsForText(query, arguments[2])
+      : [];
 
     // Merge consecutive same-type ops to avoid per-character span padding
-    const merged = []; // { type, qToks: [], sToks: [], glossHit }
-    let opIdx = 0;
+    const merged = [];
     for (const op of ops) {
-      const charPos = qTokenPositions[opIdx++];
-      const inGloss = op.qTok && glossRegions.find(r =>
-        charPos >= r.start && charPos + op.qTok.length <= r.end
-      );
       const prev = merged.length ? merged[merged.length - 1] : null;
-      // Merge if same type and same gloss state (both in same gloss region or both not)
-      if (prev && prev.type === op.type && prev.glossHit === inGloss) {
+      if (prev && prev.type === op.type) {
         if (op.qTok) prev.qToks.push(op.qTok);
         if (op.sTok) prev.sToks.push(op.sTok);
       } else {
@@ -388,7 +358,6 @@ var FelixEngine = (() => {
           type: op.type,
           qToks: op.qTok ? [op.qTok] : [],
           sToks: op.sTok ? [op.sTok] : [],
-          glossHit: inGloss,
         });
       }
     }
@@ -422,32 +391,50 @@ var FelixEngine = (() => {
       }
     }
 
-    const glossWrap = (html, g) =>
-      `<span class="gloss_match">${html}<span class="gloss-tip">${esc(g.translation)}</span></span>`;
-
+    // Build source HTML
     for (const m of merged) {
-      const qText = m.qToks.join(sep);
       const sText = m.sToks.join(sep);
-      switch (m.type) {
-        case 'match':
-          qParts.push(m.glossHit ? glossWrap(`<span class="diff-match">${esc(qText)}</span>`, m.glossHit) : `<span class="diff-match">${esc(qText)}</span>`);
-          sParts.push(`<span class="diff-match">${esc(sText)}</span>`);
-          break;
-        case 'sub':
-          qParts.push(m.glossHit ? glossWrap(`<span class="diff-sub">${esc(qText)}</span>`, m.glossHit) : `<span class="diff-sub">${esc(qText)}</span>`);
-          sParts.push(`<span class="diff-sub">${esc(sText)}</span>`);
-          break;
-        case 'del':
-          qParts.push(m.glossHit ? glossWrap(`<span class="diff-del">${esc(qText)}</span>`, m.glossHit) : `<span class="diff-del">${esc(qText)}</span>`);
-          break;
-        case 'ins':
-          sParts.push(`<span class="diff-ins">${esc(sText)}</span>`);
-          break;
+      if (m.type === 'match') sParts.push(`<span class="diff-match">${esc(sText)}</span>`);
+      else if (m.type === 'sub') sParts.push(`<span class="diff-sub">${esc(sText)}</span>`);
+      else if (m.type === 'ins') sParts.push(`<span class="diff-ins">${esc(sText)}</span>`);
+    }
+
+    // Build query HTML: per-character array with diff type, then overlay glossary
+    const qCharsTyped = []; // { ch, type }
+    for (const m of merged) {
+      if (m.type === 'ins') continue;
+      for (const tok of m.qToks) {
+        for (const ch of tok) qCharsTyped.push({ ch, type: m.type });
       }
     }
 
+    // Generate query HTML with diff spans + glossary wrapping
+    let queryHtml = '';
+    let curType = null, inGloss = null;
+    for (let ci = 0; ci < qCharsTyped.length; ci++) {
+      const { ch, type } = qCharsTyped[ci];
+      const gRegion = glossRegions.find(r => ci >= r.start && ci < r.end) || null;
+
+      // Glossary boundary change
+      if (gRegion !== inGloss) {
+        if (curType) { queryHtml += '</span>'; curType = null; }
+        if (inGloss) queryHtml += '</span>';
+        if (gRegion) queryHtml += `<span class="gloss_match" data-tip="${esc(gRegion.translation)}">`;
+        inGloss = gRegion;
+      }
+      // Diff type change
+      if (type !== curType) {
+        if (curType) queryHtml += '</span>';
+        queryHtml += `<span class="diff-${type}">`;
+        curType = type;
+      }
+      queryHtml += esc(ch);
+    }
+    if (curType) queryHtml += '</span>';
+    if (inGloss) queryHtml += '</span>';
+
     return {
-      queryHtml: qParts.join(sep),
+      queryHtml,
       sourceHtml: sParts.join(sep),
     };
   }
