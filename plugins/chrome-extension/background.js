@@ -24,13 +24,20 @@ chrome.action.onClicked.addListener((tab) => {
   });
 });
 
-// Right-click: open manage page
+// Right-click on icon: offer to open the side panel.
+// Icon click still toggles the in-page overlay (chrome.action.onClicked above).
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
-    id: 'open-manage',
-    title: 'Felix TM — Manage',
+    id: 'open-side-panel',
+    title: 'Felix TM — Open Side Panel',
     contexts: ['action'],
   });
+
+  // Icon click should NOT auto-open the side panel — we keep the toggle-overlay
+  // behavior. The side panel opens via ⚙ in the overlay or this context menu.
+  if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+  }
 
   // Migrate data from chrome.storage.local to IndexedDB (one-time)
   migrateFromChromeStorage().then(migrated => {
@@ -49,13 +56,19 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-chrome.contextMenus.onClicked.addListener((info) => {
-  if (info.menuItemId === 'open-manage') {
-    chrome.windows.create({
-      url: 'manage.html', type: 'popup', width: 420, height: 700,
-    });
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'open-side-panel') {
+    openSidePanel(tab && tab.windowId);
   }
 });
+
+function openSidePanel(windowId) {
+  if (!chrome.sidePanel || !chrome.sidePanel.open) return;
+  const args = windowId != null ? { windowId } : {};
+  chrome.sidePanel.open(args).catch((err) => {
+    console.warn('[FelixTM] sidePanel.open failed:', err && err.message);
+  });
+}
 
 // Inject content script programmatically when needed
 async function ensureContentScript(tabId) {
@@ -80,14 +93,37 @@ async function ensureContentScript(tabId) {
 // Message routing
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
+  // Dev-only: reload the whole extension. Triggered by an in-page
+  // window.postMessage → content.js bridge so Claude in Chrome (a separate
+  // extension) can request a reload without externally_connectable. Remove
+  // this handler before publishing.
+  if (msg.type === 'DEV_RELOAD') {
+    console.log('[FelixTM] DEV_RELOAD requested — reloading in 50ms');
+    sendResponse({ ok: true });
+    setTimeout(() => chrome.runtime.reload(), 50);
+    return true;
+  }
+
+  // Open the Chrome side panel (requested by ⚙ in the in-page overlay).
+  // Must be called synchronously in response to a user gesture.
+  if (msg.type === 'OPEN_SIDE_PANEL') {
+    const windowId = sender && sender.tab ? sender.tab.windowId : undefined;
+    openSidePanel(windowId);
+    sendResponse({ ok: true });
+    return;
+  }
+
   // Cell change: forward to all listeners
   if (msg.type === 'CELL_CHANGED') {
     chrome.runtime.sendMessage(msg).catch(() => {});
     return;
   }
 
-  // Broadcast to content scripts in all Google Sheets tabs
+  // Broadcast to both content scripts (Sheets tabs) and extension pages
+  // (side panel, popup). chrome.tabs.sendMessage reaches only content scripts,
+  // so we also call chrome.runtime.sendMessage to cover extension contexts.
   if (msg.type === 'BROADCAST') {
+    chrome.runtime.sendMessage(msg.payload).catch(() => {});
     chrome.tabs.query({ url: 'https://docs.google.com/spreadsheets/*' }, (tabs) => {
       for (const tab of tabs) {
         chrome.tabs.sendMessage(tab.id, msg.payload).catch(() => {});

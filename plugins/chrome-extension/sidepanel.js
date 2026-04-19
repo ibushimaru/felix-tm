@@ -1,11 +1,13 @@
 /**
- * Side Panel logic — TM search, registration, glossary management.
- * All search is client-side (instant). Storage via chrome.storage.local.
+ * Side panel — TM / Glossary / Rules management, import/export, settings.
+ * Registered via manifest "side_panel.default_path"; opened from the flow
+ * panel's ⚙ button or the extension icon. Storage via IndexedDB (shared
+ * with content script through the background service worker).
  */
 
 let tmData = [];
 let glossaryData = [];
-let lastSearchValue = '';
+let rulesData = [];
 let settings = { sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en' };
 
 // ============================================================
@@ -14,36 +16,52 @@ let settings = { sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en' };
 
 const I18N = {
   en: {
-    search: 'Search', tm: 'TM', glossary: 'Glossary',
-    activeCell: 'Active Cell', selectCell: 'Select a cell to auto-search',
-    noMatch: 'No matches', registerToTM: 'Register to TM',
+    tm: 'TM', glossary: 'Glossary', settings: 'Settings',
+    register: 'Register', registerToTM: 'Register to TM',
     source: 'Source', target: 'Target', registered: 'Registered!',
     alreadyExists: 'Already exists (refcount +1)',
-    buildTM: 'Build TM from Sheet', bulkDesc: 'Paste TSV data (source[TAB]target per line) to bulk import.',
-    bulkImport: 'Bulk Import', imported: 'Imported',
+    import: 'Import', bulkDesc: 'Select source+target columns in the sheet, copy (Ctrl+C), then click Import.',
+    pasteImport: 'Paste from Clipboard', imported: 'Imported',
+    browseTM: 'Browse TM', filter: 'Filter...',
     addTerm: 'Add Term', termSrc: 'Term (source)', termTgt: 'Translation',
-    add: 'Add', added: 'Added!', dupGloss: 'Already exists', noGloss: 'No glossary entries',
-    importTM: 'Import TM', dropFile: 'Drop file here or click to browse',
-    export: 'Export', exportTM: 'Export TM as TSV', exportGloss: 'Export Glossary as TSV',
-    settings: 'Settings', save: 'Save', saved: 'Saved!',
-    clearTM: 'Clear all TM', clearGloss: 'Clear all Glossary',
-    confirmClear: 'Delete all entries? This cannot be undone.',
+    add: 'Add', browse: 'Browse',
+    glossImport: 'Import', glossDesc: 'Select term+translation columns, copy (Ctrl+C), then click Import.',
+    dropFile: 'Drop TMX/TSV file',
+    importFromSheet: 'Import from Sheet', sheetImportDesc: 'Import from the active Google Sheet using the configured source/target columns.',
+    glossSheetImportDesc: 'Import from the active Google Sheet (column A=term, B=translation).',
+    export: 'Export', exportTM: 'Export TM as TSV', exportTMX: 'Export TM as TMX', exportGloss: 'Export Glossary as TSV',
+    rules: 'Rules', addRule: 'Add Rule', ruleSourceLabel: 'Source Pattern (regex)',
+    ruleTargetLabel: 'Target Template (\\1, \\2...)', browseRules: 'Rules',
+    ruleDesc: 'Rules use regex to replace formatted text (dates, currencies, etc.) in TM matches. The source pattern matches both the query and TM source; captured groups are substituted into the target template.',
+    exportRules: 'Export Rules as TSV', ruleAdded: 'Rule added!', ruleExists: 'Rule already exists',
+    invalidRegex: 'Invalid regex pattern',
+    save: 'Save', saved: 'Saved!',
+    danger: 'Danger Zone', clearTM: 'Clear TM', clearGloss: 'Clear Glossary',
+    confirmClear: 'Delete all entries?', cancel: 'Cancel',
   },
   ja: {
-    search: '検索', tm: 'TM', glossary: '用語集',
-    activeCell: 'アクティブセル', selectCell: 'セルを選択すると自動検索します',
-    noMatch: 'マッチなし', registerToTM: 'TMに登録',
+    tm: 'TM', glossary: '用語集', settings: '設定',
+    register: '登録', registerToTM: 'TMに登録',
     source: '原文', target: '訳文', registered: '登録しました',
     alreadyExists: '既に存在 (refcount +1)',
-    buildTM: 'シートからTMを構築', bulkDesc: 'TSVデータを貼り付けて一括インポート（原文[TAB]訳文、1行ずつ）',
-    bulkImport: '一括インポート', imported: 'インポート完了',
+    import: 'インポート', bulkDesc: 'シートで原文+訳文列を選択し、コピー(Ctrl+C)してインポート',
+    pasteImport: 'クリップボードから貼り付け', imported: 'インポート完了',
+    browseTM: 'TMブラウズ', filter: 'フィルタ...',
     addTerm: '用語を追加', termSrc: '用語（原文）', termTgt: '訳語',
-    add: '追加', added: '追加しました', dupGloss: '既に登録済み', noGloss: '用語集は空です',
-    importTM: 'TMインポート', dropFile: 'ここにファイルをドロップ、またはクリック',
-    export: 'エクスポート', exportTM: 'TMをTSVでエクスポート', exportGloss: '用語集をTSVでエクスポート',
-    settings: '設定', save: '保存', saved: '保存しました',
-    clearTM: 'TMを全削除', clearGloss: '用語集を全削除',
-    confirmClear: '全エントリを削除しますか？この操作は元に戻せません。',
+    add: '追加', browse: 'ブラウズ',
+    glossImport: 'インポート', glossDesc: '用語+訳語列を選択し、コピー(Ctrl+C)してインポート',
+    dropFile: 'TMX/TSVファイルをドロップ',
+    importFromSheet: 'シートからインポート', sheetImportDesc: '現在のGoogleシートから設定済みの原文/訳文列を読み取ります。',
+    glossSheetImportDesc: '現在のGoogleシートからインポート（A列=用語、B列=訳語）。',
+    export: 'エクスポート', exportTM: 'TMをTSVでエクスポート', exportTMX: 'TMをTMXでエクスポート', exportGloss: '用語集をTSVでエクスポート',
+    rules: 'ルール', addRule: 'ルールを追加', ruleSourceLabel: 'ソースパターン（正規表現）',
+    ruleTargetLabel: 'ターゲットテンプレート（\\1, \\2...）', browseRules: 'ルール一覧',
+    ruleDesc: 'ルールは正規表現を使い、TMマッチ内の書式付きテキスト（日付、通貨など）を置換します。ソースパターンがクエリとTMソース両方にマッチし、キャプチャグループがターゲットテンプレートに代入されます。',
+    exportRules: 'ルールをTSVでエクスポート', ruleAdded: 'ルールを追加しました', ruleExists: '既に存在します',
+    invalidRegex: '無効な正規表現です',
+    save: '保存', saved: '保存しました',
+    danger: '危険な操作', clearTM: 'TMを全削除', clearGloss: '用語集を全削除',
+    confirmClear: '全エントリを削除しますか？', cancel: 'キャンセル',
   },
 };
 
@@ -56,54 +74,99 @@ function applyLang() {
   const ph = (id, text) => { const el = document.getElementById(id); if (el) el.placeholder = text; };
 
   // Tabs
-  set('tab-search', t('search'));
   set('tab-tm', t('tm'));
   set('tab-glossary', t('glossary'));
-  // Cell preview
-  set('lbl-active-cell', t('activeCell'));
-  // Search
-  set('empty-search', t('selectCell'));
-  // Register
+  set('tab-settings', t('settings'));
+  // TM
   set('h-register', t('registerToTM'));
+  set('btn-register', t('register'));
   ph('reg-source', t('source'));
   ph('reg-target', t('target'));
-  set('btn-register', t('register'));
-  set('h-build', t('buildTM'));
+  set('h-build', t('import'));
   set('p-bulk-desc', t('bulkDesc'));
-  set('btn-bulk', t('bulkImport'));
+  set('btn-paste-import', t('pasteImport'));
+  set('btn-import-sheet', t('importFromSheet'));
+  set('p-sheet-import-desc', t('sheetImportDesc'));
+  set('p-gloss-sheet-desc', t('glossSheetImportDesc'));
+  set('btn-import-gloss-sheet', t('importFromSheet'));
+  set('h-browse-tm', t('browseTM'));
+  ph('tm-filter', t('filter'));
+  set('drop-text', t('dropFile'));
+  set('h-export', t('export'));
+  set('btn-export-tm', t('exportTM'));
+  set('btn-export-tmx', t('exportTMX'));
   // Glossary
   set('h-add-term', t('addTerm'));
   ph('gloss-term', t('termSrc'));
   ph('gloss-trans', t('termTgt'));
   set('btn-add-gloss', t('add'));
-  // Import
-  set('h-import', t('importTM'));
-  set('drop-text', t('dropFile'));
-  set('h-export', t('export'));
-  set('btn-export-tm', t('exportTM'));
+  set('h-gloss-import', t('glossImport'));
+  set('p-gloss-desc', t('glossDesc'));
+  set('btn-paste-gloss', t('pasteImport'));
+  set('h-browse-gloss', t('browse'));
   set('btn-export-gloss', t('exportGloss'));
+  // Rules
+  set('tab-rules', t('rules'));
+  set('h-add-rule', t('addRule'));
+  set('lbl-rule-src', t('ruleSourceLabel'));
+  set('lbl-rule-tgt', t('ruleTargetLabel'));
+  set('btn-add-rule', t('add'));
+  set('h-browse-rules', t('browseRules'));
+  set('p-rule-desc', t('ruleDesc'));
+  set('btn-export-rules', t('exportRules'));
   // Settings
   set('h-settings', t('settings'));
   set('btn-save-settings', t('save'));
+  set('h-danger', t('danger'));
   set('btn-clear-tm', t('clearTM'));
   set('btn-clear-gloss', t('clearGloss'));
-  // Update Set button label with current shortcut
-  const setKey = (settings.shortcutSet || 'Cmd+Shift+S').replace('Cmd', '⌘').replace('Shift', '⇧').replace('Ctrl', '⌃');
-  set('btn-set-tm', 'Set (register to TM) — ' + setKey);
 }
 
 // ============================================================
 // Init
 // ============================================================
 
+// Reflect the currently selected Sheet range into the Import-from-Sheet inputs.
+// Handles single cells (A5), column ranges (A2:A), and rectangles (A2:B500).
+function applySelectionToImportRanges(sel) {
+  const m = sel.match(/^([A-Z]+)(\d*)(?::([A-Z]+)(\d*))?$/i);
+  if (!m) return;
+  const col1 = m[1].toUpperCase(), row1 = m[2] || '';
+  const col2 = m[3] ? m[3].toUpperCase() : col1;
+  const row2 = m[4] || '';
+  const pairs = [
+    ['import-src-range', 'import-tgt-range'],
+    ['gloss-import-src-range', 'gloss-import-tgt-range'],
+  ];
+  for (const [srcId, tgtId] of pairs) {
+    const srcEl = document.getElementById(srcId);
+    const tgtEl = document.getElementById(tgtId);
+    if (!srcEl || !tgtEl) continue;
+    if (col1 !== col2) {
+      srcEl.value = `${col1}${row1}:${col1}${row2}`;
+      tgtEl.value = `${col2}${row1}:${col2}${row2}`;
+    } else {
+      srcEl.value = sel;
+    }
+  }
+}
+
 async function init() {
-  // Load settings, TM and glossary from storage
   settings = await sendBg('SETTINGS_LOAD') || settings;
   tmData = await sendBg('TM_LOAD') || [];
   glossaryData = await sendBg('GLOSSARY_LOAD') || [];
+  rulesData = await sendBg('RULES_LOAD') || [];
   updateStats();
   applyLang();
   loadSettingsUI();
+  renderTMList();
+
+  // Ask content script for the current selection so Import range inputs
+  // populate immediately instead of waiting for the next cell change.
+  chrome.runtime.sendMessage({ type: 'GET_SELECTION' }, (resp) => {
+    void chrome.runtime.lastError;
+    if (resp && resp.ref) applySelectionToImportRanges(resp.ref);
+  });
 
   // Setup tabs
   document.querySelectorAll('.tab').forEach(tab => {
@@ -114,250 +177,99 @@ async function init() {
       document.getElementById(tab.dataset.panel).classList.add('active');
       if (tab.dataset.panel === 'tm') renderTMList();
       if (tab.dataset.panel === 'glossary') renderGlossaryList();
+      if (tab.dataset.panel === 'rules') renderRulesList();
     });
   });
 
-  // Listen for messages
+  // Listen for data changes from content script (via broadcast)
   chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === 'CELL_CHANGED') {
-      onCellChanged(msg.value, msg.ref);
+    if (msg.type === 'DATA_CHANGED') {
+      // Reload from DB
+      sendBg('TM_LOAD').then(data => { tmData = data || []; updateStats(); renderTMList(); });
+      sendBg('GLOSSARY_LOAD').then(data => { glossaryData = data || []; updateStats(); renderGlossaryList(); });
+      sendBg('RULES_LOAD').then(data => { rulesData = data || []; renderRulesList(); });
     }
-    if (msg.type === 'INSERT_TOP_MATCH') {
-      insertTopMatch();
+    if (msg.type === 'SELECTION_CHANGED' && msg.ref) {
+      applySelectionToImportRanges(msg.ref);
     }
-    if (msg.type === 'SET_TO_TM') {
-      setToTM();
+    if (msg.type === 'SETTINGS_CHANGED') {
+      sendBg('SETTINGS_LOAD').then(data => { if (data && Object.keys(data).length) { settings = data; applyLang(); loadSettingsUI(); } });
     }
   });
-
-  // Auto-inject content script and get initial cell
-  try {
-    await sendBg('ENSURE_CONTENT_SCRIPT');
-    setTimeout(async () => {
-      const resp = await sendBgPayload('GET_CELL');
-      if (resp && resp.value) onCellChanged(resp.value, resp.ref);
-    }, 1000);
-  } catch (_) {}
-}
-
-// ============================================================
-// Cell Change Handler — Real-time search
-// ============================================================
-
-function onCellChanged(value, ref) {
-  document.getElementById('cell-value').textContent = value || '—';
-  document.getElementById('cell-ref').textContent = ref ? `(${ref})` : '';
-
-  // Auto-fill register fields
-  document.getElementById('reg-source').value = value || '';
-
-  // Auto-search if value changed
-  if (value && value !== lastSearchValue) {
-    lastSearchValue = value;
-    doSearch(value);
-  }
-}
-
-function doSearch(query) {
-  if (!query) query = document.getElementById('cell-value').textContent;
-  if (!query || query === '—') return;
-
-  const minScore = parseFloat(document.getElementById('min-score').value);
-  const searchType = document.getElementById('search-type').value;
-
-  const t0 = performance.now();
-
-  let matches;
-  if (searchType === 'glossary') {
-    matches = FelixEngine.glossarySearch(query, glossaryData);
-  } else {
-    matches = FelixEngine.search(query, tmData, minScore);
-  }
-
-  const ms = (performance.now() - t0).toFixed(1);
-  renderResults(matches, ms);
-}
-
-function renderResults(matches, ms) {
-  const el = document.getElementById('results');
-  if (!matches || !matches.length) {
-    el.innerHTML = `<div class="empty">No matches${ms ? ` (${ms}ms)` : ''}</div>`;
-    return;
-  }
-
-  const query = lastSearchValue || '';
-  el.innerHTML = matches.map((m, i) => {
-    const pct = Math.round(m.score * 100);
-    const cls = pct >= 90 ? 'score-high' : pct >= 70 ? 'score-mid' : 'score-low';
-    const meta = m.refcount ? `used ${m.refcount}x` : '';
-    // Diff highlight: show differences between query and TM source
-    const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.source) : null;
-    const sourceDisplay = diff ? diff.sourceHtml : escH(m.source);
-    return `<div class="match" data-idx="${i}" data-target="${esc(m.target)}">
-      <span class="score ${cls}">${pct}%</span>
-      ${ms && i === 0 ? `<span style="float:right;font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
-      <div class="match-source">${sourceDisplay}</div>
-      <div class="match-target">${escH(m.target)}</div>
-      ${meta ? `<div class="match-meta">${meta}</div>` : ''}
-    </div>`;
-  }).join('');
-
-  // Click to insert
-  el.querySelectorAll('.match').forEach(el => {
-    el.addEventListener('click', () => insertMatch(el));
-  });
-}
-
-/**
- * Get (Felix-style): Insert match into target cell. Does NOT register to TM.
- * Translator should review and modify the translation, then explicitly Set.
- */
-async function insertMatch(el) {
-  const target = el.getAttribute('data-target');
-  el.classList.add('inserted');
-
-  // Write to target column cell only — no TM registration
-  chrome.runtime.sendMessage({
-    type: 'WRITE_TO_SHEET',
-    value: target,
-    targetCol: settings.targetCol || 'B',
-  });
-}
-
-/** Insert the top match — called by keyboard shortcut (Cmd+Shift+S = Get) */
-async function insertTopMatch() {
-  const firstMatch = document.querySelector('.match');
-  if (firstMatch) {
-    await insertMatch(firstMatch);
-  }
-}
-
-/**
- * Set (Felix-style): Register current source+target pair to TM.
- * Called explicitly by the translator after reviewing the translation.
- * Reads the actual cell values from the sheet (source col + target col).
- */
-async function setToTM() {
-  // Read current source from active cell preview
-  const source = lastSearchValue;
-  if (!source) return;
-
-  // Read target from sheet (the translator may have edited it)
-  const resp = await sendBgPayload('GET_TARGET_CELL');
-  const target = resp && resp.value ? resp.value : '';
-
-  if (!target) {
-    showToast('results', '<div class="toast" style="background:#fce8e6;color:#c5221f">Target cell is empty</div>');
-    return;
-  }
-
-  const action = addToTMInternal(source, target);
-  await saveTM();
-  updateStats();
-
-  const msg = action === 'refcount' ? t('alreadyExists') : t('registered');
-  showToast('results', '<div class="toast">' + msg + ': ' + escH(source.substring(0, 30)) + '...</div>');
 }
 
 // ============================================================
 // TM Operations
 // ============================================================
 
-function addToTMInternal(source, target, context) {
-  return FelixEngine.addEntry(tmData, source, target, context);
-}
-
 async function registerTM() {
   const source = document.getElementById('reg-source').value.trim();
   const target = document.getElementById('reg-target').value.trim();
   if (!source || !target) return;
 
-  const action = addToTMInternal(source, target);
+  const action = FelixEngine.addEntry(tmData, source, target);
   await saveTM();
   updateStats();
+  renderTMList();
 
-  showToast('reg-toast', action === 'refcount' ? 'Already exists (refcount +1)' : 'Registered!');
+  showToast('reg-toast', action === 'refcount' ? t('alreadyExists') : t('registered'));
   document.getElementById('reg-target').value = '';
 }
 
-async function pasteImport() {
-  try {
-    const text = await navigator.clipboard.readText();
-    if (!text || !text.trim()) {
-      showToast('bulk-toast', t('noData') || 'No data in clipboard');
-      return;
-    }
-
-    const lines = text.split('\n');
-    let added = 0, updated = 0, skipped = 0;
-
-    // Detect if first line is a header
-    const firstLine = lines[0].split('\t');
-    const startIdx = (firstLine.length >= 2 &&
-      /^(source|原文|en|src)/i.test(firstLine[0].trim())) ? 1 : 0;
-
-    for (let i = startIdx; i < lines.length; i++) {
-      const parts = lines[i].split('\t');
-      if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
-        const action = addToTMInternal(parts[0].trim(), parts[1].trim());
-        if (action === 'added') added++;
-        else updated++;
+/**
+ * Parse TSV/CSV text that may have quoted fields with embedded newlines.
+ * Returns array of arrays (rows of columns).
+ */
+function parseTSV(text) {
+  const rows = [];
+  let i = 0;
+  while (i < text.length) {
+    const row = [];
+    while (i < text.length) {
+      if (text[i] === '"') {
+        // Quoted field: read until closing quote (handle "" as escaped quote)
+        i++; // skip opening quote
+        let field = '';
+        while (i < text.length) {
+          if (text[i] === '"') {
+            if (i + 1 < text.length && text[i + 1] === '"') {
+              field += '"'; i += 2; // escaped quote
+            } else {
+              i++; break; // closing quote
+            }
+          } else {
+            field += text[i++];
+          }
+        }
+        row.push(field);
       } else {
-        skipped++;
+        // Unquoted field: read until tab or newline
+        let field = '';
+        while (i < text.length && text[i] !== '\t' && text[i] !== '\n' && text[i] !== '\r') {
+          field += text[i++];
+        }
+        row.push(field);
       }
+      // After field: tab → next field, newline → end of row
+      if (i < text.length && text[i] === '\t') { i++; continue; }
+      // Skip \r\n or \n
+      if (i < text.length && text[i] === '\r') i++;
+      if (i < text.length && text[i] === '\n') i++;
+      break;
     }
-
-    await saveTM();
-    updateStats();
-
-    const preview = document.getElementById('paste-preview');
-    preview.textContent = `${lines.length - startIdx} rows parsed`;
-
-    showToast('bulk-toast',
-      `${t('imported') || 'Imported'}: ${added} ${t('added') || 'new'}, ${updated} ${t('alreadyExists') ? 'updated' : 'updated'}${skipped ? `, ${skipped} skipped` : ''}`
-    );
-
-    // Re-search current cell with new TM
-    if (lastSearchValue) doSearch(lastSearchValue);
-
-  } catch (err) {
-    showToast('bulk-toast', 'Clipboard access denied. Try Ctrl+V in the text area below.');
+    if (row.length > 0 && row.some(f => f.trim())) rows.push(row);
   }
+  return rows;
 }
 
 async function saveTM() {
   await sendBg('TM_SAVE', tmData);
+  chrome.runtime.sendMessage({ type: 'BROADCAST', payload: { type: 'DATA_CHANGED' } }).catch(() => {});
 }
 
-// ============================================================
-// Glossary Operations
-// ============================================================
-
-async function addGlossary() {
-  const term = document.getElementById('gloss-term').value.trim();
-  const trans = document.getElementById('gloss-trans').value.trim();
-  if (!term || !trans) return;
-
-  const tCmp = FelixEngine.makeCmp(term);
-
-  // Dedup
-  const exists = glossaryData.some(e =>
-    (e.cmp || FelixEngine.makeCmp(e.term)) === tCmp &&
-    FelixEngine.makeCmp(e.translation) === FelixEngine.makeCmp(trans)
-  );
-
-  if (!exists) {
-    glossaryData.push({ term, translation: trans, notes: '', cmp: tCmp });
-    await sendBg('GLOSSARY_SAVE', glossaryData);
-    updateStats();
-    showToast('gloss-toast', 'Added!');
-  } else {
-    showToast('gloss-toast', 'Already exists');
-  }
-
-  document.getElementById('gloss-term').value = '';
-  document.getElementById('gloss-trans').value = '';
-  renderGlossaryList();
+async function saveGlossary() {
+  await sendBg('GLOSSARY_SAVE', glossaryData);
+  chrome.runtime.sendMessage({ type: 'BROADCAST', payload: { type: 'DATA_CHANGED' } }).catch(() => {});
 }
 
 function renderTMList() {
@@ -381,11 +293,14 @@ function renderTMList() {
     return;
   }
 
-  el.innerHTML = showing.map((e, i) => {
+  el.innerHTML = showing.map((e) => {
     const ref = e.refcount ? ` <span style="color:#9aa0a6">(${e.refcount}x)</span>` : '';
     const idx = tmData.indexOf(e);
     return `<div class="match" style="cursor:default;padding:8px;position:relative" data-tm-idx="${idx}">
-      <span style="position:absolute;top:6px;right:8px;font-size:11px;color:#ea4335;cursor:pointer" data-tm-del="${idx}">✕</span>
+      <span style="position:absolute;top:6px;right:8px;display:flex;gap:4px">
+        <span style="font-size:11px;color:#1a73e8;cursor:pointer" data-tm-edit="${idx}" title="Edit">✎</span>
+        <span style="font-size:11px;color:#ea4335;cursor:pointer" data-tm-del="${idx}" title="Delete">✕</span>
+      </span>
       <div class="match-source">${escH(e.source)}${ref}</div>
       <div class="match-target">${escH(e.target)}</div>
     </div>`;
@@ -401,92 +316,389 @@ function renderTMList() {
       renderTMList();
     });
   });
+
+  el.querySelectorAll('[data-tm-edit]').forEach(btn => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const idx = parseInt(btn.getAttribute('data-tm-edit'));
+      editTMEntry(idx);
+    });
+  });
 }
 
-async function pasteGlossary() {
-  try {
-    const text = await navigator.clipboard.readText();
-    if (!text || !text.trim()) {
-      showToast('gloss-toast', 'No data in clipboard');
-      return;
+function editTMEntry(idx) {
+  const entry = tmData[idx];
+  if (!entry) return;
+  const div = document.querySelector(`[data-tm-idx="${idx}"]`);
+  if (!div) return;
+
+  div.innerHTML = `
+    <input type="text" value="${escH(entry.source)}" style="width:100%;margin-bottom:4px;font-size:11px;padding:4px" data-field="source">
+    <input type="text" value="${escH(entry.target)}" style="width:100%;margin-bottom:4px;font-size:11px;padding:4px" data-field="target">
+    <div style="display:flex;gap:4px">
+      <button class="btn btn-primary" style="flex:1;padding:3px 6px;font-size:10px" data-save>OK</button>
+      <button class="btn btn-outline" style="flex:1;padding:3px 6px;font-size:10px" data-cancel>Cancel</button>
+    </div>`;
+
+  div.querySelector('[data-save]').addEventListener('click', async () => {
+    const newSrc = div.querySelector('[data-field="source"]').value.trim();
+    const newTgt = div.querySelector('[data-field="target"]').value.trim();
+    if (newSrc && newTgt) {
+      entry.source = newSrc;
+      entry.target = newTgt;
+      entry.cmp = FelixEngine.makeCmp(newSrc);
+      entry.targetCmp = FelixEngine.makeCmp(newTgt);
+      entry.sourceLen = entry.cmp.length;
+      await saveTM();
     }
+    renderTMList();
+  });
+  div.querySelector('[data-cancel]').addEventListener('click', () => renderTMList());
+}
 
-    const lines = text.split('\n');
-    const startIdx = (lines[0] && /^(term|用語|source|en|src)/i.test(lines[0].split('\t')[0].trim())) ? 1 : 0;
-    let added = 0, dup = 0;
+// ============================================================
+// Glossary Operations
+// ============================================================
 
-    for (let i = startIdx; i < lines.length; i++) {
-      const parts = lines[i].split('\t');
-      if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
-        const term = parts[0].trim();
-        const trans = parts[1].trim();
-        const notes = parts.length >= 3 ? parts[2].trim() : '';
-        const tCmp = FelixEngine.makeCmp(term);
+async function addGlossary() {
+  const term = document.getElementById('gloss-term').value.trim();
+  const trans = document.getElementById('gloss-trans').value.trim();
+  if (!term || !trans) return;
 
-        const exists = glossaryData.some(e =>
-          (e.cmp || FelixEngine.makeCmp(e.term)) === tCmp &&
-          FelixEngine.makeCmp(e.translation) === FelixEngine.makeCmp(trans)
-        );
+  const tCmp = FelixEngine.makeCmp(term);
+  const exists = glossaryData.some(e =>
+    (e.cmp || FelixEngine.makeCmp(e.term)) === tCmp &&
+    FelixEngine.makeCmp(e.translation) === FelixEngine.makeCmp(trans)
+  );
 
-        if (!exists) {
-          glossaryData.push({ term, translation: trans, notes, cmp: tCmp });
-          added++;
-        } else {
-          dup++;
-        }
-      }
-    }
-
-    await sendBg('GLOSSARY_SAVE', glossaryData);
+  if (!exists) {
+    glossaryData.push({ term, translation: trans, notes: '', cmp: tCmp });
+    await saveGlossary();
     updateStats();
-    renderGlossaryList();
-    showToast('gloss-toast', `${added} added, ${dup} duplicates`);
-  } catch (err) {
-    showToast('gloss-toast', 'Clipboard access denied');
+    showToast('gloss-toast', 'Added!');
+  } else {
+    showToast('gloss-toast', 'Already exists');
   }
+
+  document.getElementById('gloss-term').value = '';
+  document.getElementById('gloss-trans').value = '';
+  renderGlossaryList();
 }
+
+function processGlossaryText(text) {
+  if (!text || !text.trim()) return;
+  const rows = parseTSV(text);
+  const startIdx = (rows.length > 0 && rows[0].length >= 1 &&
+    /^(term|用語|source|en|src)/i.test(rows[0][0].trim())) ? 1 : 0;
+  let added = 0, dup = 0;
+  for (let i = startIdx; i < rows.length; i++) {
+    const row = rows[i];
+    if (row.length >= 2 && row[0].trim() && row[1].trim()) {
+      const term = row[0].trim();
+      const trans = row[1].trim();
+      const notes = row.length >= 3 ? row[2].trim() : '';
+      const tCmp = FelixEngine.makeCmp(term);
+      const exists = glossaryData.some(e =>
+        (e.cmp || FelixEngine.makeCmp(e.term)) === tCmp &&
+        FelixEngine.makeCmp(e.translation) === FelixEngine.makeCmp(trans)
+      );
+      if (!exists) { glossaryData.push({ term, translation: trans, notes, cmp: tCmp }); added++; }
+      else { dup++; }
+    }
+  }
+  saveGlossary();
+  updateStats();
+  renderGlossaryList();
+  showToast('gloss-toast', `${added} added, ${dup} duplicates`);
+}
+
 
 function renderGlossaryList() {
+  const filter = (document.getElementById('gloss-filter').value || '').toLowerCase();
   const el = document.getElementById('gloss-list');
-  if (!glossaryData.length) {
+  const countEl = document.getElementById('gloss-list-count');
+
+  let filtered = glossaryData;
+  if (filter) {
+    filtered = glossaryData.filter(g =>
+      g.term.toLowerCase().includes(filter) ||
+      g.translation.toLowerCase().includes(filter)
+    );
+  }
+
+  const showing = filtered.slice(0, 100);
+  countEl.textContent = `${showing.length} / ${glossaryData.length} entries`;
+
+  if (!showing.length) {
     el.innerHTML = '<div class="empty">No glossary entries</div>';
     return;
   }
-  el.innerHTML = glossaryData.map((g, i) =>
-    `<div class="match" style="cursor:default">
+  el.innerHTML = showing.map((g) => {
+    const idx = glossaryData.indexOf(g);
+    return `<div class="match" style="cursor:default;padding:8px;position:relative" data-gloss-idx="${idx}">
+      <span style="position:absolute;top:6px;right:8px;display:flex;gap:4px">
+        <span style="font-size:11px;color:#1a73e8;cursor:pointer" data-gloss-edit="${idx}" title="Edit">✎</span>
+        <span style="font-size:11px;color:#ea4335;cursor:pointer" data-del="${idx}" title="Delete">✕</span>
+      </span>
       <div class="match-source">${escH(g.term)}</div>
       <div class="match-target">${escH(g.translation)}</div>
-      <span style="float:right;font-size:11px;color:#ea4335;cursor:pointer" data-del="${i}">✕</span>
-    </div>`
-  ).join('');
+    </div>`;
+  }).join('');
 
   el.querySelectorAll('[data-del]').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const idx = parseInt(btn.getAttribute('data-del'));
       glossaryData.splice(idx, 1);
-      await sendBg('GLOSSARY_SAVE', glossaryData);
+      await saveGlossary();
       updateStats();
       renderGlossaryList();
     });
   });
+
+  el.querySelectorAll('[data-gloss-edit]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.getAttribute('data-gloss-edit'));
+      editGlossaryEntry(idx);
+    });
+  });
+}
+
+function editGlossaryEntry(idx) {
+  const entry = glossaryData[idx];
+  if (!entry) return;
+  const div = document.querySelector(`[data-gloss-idx="${idx}"]`);
+  if (!div) return;
+
+  div.innerHTML = `
+    <input type="text" value="${escH(entry.term)}" style="width:100%;margin-bottom:4px;font-size:11px;padding:4px" data-field="term">
+    <input type="text" value="${escH(entry.translation)}" style="width:100%;margin-bottom:4px;font-size:11px;padding:4px" data-field="translation">
+    <div style="display:flex;gap:4px">
+      <button class="btn btn-primary" style="flex:1;padding:3px 6px;font-size:10px" data-save>OK</button>
+      <button class="btn btn-outline" style="flex:1;padding:3px 6px;font-size:10px" data-cancel>Cancel</button>
+    </div>`;
+
+  div.querySelector('[data-save]').addEventListener('click', async () => {
+    const newTerm = div.querySelector('[data-field="term"]').value.trim();
+    const newTrans = div.querySelector('[data-field="translation"]').value.trim();
+    if (newTerm && newTrans) {
+      entry.term = newTerm;
+      entry.translation = newTrans;
+      entry.cmp = FelixEngine.makeCmp(newTerm);
+      await saveGlossary();
+    }
+    renderGlossaryList();
+  });
+  div.querySelector('[data-cancel]').addEventListener('click', () => renderGlossaryList());
+}
+
+// ============================================================
+// Rules Operations
+// ============================================================
+
+async function addRule() {
+  const srcPat = document.getElementById('rule-source').value.trim();
+  const tgtTpl = document.getElementById('rule-target').value.trim();
+  if (!srcPat || !tgtTpl) return;
+
+  // Validate regex
+  try { new RegExp(srcPat); } catch (_) {
+    showToast('rule-toast', t('invalidRegex'));
+    return;
+  }
+
+  // Check duplicate
+  const exists = rulesData.some(r => r.sourcePattern === srcPat && r.targetTemplate === tgtTpl);
+  if (exists) {
+    showToast('rule-toast', t('ruleExists'));
+    return;
+  }
+
+  rulesData.push({ sourcePattern: srcPat, targetTemplate: tgtTpl, enabled: true });
+  await saveRules();
+  renderRulesList();
+  showToast('rule-toast', t('ruleAdded'));
+  document.getElementById('rule-source').value = '';
+  document.getElementById('rule-target').value = '';
+}
+
+async function saveRules() {
+  await sendBg('RULES_SAVE', rulesData);
+  chrome.runtime.sendMessage({ type: 'BROADCAST', payload: { type: 'DATA_CHANGED' } }).catch(() => {});
+}
+
+function renderRulesList() {
+  const el = document.getElementById('rules-list');
+  const countEl = document.getElementById('rules-list-count');
+  countEl.textContent = `${rulesData.length} rules`;
+
+  if (!rulesData.length) {
+    el.innerHTML = '<div class="empty">No rules</div>';
+    return;
+  }
+
+  el.innerHTML = rulesData.map((r, idx) => {
+    const dimStyle = r.enabled === false ? 'opacity:0.5;' : '';
+    const toggleLabel = r.enabled === false ? '▶' : '⏸';
+    return `<div class="match" style="cursor:default;padding:8px;position:relative;${dimStyle}" data-rule-idx="${idx}">
+      <span style="position:absolute;top:6px;right:8px;font-size:11px;color:#ea4335;cursor:pointer" data-rule-del="${idx}">✕</span>
+      <span style="position:absolute;top:6px;right:26px;font-size:11px;color:#5f6368;cursor:pointer" data-rule-toggle="${idx}">${toggleLabel}</span>
+      <div class="match-source" style="font-family:monospace;font-size:11px">${escH(r.sourcePattern)}</div>
+      <div class="match-target" style="font-family:monospace;font-size:11px">→ ${escH(r.targetTemplate)}</div>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('[data-rule-del]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.getAttribute('data-rule-del'));
+      rulesData.splice(idx, 1);
+      await saveRules();
+      renderRulesList();
+    });
+  });
+
+  el.querySelectorAll('[data-rule-toggle]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.getAttribute('data-rule-toggle'));
+      rulesData[idx].enabled = rulesData[idx].enabled === false ? true : false;
+      await saveRules();
+      renderRulesList();
+    });
+  });
+}
+
+function processRulesText(text) {
+  if (!text || !text.trim()) return;
+  const lines = text.split('\n');
+  let added = 0, dup = 0, invalid = 0;
+  for (const line of lines) {
+    const parts = line.split('\t');
+    if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
+      const srcPat = parts[0].trim();
+      const tgtTpl = parts[1].trim();
+      try { new RegExp(srcPat); } catch (_) { invalid++; continue; }
+      const exists = rulesData.some(r => r.sourcePattern === srcPat && r.targetTemplate === tgtTpl);
+      if (!exists) { rulesData.push({ sourcePattern: srcPat, targetTemplate: tgtTpl, enabled: true }); added++; }
+      else { dup++; }
+    }
+  }
+  saveRules();
+  renderRulesList();
+  showToast('rule-toast', `${added} added${dup ? `, ${dup} dup` : ''}${invalid ? `, ${invalid} invalid` : ''}`);
+}
+
+function exportRulesTSV() {
+  const lines = ['source_pattern\ttarget_template\tenabled'];
+  for (const r of rulesData) {
+    lines.push(`${r.sourcePattern}\t${r.targetTemplate}\t${r.enabled !== false}`);
+  }
+  downloadText(lines.join('\n'), 'felix-rules-export.tsv');
+}
+
+// ============================================================
+// Sheet Import (via Sheets API)
+// ============================================================
+
+async function getActiveSheetInfo() {
+  // Ask the active Google Sheets tab for its spreadsheetId
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: 'GET_SHEET_INFO' }, (resp) => {
+      resolve(resp || {});
+    });
+  });
+}
+
+async function readSheetRange(srcId, tgtId, toastId) {
+  const srcRangeRaw = document.getElementById(srcId).value.trim() || 'A2:A';
+  const tgtRangeRaw = document.getElementById(tgtId).value.trim() || 'B2:B';
+
+  showToast(toastId, 'Reading from sheet...');
+
+  const info = await getActiveSheetInfo();
+  if (!info.spreadsheetId) {
+    showToast(toastId, 'No active Google Sheet found. Open a spreadsheet first.');
+    return null;
+  }
+
+  const prefix = info.sheetName && !srcRangeRaw.includes('!') ? `${info.sheetName}!` : '';
+  const [srcResp, tgtResp] = await Promise.all([
+    sendBg('SHEETS_API_READ_BATCH', { spreadsheetId: info.spreadsheetId, range: `${prefix}${srcRangeRaw}` }),
+    sendBg('SHEETS_API_READ_BATCH', { spreadsheetId: info.spreadsheetId, range: `${prefix}${tgtRangeRaw}` }),
+  ]);
+
+  return { srcValues: srcResp?.values || [], tgtValues: tgtResp?.values || [] };
+}
+
+async function importFromSheet() {
+  const data = await readSheetRange('import-src-range', 'import-tgt-range', 'sheet-import-toast');
+  if (!data) return;
+
+  const len = Math.max(data.srcValues.length, data.tgtValues.length);
+  let added = 0, updated = 0, skipped = 0;
+  for (let i = 0; i < len; i++) {
+    const src = (data.srcValues[i] || '').trim();
+    const tgt = (data.tgtValues[i] || '').trim();
+    if (src && tgt) {
+      const action = FelixEngine.addEntry(tmData, src, tgt);
+      if (action === 'added') added++;
+      else updated++;
+    } else { skipped++; }
+  }
+
+  await saveTM();
+  updateStats();
+  renderTMList();
+  showToast('sheet-import-toast', `${t('imported')}: ${added} new, ${updated} updated, ${skipped} skipped (${len} rows)`);
+}
+
+async function importGlossaryFromSheet() {
+  const data = await readSheetRange('gloss-import-src-range', 'gloss-import-tgt-range', 'gloss-sheet-toast');
+  if (!data) return;
+
+  const len = Math.max(data.srcValues.length, data.tgtValues.length);
+  let added = 0, dup = 0;
+  for (let i = 0; i < len; i++) {
+    const term = (data.srcValues[i] || '').trim();
+    const trans = (data.tgtValues[i] || '').trim();
+    if (term && trans) {
+      const tCmp = FelixEngine.makeCmp(term);
+      const exists = glossaryData.some(e =>
+        (e.cmp || FelixEngine.makeCmp(e.term)) === tCmp &&
+        FelixEngine.makeCmp(e.translation) === FelixEngine.makeCmp(trans)
+      );
+      if (!exists) { glossaryData.push({ term, translation: trans, notes: '', cmp: tCmp }); added++; }
+      else { dup++; }
+    }
+  }
+
+  await saveGlossary();
+  updateStats();
+  renderGlossaryList();
+  showToast('gloss-sheet-toast', `${added} added, ${dup} duplicates (${len} rows)`);
 }
 
 // ============================================================
 // File Import
 // ============================================================
 
+function handleGlossaryFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    processGlossaryText(e.target.result);
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
 function handleFile(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
     const text = e.target.result;
     const ext = file.name.split('.').pop().toLowerCase();
-
-    if (ext === 'tmx') {
-      importTMX(text);
-    } else {
-      importTSV(text);
-    }
+    if (ext === 'tmx') importTMX(text);
+    else importTSV(text);
   };
   reader.readAsText(file, 'utf-8');
 }
@@ -502,33 +714,33 @@ function importTMX(xml) {
     if (tuvs.length >= 2) {
       const src = tuvs[0].querySelector('seg')?.textContent || '';
       const tgt = tuvs[1].querySelector('seg')?.textContent || '';
-      if (src && tgt) {
-        addToTMInternal(src, tgt);
-        added++;
-      }
+      if (src && tgt) { FelixEngine.addEntry(tmData, src, tgt); added++; }
     }
   });
 
   saveTM();
   updateStats();
+  renderTMList();
   showToast('import-toast', `Imported ${added} entries from TMX`);
 }
 
 function importTSV(text) {
-  const lines = text.split('\n');
+  const rows = parseTSV(text);
   let added = 0;
-  const startLine = (lines[0] && lines[0].toLowerCase().includes('source')) ? 1 : 0;
+  const startIdx = (rows.length > 0 && rows[0].length >= 1 &&
+    /source/i.test(rows[0][0])) ? 1 : 0;
 
-  for (let i = startLine; i < lines.length; i++) {
-    const parts = lines[i].split('\t');
-    if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
-      addToTMInternal(parts[0].trim(), parts[1].trim());
+  for (let i = startIdx; i < rows.length; i++) {
+    const row = rows[i];
+    if (row.length >= 2 && row[0].trim() && row[1].trim()) {
+      FelixEngine.addEntry(tmData, row[0].trim(), row[1].trim());
       added++;
     }
   }
 
   saveTM();
   updateStats();
+  renderTMList();
   showToast('import-toast', `Imported ${added} entries from TSV`);
 }
 
@@ -542,6 +754,28 @@ function exportTSV() {
     lines.push(`${e.source}\t${e.target}\t${e.context || ''}\t${e.refcount || 0}`);
   }
   downloadText(lines.join('\n'), 'felix-tm-export.tsv');
+}
+
+function exportTMX() {
+  function xmlEsc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  const now = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+  xml += `<tmx version="1.4">\n`;
+  xml += `  <header creationtool="Felix TM" creationtoolversion="1.0" datatype="plaintext" segtype="sentence" adminlang="en" srclang="*all*" o-tmf="FelixTM" creationdate="${now}"/>\n`;
+  xml += `  <body>\n`;
+  for (const e of tmData) {
+    xml += `    <tu>\n`;
+    xml += `      <tuv xml:lang="src"><seg>${xmlEsc(e.source)}</seg></tuv>\n`;
+    xml += `      <tuv xml:lang="tgt"><seg>${xmlEsc(e.target)}</seg></tuv>\n`;
+    xml += `    </tu>\n`;
+  }
+  xml += `  </body>\n</tmx>\n`;
+
+  const blob = new Blob([xml], { type: 'application/xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'felix-tm-export.tmx'; a.click();
+  URL.revokeObjectURL(url);
 }
 
 function exportGlossaryTSV() {
@@ -570,25 +804,18 @@ function sendBg(type, data) {
   });
 }
 
-/** Send a message to the content script via background relay */
-function sendBgPayload(contentType, extra) {
-  return new Promise(resolve => {
-    chrome.runtime.sendMessage({
-      type: 'TO_CONTENT',
-      payload: { type: contentType, targetCol: settings.targetCol || 'B', ...extra }
-    }, resolve);
-  });
-}
-
 function updateStats() {
-  document.getElementById('stats-badge').innerHTML =
-    `<span class="live-dot"></span>TM: ${tmData.length} | Gloss: ${glossaryData.length}`;
+  document.getElementById('stats-badge').textContent = `TM: ${tmData.length} | Gloss: ${glossaryData.length}`;
 }
 
-function showToast(elId, msg) {
-  const el = document.getElementById(elId);
-  el.innerHTML = `<div class="toast">${msg}</div>`;
-  setTimeout(() => el.innerHTML = '', 3000);
+let _toastTimer = null;
+function showToast(_elId, msg) {
+  const container = document.getElementById('global-toast');
+  if (!container) return;
+  container.querySelector('div').textContent = msg;
+  container.style.display = 'block';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { container.style.display = 'none'; }, 2000);
 }
 
 // ============================================================
@@ -600,7 +827,6 @@ function loadSettingsUI() {
   document.getElementById('set-source-col').value = settings.sourceCol || 'A';
   document.getElementById('set-target-col').value = settings.targetCol || 'B';
   document.getElementById('set-min-score').value = String(settings.minScore || 0.7);
-  document.getElementById('min-score').value = String(settings.minScore || 0.7);
   document.getElementById('set-shortcut-get').value = settings.shortcutGet || 'Cmd+Shift+J';
   document.getElementById('set-shortcut-set').value = settings.shortcutSet || 'Cmd+Shift+U';
 }
@@ -612,57 +838,85 @@ async function saveSettingsUI() {
   settings.minScore = parseFloat(document.getElementById('set-min-score').value);
   settings.shortcutGet = document.getElementById('set-shortcut-get').value;
   settings.shortcutSet = document.getElementById('set-shortcut-set').value;
-  document.getElementById('min-score').value = String(settings.minScore);
   await sendBg('SETTINGS_SAVE', settings);
-  // Notify content script of shortcut changes
   chrome.runtime.sendMessage({
     type: 'BROADCAST',
-    payload: { type: 'SHORTCUTS_UPDATED', get: settings.shortcutGet, set: settings.shortcutSet },
+    payload: { type: 'SETTINGS_CHANGED' },
   }).catch(() => {});
   applyLang();
   showToast('settings-toast', t('saved'));
 }
 
-async function clearAllTM() {
-  if (!confirm(t('confirmClear'))) return;
-  tmData = [];
-  await saveTM();
-  updateStats();
-  showToast('settings-toast', 'TM cleared');
+function inlineConfirm(btnId, message, onConfirm) {
+  const btn = document.getElementById(btnId);
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:4px;align-items:center;width:100%;margin-bottom:' + (btn.style.marginBottom || '0');
+  div.innerHTML = `<span style="font-size:10px;color:#ea4335;flex:1">${escH(message)}</span>
+    <button class="btn btn-outline" style="padding:5px 10px;font-size:11px;color:#ea4335;border-color:#ea4335" data-ok>OK</button>
+    <button class="btn btn-outline" style="padding:5px 10px;font-size:11px" data-cancel>${t('cancel')}</button>`;
+  function restore() { div.replaceWith(btn); }
+  btn.replaceWith(div);
+  div.querySelector('[data-ok]').addEventListener('click', () => { restore(); onConfirm(); });
+  div.querySelector('[data-cancel]').addEventListener('click', restore);
 }
 
-async function clearAllGlossary() {
-  if (!confirm(t('confirmClear'))) return;
-  glossaryData = [];
-  await sendBg('GLOSSARY_SAVE', glossaryData);
-  updateStats();
-  renderGlossaryList();
-  showToast('settings-toast', 'Glossary cleared');
+function clearAllTM() {
+  inlineConfirm('btn-clear-tm', t('confirmClear'), async () => {
+    tmData = [];
+    await saveTM();
+    updateStats();
+    renderTMList();
+    showToast(null, 'TM cleared');
+  });
 }
 
-function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+function clearAllGlossary() {
+  inlineConfirm('btn-clear-gloss', t('confirmClear'), async () => {
+    glossaryData = [];
+    await saveGlossary();
+    updateStats();
+    renderGlossaryList();
+    showToast(null, 'Glossary cleared');
+  });
+}
+
 function escH(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 // ============================================================
-// Event Bindings (no inline onclick — required by Manifest V3 CSP)
+// Event Bindings
 // ============================================================
 
-document.getElementById('min-score').addEventListener('change', () => doSearch());
-document.getElementById('search-type').addEventListener('change', () => doSearch());
 document.getElementById('btn-register').addEventListener('click', () => registerTM());
-document.getElementById('btn-paste-import').addEventListener('click', () => pasteImport());
+document.getElementById('btn-import-sheet').addEventListener('click', () => importFromSheet());
+document.getElementById('btn-import-gloss-sheet').addEventListener('click', () => importGlossaryFromSheet());
 document.getElementById('tm-filter').addEventListener('input', () => renderTMList());
 document.getElementById('btn-add-gloss').addEventListener('click', () => addGlossary());
 document.getElementById('btn-export-tm').addEventListener('click', () => exportTSV());
-document.getElementById('btn-paste-gloss').addEventListener('click', () => pasteGlossary());
+document.getElementById('btn-export-tmx').addEventListener('click', () => exportTMX());
+document.getElementById('gloss-filter').addEventListener('input', () => renderGlossaryList());
 document.getElementById('btn-export-gloss').addEventListener('click', () => exportGlossaryTSV());
-document.getElementById('btn-set-tm').addEventListener('click', () => setToTM());
+
+// Glossary file drop
+const glossDropZone = document.getElementById('gloss-drop-zone');
+const glossFileInput = document.getElementById('gloss-file-input');
+glossDropZone.addEventListener('click', () => glossFileInput.click());
+glossDropZone.addEventListener('dragover', e => { e.preventDefault(); glossDropZone.style.borderColor = '#1a73e8'; });
+glossDropZone.addEventListener('dragleave', () => { glossDropZone.style.borderColor = '#dadce0'; });
+glossDropZone.addEventListener('drop', e => { e.preventDefault(); glossDropZone.style.borderColor = '#dadce0'; handleGlossaryFile(e.dataTransfer.files[0]); });
+glossFileInput.addEventListener('change', () => { if (glossFileInput.files[0]) handleGlossaryFile(glossFileInput.files[0]); });
 document.getElementById('btn-save-settings').addEventListener('click', () => saveSettingsUI());
-document.getElementById('btn-float').addEventListener('click', () => {
-  chrome.windows.create({ url: 'sidepanel.html', type: 'popup', width: 400, height: 700 });
-});
 document.getElementById('btn-clear-tm').addEventListener('click', () => clearAllTM());
 document.getElementById('btn-clear-gloss').addEventListener('click', () => clearAllGlossary());
+
+// Rules
+document.getElementById('btn-add-rule').addEventListener('click', () => addRule());
+document.getElementById('rule-paste-zone').addEventListener('paste', (e) => {
+  e.preventDefault();
+  const text = e.clipboardData.getData('text/plain');
+  processRulesText(text);
+  e.target.textContent = 'Ctrl+V';
+});
+document.getElementById('btn-export-rules').addEventListener('click', () => exportRulesTSV());
 
 // File drop zone
 const dropZone = document.getElementById('drop-zone');

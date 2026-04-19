@@ -9,7 +9,8 @@
     "scripting",
     "storage",
     "identity",
-    "contextMenus"
+    "contextMenus",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://docs.google.com/spreadsheets/*",
@@ -31,8 +32,11 @@
       "run_at": "document_idle"
     }
   ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
   "web_accessible_resources": [{
-    "resources": ["manage.html", "manage.js", "felix-engine.js"],
+    "resources": ["felix-engine.js"],
     "matches": ["https://docs.google.com/*"]
   }],
   "action": {

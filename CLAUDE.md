@@ -40,3 +40,19 @@ python3 -m venv .venv
 ## CI
 
 GitHub Actions: Windows / macOS / Linux × Python 3.10-3.13 (12 jobs)
+
+## Pre-release cleanup checklist
+
+Items intentionally added for development that MUST be removed or gated
+before the Chrome extension is published:
+
+- `DEV_RELOAD` message handler in `plugins/chrome-extension/background.js`
+- `FELIX_TM_DEV_RELOAD` postMessage listener in `plugins/chrome-extension/content.js`
+- The companion skill at `.claude/skills/felix-tm-reload/` is dev-only and
+  can stay, but it will silently fail against a release build once the
+  bridge is removed — that's the desired behavior.
+
+These form a hot-reload bridge (see `.claude/skills/felix-tm-reload/SKILL.md`)
+that lets Claude reload the extension via Claude-in-Chrome. Shipping them
+would give any page on docs.google.com a way to force-reload the
+extension, which is not a vulnerability we want to distribute.

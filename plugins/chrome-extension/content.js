@@ -47,17 +47,15 @@
   const I18N = {
     en: {
       activeCell: 'Active Cell', selectCell: 'Select a cell to search TM',
-      set: 'Set (register to TM)', noMatch: 'No matches',
+      noMatch: 'No matches',
       used: 'used', registered: 'Registered!', alreadyExists: 'Already exists (+1)',
       srcEmpty: 'Source cell is empty', tgtEmpty: 'Target cell is empty',
-      src: 'Src', tgt: 'Tgt',
     },
     ja: {
       activeCell: 'アクティブセル', selectCell: 'セルを選択するとTM検索します',
-      set: 'Set（TMに登録）', noMatch: 'マッチなし',
+      noMatch: 'マッチなし',
       used: '使用', registered: '登録しました', alreadyExists: '既に存在 (+1)',
       srcEmpty: '原文セルが空です', tgtEmpty: '訳文セルが空です',
-      src: '原文', tgt: '訳文',
     },
   };
   function t(key) { return (I18N[settings.lang] && I18N[settings.lang][key]) || I18N.en[key] || key; }
@@ -227,9 +225,6 @@
       .placed-manual::after { content: attr(data-tip); display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
       .placed-manual:hover::after { display: block; }
       .btn-del-tm:hover { color: #ea4335 !important; }
-      .col-input { width: 28px; padding: 4px; border: 1px solid #dadce0; border-radius: 3px; font-size: 11px; text-align: center; text-transform: uppercase; }
-      .col-input:focus { outline: none; border-color: #1a73e8; }
-      .col-label { font-size: 10px; color: #9aa0a6; }
       .settings-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
       .mode-toggle { display: flex; border: 1px solid #dadce0; border-radius: 4px; overflow: hidden; }
       .mode-btn { padding: 3px 8px; font-size: 10px; cursor: pointer; color: #5f6368; user-select: none; }
@@ -246,7 +241,7 @@
         <h1>Felix TM</h1>
         <span>
           <span class="badge" id="badge">TM: 0</span>
-          <button class="btn-close" id="btn-manage" title="Manage TM/Glossary">⚙</button>
+          <button class="btn-close" id="btn-manage" title="Open side panel (manage TM / Glossary)">⚙</button>
           <button class="btn-close" id="btn-min">−</button>
           <button class="btn-close" id="btn-close">✕</button>
         </span>
@@ -259,15 +254,11 @@
             <span class="mode-btn mode-active" data-mode="translate" id="mode-translate">Translate</span>
             <span class="mode-btn" data-mode="review" id="mode-review">Review</span>
           </div>
-          <select id="min-score" style="flex:1;padding:4px;font-size:11px">
+          <select id="min-score" style="width:60px;padding:4px;font-size:11px">
             <option value="0.5">50%</option><option value="0.6">60%</option>
             <option value="0.7" selected>70%</option><option value="0.8">80%</option>
             <option value="0.9">90%</option>
           </select>
-          <span class="col-label" id="lbl-src">Src</span>
-          <input class="col-input" id="src-col" value="A" maxlength="2">
-          <span class="col-label" id="lbl-tgt">Tgt</span>
-          <input class="col-input" id="tgt-col" value="B" maxlength="2">
         </div>
         <div class="conc-row">
           <input class="conc-input" id="conc-query" placeholder="Concordance (Enter)">
@@ -276,8 +267,7 @@
         <div id="results-wrap"><div id="results"><div class="empty" id="lbl-empty">Select a cell to search TM</div></div></div>
         <div class="set-bar">
           <button class="btn" id="btn-undo" title="Undo last write" style="padding:6px 8px;color:#5f6368">↩</button>
-          <button class="btn" id="btn-set" style="flex:1">Set (register to TM)</button>
-          <span class="shortcut" id="shortcut-label"></span>
+          <span class="shortcut" id="shortcut-label" style="flex:1;text-align:right"></span>
         </div>
         <div id="toast-area"></div>
       </div>
@@ -289,17 +279,11 @@
     const header = shadow.getElementById('header');
 
     // Dragging — listeners use AbortController signal
-    // Disable iframe pointer events during drag/resize to prevent event stealing
     let isDragging = false, dx = 0, dy = 0;
-    function setIframeBlock(block) {
-      const f = shadow.getElementById('manage-frame');
-      if (f) f.style.pointerEvents = block ? 'none' : 'auto';
-    }
     header.addEventListener('mousedown', e => {
       isDragging = true;
       dx = e.clientX - panel.offsetLeft;
       dy = e.clientY - panel.offsetTop;
-      setIframeBlock(true);
       e.preventDefault();
     });
     document.addEventListener('mousemove', e => {
@@ -310,18 +294,35 @@
     }, { signal });
     document.addEventListener('mouseup', () => {
       isDragging = false;
-      setIframeBlock(false);
     }, { signal });
-    // Also block iframe during CSS resize (mousedown anywhere on panel edge)
-    panel.addEventListener('mousedown', (e) => {
+
+    // Keep the panel inside the viewport when it shrinks — e.g. when the
+    // Chrome side panel opens or the window is resized. Without this, a
+    // panel that was dragged near the right edge can end up off-screen.
+    function clampPanelToViewport() {
       const rect = panel.getBoundingClientRect();
-      const edge = 16;
-      if (e.clientX > rect.right - edge || e.clientY > rect.bottom - edge) {
-        setIframeBlock(true);
-        const up = () => { setIframeBlock(false); document.removeEventListener('mouseup', up); };
-        document.addEventListener('mouseup', up);
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const pw = panel.offsetWidth;
+      const ph = panel.offsetHeight;
+      const margin = 8;
+      // Horizontal
+      if (rect.right > vw - margin) {
+        panel.style.left = Math.max(margin, vw - pw - margin) + 'px';
+        panel.style.right = 'auto';
+      } else if (rect.left < margin) {
+        panel.style.left = margin + 'px';
+        panel.style.right = 'auto';
       }
-    });
+      // Vertical (allow title bar to stay grabable)
+      const headerH = header.offsetHeight || 36;
+      if (rect.top > vh - headerH - margin) {
+        panel.style.top = Math.max(margin, vh - ph - margin) + 'px';
+      } else if (rect.top < margin) {
+        panel.style.top = margin + 'px';
+      }
+    }
+    window.addEventListener('resize', clampPanelToViewport, { signal });
 
     // Close / Minimize
     shadow.getElementById('btn-close').addEventListener('click', () => { host.style.display = 'none'; panelVisible = false; });
@@ -337,53 +338,12 @@
       doSearch();
     });
 
-    // Column inputs — update settings on change
-    const srcColInput = shadow.getElementById('src-col');
-    const tgtColInput = shadow.getElementById('tgt-col');
-    srcColInput.value = settings.sourceCol || 'A';
-    tgtColInput.value = settings.targetCol || 'B';
-    srcColInput.addEventListener('change', () => {
-      settings.sourceCol = srcColInput.value.toUpperCase();
-      srcColInput.value = settings.sourceCol;
-      msg('SETTINGS_SAVE', settings);
-      _sourceCache = {};
-      preloadSourceCache();
-    });
-    tgtColInput.addEventListener('change', () => {
-      settings.targetCol = tgtColInput.value.toUpperCase();
-      tgtColInput.value = settings.targetCol;
-      msg('SETTINGS_SAVE', settings);
-    });
-
-    // Manage button — toggle inline manage iframe
-    let _savedSize = null;
+    // Manage button — open Chrome side panel
     shadow.getElementById('btn-manage').addEventListener('click', () => {
-      const body = shadow.getElementById('body');
-      const iframe = shadow.getElementById('manage-frame');
-      if (iframe) {
-        // Close manage mode — restore search view with original size
-        iframe.remove();
-        body.style.display = '';
-        if (_savedSize) {
-          panel.style.width = _savedSize.w;
-          panel.style.height = _savedSize.h;
-        }
-      } else {
-        // Save current size before swapping
-        _savedSize = { w: panel.offsetWidth + 'px', h: panel.offsetHeight + 'px' };
-        // Open manage mode — hide search, show iframe; keep width, expand height
-        body.style.display = 'none';
-        const frame = document.createElement('iframe');
-        frame.id = 'manage-frame';
-        frame.src = chrome.runtime.getURL('manage.html');
-        frame.style.cssText = 'width:100%;flex:1;border:none;border-radius:0 0 12px 12px;';
-        panel.appendChild(frame);
-        panel.style.height = Math.max(panel.offsetHeight, 700) + 'px';
-      }
+      msg('OPEN_SIDE_PANEL');
     });
 
-    // Set & Undo buttons
-    shadow.getElementById('btn-set').addEventListener('click', () => doSet());
+    // Undo button (Set action moved to side panel; keyboard shortcut still works)
     shadow.getElementById('btn-undo').addEventListener('click', () => undoLastWrite());
 
     // Mode toggle (Translate ↔ Review)
@@ -428,9 +388,6 @@
     const set = (id, text) => { const el = s.getElementById(id); if (el) el.textContent = text; };
     set('lbl-cell', t('activeCell'));
     set('lbl-empty', t('selectCell'));
-    set('btn-set', t('set'));
-    set('lbl-src', t('src'));
-    set('lbl-tgt', t('tgt'));
   }
 
   function getShadow() {
@@ -549,7 +506,7 @@
         const ref = getCellRef();
         const rowMatch = ref ? ref.match(/(\d+)/i) : null;
         const rowNum = rowMatch ? rowMatch[1] : null;
-        const tgtCol = s.getElementById('tgt-col').value || settings.targetCol || 'B';
+        const tgtCol = settings.targetCol || 'B';
         const cachedTarget = rowNum ? _sourceCache[`${tgtCol}${rowNum}`] : null;
         if (cachedTarget) {
           searchQuery = cachedTarget;
@@ -947,8 +904,8 @@
       lastCellValue = value;
       lastCellRef = ref;
 
-      // Broadcast selection to manage page (for import range auto-fill)
-      chrome.runtime.sendMessage({ type: 'BROADCAST', payload: { type: 'SELECTION_CHANGED', ref } }).catch(() => {});
+      // Broadcast selection to the side panel (for active-cell preview + import range auto-fill)
+      chrome.runtime.sendMessage({ type: 'BROADCAST', payload: { type: 'SELECTION_CHANGED', ref, value } }).catch(() => {});
 
       // Cache source column values per row
       const refMatch = ref ? ref.match(/([A-Z]+)(\d+)/i) : null;
@@ -1024,7 +981,8 @@
     }
     if (m.type === 'GET_CELL') { sendResponse({ value: getCellValue(), ref: getCellRef() }); return; }
     if (m.type === 'GET_SELECTION') {
-      sendResponse({ selection: getCellRef() });
+      const ref = getCellRef();
+      sendResponse({ ref, value: getCellValue(), selection: ref });
       return;
     }
     if (m.type === 'GET_SHEET_INFO') {
@@ -1046,8 +1004,6 @@
       applyPanelLang();
       const s = getShadow();
       if (s) {
-        s.getElementById('src-col').value = settings.sourceCol || 'A';
-        s.getElementById('tgt-col').value = settings.targetCol || 'B';
         s.getElementById('min-score').value = String(settings.minScore || 0.7);
       }
       return;
@@ -1089,8 +1045,6 @@
           applyPanelLang();
           const s = getShadow();
           if (s) {
-            s.getElementById('src-col').value = settings.sourceCol || 'A';
-            s.getElementById('tgt-col').value = settings.targetCol || 'B';
             s.getElementById('min-score').value = String(settings.minScore || 0.7);
           }
           if (settings.sourceCol !== oldSourceCol) {
@@ -1100,6 +1054,15 @@
         }
       });
     }
+  });
+
+  // === Dev bridge: let page-context JS (e.g. Claude in Chrome) reload the extension ===
+  // Listen for a well-known postMessage, then forward to the background which
+  // calls chrome.runtime.reload(). Remove before publishing.
+  window.addEventListener('message', (e) => {
+    if (e.source !== window) return;
+    if (!e.data || e.data.type !== 'FELIX_TM_DEV_RELOAD') return;
+    msg('DEV_RELOAD');
   });
 
   // === Show panel on load ===
