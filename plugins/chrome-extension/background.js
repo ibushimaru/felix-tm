@@ -267,18 +267,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // Build textFormatRuns
         const runs = [{ startIndex: 0, format: {} }];
         if (d.highlights && d.highlights.length) {
-          // Sort by start position
-          const sorted = [...d.highlights].sort((a, b) => a.start - b.start);
+          // Sort then merge overlapping/adjacent ranges so startIndex stays strictly increasing
+          const sorted = [...d.highlights].sort((a, b) => a.start - b.start || a.end - b.end);
+          const merged = [];
+          for (const h of sorted) {
+            if (h.end <= h.start) continue;
+            const last = merged[merged.length - 1];
+            if (last && h.start <= last.end) {
+              last.end = Math.max(last.end, h.end);
+            } else {
+              merged.push({ start: h.start, end: h.end });
+            }
+          }
           const allRuns = [];
           let lastEnd = 0;
-          for (const h of sorted) {
+          for (const h of merged) {
             if (h.start > lastEnd) allRuns.push({ startIndex: lastEnd, format: {} });
             allRuns.push({ startIndex: h.start, format: { foregroundColorStyle: { rgbColor: { red: 0.77, green: 0.13, blue: 0.12 } } } });
             lastEnd = h.end;
           }
-          if (lastEnd < d.value.length) allRuns.push({ startIndex: lastEnd, format: {} });
-          runs.length = 0;
-          runs.push(...allRuns);
+          if (allRuns.length) {
+            if (lastEnd < d.value.length) allRuns.push({ startIndex: lastEnd, format: {} });
+            runs.length = 0;
+            runs.push(...allRuns);
+          }
         }
 
         const body = {

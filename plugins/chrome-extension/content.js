@@ -647,6 +647,21 @@
               placed = true;
               insertTarget = placedTarget;
               const manualDiffs = FelixEngine.nonNumericDiffs(searchQuery, m.source);
+              // Build cell formatting highlights for manual-fix parts
+              if (manualDiffs.length) {
+                const seen = new Set();
+                const hl = [];
+                for (const d of manualDiffs) {
+                  if (!d.sText) continue;
+                  const idx = insertTarget.indexOf(d.sText);
+                  if (idx < 0) continue;
+                  const key = idx + ':' + d.sText.length;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  hl.push({ start: idx, end: idx + d.sText.length });
+                }
+                if (hl.length) insertHighlights = hl;
+              }
               tgtDisplay = placedHighlightHtml(m.target, placedTarget, manualDiffs) + `<span class="placed-badge">${badges.join('+')}置換</span>`;
             }
           }
