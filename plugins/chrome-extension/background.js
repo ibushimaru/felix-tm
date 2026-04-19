@@ -26,11 +26,15 @@ chrome.action.onClicked.addListener((tab) => {
 
 // Right-click on icon: offer to open the side panel.
 // Icon click still toggles the in-page overlay (chrome.action.onClicked above).
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: 'open-side-panel',
-    title: 'Felix TM — Open Side Panel',
-    contexts: ['action'],
+chrome.runtime.onInstalled.addListener((details) => {
+  console.log('[FelixTM bg] onInstalled', details && details.reason);
+  // create() throws on re-install if the id already exists, so guard with removeAll.
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: 'open-side-panel',
+      title: 'Felix TM — Open Side Panel',
+      contexts: ['action'],
+    });
   });
 
   // Icon click should NOT auto-open the side panel — we keep the toggle-overlay
@@ -198,6 +202,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // console.log('[FelixTM BG] Error:', err.message);
         sendResponse({ error: err.message });
       });
+    });
+    return true;
+  }
+
+  // Sheets API batch write — multiple ranges in one request.
+  // Payload: { spreadsheetId, updates: [{ range: "Sheet1!B5", value: "..." }, ...] }
+  // Uses values:batchUpdate under the hood.
+  if (msg.type === 'SHEETS_API_BATCH_WRITE') {
+    const d = msg.data || msg;
+    const updates = Array.isArray(d.updates) ? d.updates : [];
+    if (!updates.length) { sendResponse({ updatedCells: 0 }); return; }
+    chrome.identity.getAuthToken({ interactive: true }, (token) => {
+      if (!token) {
+        sendResponse({ error: chrome.runtime.lastError?.message || 'No token' });
+        return;
+      }
+      const body = {
+        valueInputOption: 'USER_ENTERED',
+        data: updates.map(u => ({ range: u.range, values: [[u.value]] })),
+      };
+      fetch(`https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values:batchUpdate`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then(r => r.json()).then(data => sendResponse(data))
+        .catch(err => sendResponse({ error: err.message }));
     });
     return true;
   }

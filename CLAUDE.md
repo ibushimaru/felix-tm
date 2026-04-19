@@ -47,12 +47,22 @@ Items intentionally added for development that MUST be removed or gated
 before the Chrome extension is published:
 
 - `DEV_RELOAD` message handler in `plugins/chrome-extension/background.js`
-- `FELIX_TM_DEV_RELOAD` postMessage listener in `plugins/chrome-extension/content.js`
+- The `FELIX_TM_DEV_RELOAD` postMessage listener in
+  `plugins/chrome-extension/content.js`
 - The companion skill at `.claude/skills/felix-tm-reload/` is dev-only and
-  can stay, but it will silently fail against a release build once the
-  bridge is removed — that's the desired behavior.
+  can stay — it will silently fail against a release build once the
+  bridge is removed, which is the desired behavior.
 
-These form a hot-reload bridge (see `.claude/skills/felix-tm-reload/SKILL.md`)
-that lets Claude reload the extension via Claude-in-Chrome. Shipping them
-would give any page on docs.google.com a way to force-reload the
-extension, which is not a vulnerability we want to distribute.
+The bridge exists so Claude can reload the extension after editing source,
+instead of asking the user to open `chrome://extensions/` each time. See
+`.claude/skills/felix-tm-reload/SKILL.md`. Shipping the bridge would let
+any page on docs.google.com force-reload the extension — not a vulnerability
+we want to distribute.
+
+## Logic tests (no browser)
+
+`plugins/chrome-extension/tests/` holds Node unit tests for the pure
+logic in `felix-engine.js` (Auto Translate planners, matching, placement,
+etc.). Run them with `cd plugins/chrome-extension && npm test`. These are
+the feedback loop for any change to non-DOM logic — add a test there
+before reaching for a browser.

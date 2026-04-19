@@ -667,11 +667,351 @@ var FelixEngine = (() => {
     return diffs;
   }
 
+  // === Auto-Translate planners (pure, no DOM / no I/O) ===
+  //
+  // The content script handles reading the sheet, writing back, and moving
+  // the cursor. These functions take the already-read source/target arrays
+  // and decide *what* should happen — nothing more. Keeping them pure makes
+  // them trivially unit-testable from Node.
+  //
+  // Shape contract (shared by both planners):
+  //
+  //   @typedef {Object} PlanWrite
+  //   @property {number}  rowNum
+  //   @property {string}  value        — text to write into the target cell
+  //   @property {string}  oldValue     — previous target value, for undo
+  //   @property {boolean} viaPlacement — true when placement synthesized the value
+  //
+  //   @typedef {Object} MissingTerm
+  //   @property {string} query  — term as it appears in the query
+  //   @property {string} source — term as it appears in the TM source
+  //
+  //   @typedef {Object} StoppedAt
+  //   @property {number} rowNum
+  //   @property {string} source                  — the row's source text
+  //   @property {string} [matchSource]           — best TM candidate's source
+  //   @property {number} [matchScore]            — 0..1
+  //   @property {MissingTerm[]} [missingTerms]   — for 'fuzzy_uncovered'
+  //
+  //   @typedef {'empty_source'|'end_of_batch'|'end_of_range'|'no_match'|'fuzzy_uncovered'} StopReason
+  //
+  //   @typedef {Object} FuzzyPlan
+  //   @property {PlanWrite[]} writes
+  //   @property {number|null} stopRow
+  //   @property {StopReason|null} stopReason
+  //   @property {StoppedAt|null} stoppedAt
+  //
+  //   @typedef {Object} SelectionPlan
+  //   @property {number} total
+  //   @property {PlanWrite[]} writes
+  //   @property {number} skippedEmpty
+  //   @property {number} skippedFilled
+  //   @property {number|null} stopRow
+  //   @property {StopReason|null} stopReason
+  //   @property {StoppedAt|null} stoppedAt
+
+  /**
+   * Plan writes for Felix's "Auto Translate Selection" over a contiguous
+   * row range. Target cells that already contain a translation are
+   * preserved. Walks the range in order, writing rows that can be
+   * translated unambiguously (100% match OR placement covers every diff),
+   * and HARD-STOPS at the first row that can't — returning enough detail
+   * in stoppedAt for the caller to tell the user why.
+   *
+   * @param {object} o
+   * @param {number}   o.startRow     first row in the selection (1-based)
+   * @param {number}   o.endRow       last row in the selection (inclusive)
+   * @param {string[]} o.srcValues    source column values, index 0 = startRow
+   * @param {string[]} o.tgtValues    target column values, index 0 = startRow
+   * @param {Array}    o.tmData       TM entries
+   * @param {Array}    [o.glossaryData] glossary entries (for placement coverage)
+   * @param {Array}    [o.rulesData]  rule entries (applied, not counted)
+   * @param {number}   [o.minScore=0.7] match threshold
+   * @returns {SelectionPlan}
+   */
+  function planAutoTranslateSelection({ startRow, endRow, srcValues, tgtValues, tmData, glossaryData, rulesData, minScore }) {
+    const threshold = typeof minScore === 'number' ? minScore : 0.7;
+    const writes = [];
+    let skippedEmpty = 0, skippedFilled = 0;
+    let stopRow = null, stopReason = null, stoppedAt = null;
+    const total = Math.max(0, endRow - startRow + 1);
+    for (let i = 0; i < total; i++) {
+      const rowNum = startRow + i;
+      const src = ((srcValues && srcValues[i]) || '').trim();
+      const existing = ((tgtValues && tgtValues[i]) || '').trim();
+      // Empty / filled rows are soft skips — they don't block the walk.
+      if (!src) { skippedEmpty++; continue; }
+      if (existing) { skippedFilled++; continue; }
+
+      const matches = search(src, tmData, threshold);
+      if (!matches.length) {
+        stopRow = rowNum; stopReason = 'no_match';
+        stoppedAt = { rowNum, source: src };
+        break;
+      }
+      const top = matches[0];
+
+      if (top.score >= 1.0) {
+        writes.push({ rowNum, value: top.target, oldValue: existing, viaPlacement: false });
+        continue;
+      }
+
+      const resolved = resolveWithPlacement(src, top.source, top.target, glossaryData, rulesData);
+      if (resolved.covered) {
+        writes.push({ rowNum, value: resolved.target, oldValue: existing, viaPlacement: true });
+        continue;
+      }
+
+      stopRow = rowNum; stopReason = 'fuzzy_uncovered';
+      stoppedAt = {
+        rowNum, source: src,
+        matchSource: top.source, matchScore: top.score,
+        missingTerms: resolved.uncovered.map(d => ({ query: d.qText, source: d.sText })),
+      };
+      break;
+    }
+    if (stopRow == null) stopReason = 'end_of_range';
+    return { total, writes, skippedEmpty, skippedFilled, stopRow, stopReason, stoppedAt };
+  }
+
+  /**
+   * Try to resolve a non-100% match into a writable target by applying all
+   * available placements (number / glossary / rule). The result is
+   * `covered: true` only when every non-numeric diff between query and TM
+   * source was actually handled by one of the placements — otherwise the
+   * caller should stop rather than silently insert a partially-correct
+   * translation.
+   *
+   * Numeric diffs are always considered covered (numberPlacement handles
+   * them and nonNumericDiffs filters them out in advance). Rule placement
+   * is applied but not counted toward coverage — rules can span across
+   * multiple diffs in ways that are hard to attribute safely, and we'd
+   * rather under-cover (stop) than over-cover (wrong insert).
+   */
+  function resolveWithPlacement(query, tmSource, tmTarget, glossaryData, rulesData) {
+    let target = tmTarget;
+    let remaining = nonNumericDiffs(query, tmSource);
+    const placements = [];  // collected badges, in application order
+    const uncovered = [];   // diffs we couldn't resolve — reported back so
+                            // the caller can tell the user what's missing
+
+    // Number placement handles numeric diffs (which nonNumericDiffs already
+    // excluded from `remaining`).
+    const np = numberPlacement(query, tmSource, target);
+    if (np.placed) { target = np.target; placements.push('数値'); }
+
+    // Per-diff glossary coverage. Felix's glossaryPlacement is restricted to
+    // a single contiguous hole, so it can't address rows with scattered
+    // differences (number + number + term + number). Here we walk each
+    // non-numeric diff and check the glossary independently: if both sides
+    // of the diff have glossary entries we know how to rewrite the target
+    // segment that corresponds to sEntry.translation.
+    if (glossaryData && glossaryData.length && remaining.length) {
+      const indexByCmp = new Map();
+      for (const g of glossaryData) {
+        const c = g.cmp || makeCmp(g.term);
+        if (!indexByCmp.has(c)) indexByCmp.set(c, g);
+      }
+      const stillRemaining = [];
+      let glossaryApplied = false;
+      for (const d of remaining) {
+        const qEntry = indexByCmp.get(makeCmp(d.qText));
+        const sEntry = indexByCmp.get(makeCmp(d.sText));
+        if (!qEntry || !sEntry) { stillRemaining.push(d); continue; }
+        // Substitute sEntry.translation → qEntry.translation in target
+        // (first occurrence, case-insensitive like glossaryPlacement does).
+        const tgtLower = target.toLowerCase();
+        const fromLower = sEntry.translation.toLowerCase();
+        const idx = tgtLower.indexOf(fromLower);
+        if (idx === -1) { stillRemaining.push(d); continue; }
+        target = target.substring(0, idx)
+               + qEntry.translation
+               + target.substring(idx + sEntry.translation.length);
+        glossaryApplied = true;
+      }
+      if (glossaryApplied) placements.push('用語');
+      remaining = stillRemaining;
+    }
+
+    // Rule placement — applied for completeness but not counted toward
+    // coverage because a rule's regex can span multiple diffs in ways that
+    // are hard to attribute safely.
+    if (rulesData && rulesData.length) {
+      const rp = rulePlacement(query, tmSource, target, rulesData);
+      if (rp.placed) { target = rp.target; placements.push('ルール'); }
+    }
+
+    // Diffs still in `remaining` at this point are what the user needs to
+    // address — typically "term missing from glossary" on one or both sides.
+    for (const d of remaining) uncovered.push(d);
+
+    return { target, covered: uncovered.length === 0, placements, uncovered };
+  }
+
+  /**
+   * Plan writes for "Auto Translate" from startRow downward. Writes every
+   * row that can be translated unambiguously and STOPS at the first row
+   * that can't — returning concrete information about why so the caller
+   * can tell the user exactly what to fix before retrying.
+   *
+   * When stopReason is 'no_match' or 'fuzzy_uncovered', `stoppedAt` carries
+   * enough context to explain the problem: the source text, the best TM
+   * candidate (if any), and the list of missing glossary term pairs.
+   *
+   * @returns {FuzzyPlan}
+   */
+  function planAutoTranslateToFuzzy({ startRow, srcValues, tgtValues, tmData, glossaryData, rulesData, minScore }) {
+    const threshold = typeof minScore === 'number' ? minScore : 0.7;
+    const writes = [];
+    let stopRow = null, stopReason = null, stoppedAt = null;
+    const n = (srcValues && srcValues.length) || 0;
+    for (let i = 0; i < n; i++) {
+      const rowNum = startRow + i;
+      const src = ((srcValues && srcValues[i]) || '').trim();
+      if (!src) {
+        stopRow = rowNum; stopReason = 'empty_source';
+        stoppedAt = { rowNum, source: '' };
+        break;
+      }
+
+      const matches = search(src, tmData, threshold);
+      if (!matches.length) {
+        stopRow = rowNum; stopReason = 'no_match';
+        stoppedAt = { rowNum, source: src };
+        break;
+      }
+      const top = matches[0];
+
+      if (top.score >= 1.0) {
+        writes.push({
+          rowNum, value: top.target, viaPlacement: false,
+          oldValue: ((tgtValues && tgtValues[i]) || '').trim(),
+        });
+        continue;
+      }
+
+      const resolved = resolveWithPlacement(src, top.source, top.target, glossaryData, rulesData);
+      if (resolved.covered) {
+        writes.push({
+          rowNum, value: resolved.target, viaPlacement: true,
+          oldValue: ((tgtValues && tgtValues[i]) || '').trim(),
+        });
+        continue;
+      }
+
+      stopRow = rowNum; stopReason = 'fuzzy_uncovered';
+      stoppedAt = {
+        rowNum, source: src,
+        matchSource: top.source, matchScore: top.score,
+        missingTerms: resolved.uncovered.map(d => ({ query: d.qText, source: d.sText })),
+      };
+      break;
+    }
+    if (stopRow == null && n > 0) stopReason = 'end_of_batch';
+    return { writes, stopRow, stopReason, stoppedAt };
+  }
+
+  // === Plan consumers (pure helpers used by content.js) ===
+  //
+  // Keeping the "what do we do with this plan?" logic in felix-engine.js
+  // means it's covered by the same Node test suite as the planners. When
+  // the planner's return shape changes, tests here (and the IDE's JSDoc
+  // checks) will catch any drift instead of waiting for a browser bug.
+
+  /**
+   * Build the concrete IO artifacts the content script needs from a plan.
+   * Pure — no DOM, no Sheets API, no chrome.runtime access.
+   *
+   * @param {FuzzyPlan | SelectionPlan} plan
+   * @param {object} cfg
+   * @param {string} cfg.tgtCol      target column letter (e.g. "B")
+   * @param {string} [cfg.sheetName] active sheet name; when present, ranges
+   *                                 are qualified as `'sheet'!B5`
+   * @param {number} cfg.startRow    first row in the plan's window
+   * @returns {{
+   *   updates: Array<{ range: string, value: string }>,
+   *   undoEntries: Array<{ range: string, oldValue: string }>,
+   *   landingRow: number,
+   * }}
+   */
+  function buildPlanActions(plan, cfg) {
+    const tgtCol = cfg.tgtCol;
+    const qualify = (cell) => cfg.sheetName ? `'${cfg.sheetName}'!${cell}` : cell;
+    const writes = (plan && plan.writes) || [];
+    const updates = writes.map(w => ({ range: qualify(`${tgtCol}${w.rowNum}`), value: w.value }));
+    const undoEntries = writes.map(w => ({ range: qualify(`${tgtCol}${w.rowNum}`), oldValue: w.oldValue }));
+    const landingRow = (plan && plan.stopRow) || (cfg.startRow + writes.length);
+    return { updates, undoEntries, landingRow };
+  }
+
+  /**
+   * Turn a plan into a human-readable report + a suggested display duration.
+   * Priority (per product design):
+   *   1. "類似候補なし（しきい値未満）" — most actionable: add TM entry
+   *   2. "X% マッチあり、未対応の差分" — lists missing glossary pairs
+   *   3. Normal completion — concise
+   *
+   * @param {FuzzyPlan | SelectionPlan} plan
+   * @param {object} cfg
+   * @param {string} cfg.srcCol              source column letter (for row refs)
+   * @param {number} [cfg.minScoreDefault=0.7] displayed in the "below threshold" message
+   * @returns {{ text: string, ms: number }}
+   */
+  function describePlan(plan, cfg) {
+    const col = cfg.srcCol || 'A';
+    const wrote = (plan.writes || []).length;
+    const reason = plan.stopReason;
+    const at = plan.stoppedAt;
+
+    if (!reason || reason === 'end_of_batch' || reason === 'end_of_range') {
+      return {
+        text: wrote ? `完了: ${wrote} 行挿入` : '挿入なし（候補や対象がありません）',
+        ms: 3000,
+      };
+    }
+    if (reason === 'empty_source') {
+      const where = at ? ` (${col}${at.rowNum} でデータ末尾)` : '';
+      return { text: `完了: ${wrote} 行挿入${where}`, ms: 3000 };
+    }
+
+    if (!at) return { text: `停止: ${reason}`, ms: 4000 };
+
+    const head = wrote
+      ? `${col}${at.rowNum} で停止（${wrote} 行挿入済み）`
+      : `${col}${at.rowNum} で停止（挿入なし）`;
+
+    if (reason === 'no_match') {
+      const minPct = Math.round(((cfg.minScoreDefault ?? 0.7)) * 100);
+      return {
+        text: `${head}\n類似候補なし（最低マッチ率 ${minPct}% 未満）\nTM に近い原文がないため自動処理できません`,
+        ms: 6000,
+      };
+    }
+
+    if (reason === 'fuzzy_uncovered') {
+      const pct = at.matchScore != null ? Math.round(at.matchScore * 100) : '?';
+      const lines = [head, `${pct}% マッチあり、未対応の差分:`];
+      const terms = at.missingTerms || [];
+      const SHOW = 4;
+      for (const t of terms.slice(0, SHOW)) {
+        lines.push(`  ・「${t.query}」⇔「${t.source}」`);
+      }
+      if (terms.length > SHOW) lines.push(`  ・他 ${terms.length - SHOW} 件`);
+      lines.push('用語集に登録して再実行してください');
+      return { text: lines.join('\n'), ms: 8000 };
+    }
+
+    return { text: `${head}\n(${reason})`, ms: 4000 };
+  }
+
   // === Public API ===
   return { makeCmp, search, reverseSearch, concordanceSearch, glossarySearch,
            glossaryPlacement, numberPlacement, rulePlacement, nonNumericDiffs,
            markGlossaryInSource, fuzzyScore, edScore, diffHighlight, tokenize,
-           containsCJK, addEntry, esc };
+           containsCJK, addEntry, esc,
+           resolveWithPlacement,
+           planAutoTranslateSelection, planAutoTranslateToFuzzy,
+           buildPlanActions, describePlan };
 })();
 
 // Make available in different contexts

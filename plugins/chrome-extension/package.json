@@ -1,0 +1,8 @@
+{
+  "name": "felix-tm-chrome-extension",
+  "private": true,
+  "description": "Internal package manifest used only for running the Chrome extension's pure-logic unit tests on Node. The extension itself is loaded in Chrome via manifest.json, not via npm.",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}

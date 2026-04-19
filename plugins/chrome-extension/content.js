@@ -50,12 +50,14 @@
       noMatch: 'No matches',
       used: 'used', registered: 'Registered!', alreadyExists: 'Already exists (+1)',
       srcEmpty: 'Source cell is empty', tgtEmpty: 'Target cell is empty',
+      autoFuzzy: '↓ Fuzzy', autoRange: '↓ Range',
     },
     ja: {
       activeCell: 'アクティブセル', selectCell: 'セルを選択するとTM検索します',
       noMatch: 'マッチなし',
       used: '使用', registered: '登録しました', alreadyExists: '既に存在 (+1)',
       srcEmpty: '原文セルが空です', tgtEmpty: '訳文セルが空です',
+      autoFuzzy: '↓ Fuzzy', autoRange: '↓ 範囲',
     },
   };
   function t(key) { return (I18N[settings.lang] && I18N[settings.lang][key]) || I18N.en[key] || key; }
@@ -202,10 +204,10 @@
       .match-target { color: #202124; font-size: 12px; margin-top: 2px; word-break: break-all; }
       .match-meta { color: #9aa0a6; font-size: 10px; margin-top: 3px; }
       .empty { text-align: center; color: #9aa0a6; padding: 16px 8px; font-size: 12px; }
-      .set-bar { display: flex; gap: 6px; padding-top: 6px; border-top: 1px solid #e8eaed; flex-shrink: 0; }
+      .action-bar { display: flex; gap: 6px; align-items: center; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #e8eaed; flex-shrink: 0; }
       .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid #dadce0; cursor: pointer; font-size: 11px; font-weight: 500; background: #fff; color: #1a73e8; }
       .btn:hover { background: #f1f3f4; }
-      .toast { padding: 6px 10px; border-radius: 4px; font-size: 11px; margin-top: 6px; background: #e6f4ea; color: #137333; }
+      .toast { padding: 6px 10px; border-radius: 4px; font-size: 11px; margin-top: 6px; background: #e6f4ea; color: #137333; white-space: pre-line; line-height: 1.4; }
       .diff-match { color: #137333; }
       .diff-sub { background: #fce8e6; color: #c5221f; }
       .diff-del { background: #fce8e6; color: #c5221f; }
@@ -226,8 +228,10 @@
       .placed-manual:hover::after { display: block; }
       .btn-del-tm:hover { color: #ea4335 !important; }
       .settings-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
-      .mode-toggle { display: flex; border: 1px solid #dadce0; border-radius: 4px; overflow: hidden; }
+      .mode-toggle { display: flex; border: 1px solid #dadce0; border-radius: 4px; }
       .mode-btn { padding: 3px 8px; font-size: 10px; cursor: pointer; color: #5f6368; user-select: none; }
+      .mode-btn:first-child { border-radius: 3px 0 0 3px; }
+      .mode-btn:last-child  { border-radius: 0 3px 3px 0; }
       .mode-btn.mode-active { background: #1a73e8; color: #fff; }
       .conc-row { display: flex; gap: 4px; margin-bottom: 6px; }
       .conc-input { flex: 1; padding: 4px 6px; border: 1px solid #dadce0; border-radius: 4px; font-size: 11px; }
@@ -235,40 +239,83 @@
       .conc-highlight { background: #fef7cd; border-radius: 2px; padding: 0 1px; }
       .regex-toggle { padding: 3px 6px; border: 1px solid #dadce0; border-radius: 4px; font-size: 11px; font-family: monospace; cursor: pointer; color: #9aa0a6; user-select: none; }
       .regex-toggle.active { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+      .auto-label { font-size: 10px; color: #5f6368; margin: 0 2px 0 4px; white-space: nowrap; }
+      /* Tooltip via CSS Anchor Positioning (Chrome 125+).
+         anchor-scope: --felix-tip confines each element's anchor to its own
+         subtree so the ::after pseudo-element anchors to its own parent,
+         not to the first .has-tip in DOM order. Two classes pick the
+         preferred side:
+           .has-tip          → prefers ABOVE  (mid / bottom controls)
+           .has-tip-below    → prefers BELOW  (header controls)
+         position: fixed keeps the tooltip out of #panel's overflow:hidden.
+         position-try-fallbacks flips sides if the preferred side overflows
+         the viewport. */
+      .has-tip, .has-tip-below {
+        anchor-name: --felix-tip;
+        anchor-scope: --felix-tip;
+      }
+      .has-tip::after, .has-tip-below::after {
+        content: attr(data-tip); display: none; position: fixed;
+        position-anchor: --felix-tip;
+        background: #fff; border: 1px solid #dadce0; border-radius: 4px;
+        padding: 6px 8px; font-size: 10px; color: #202124;
+        white-space: normal; width: max-content; max-width: 220px;
+        text-align: left; line-height: 1.45;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000000;
+        pointer-events: none;
+        position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+      }
+      .has-tip::after {
+        position-area: block-start span-inline-end;   /* above, aligned left edge */
+        margin-bottom: 4px;
+      }
+      .has-tip-below::after {
+        position-area: block-end span-inline-start;   /* below, aligned right edge */
+        margin-top: 4px;
+      }
+      .has-tip:hover::after, .has-tip-below:hover::after { display: block; }
+      /* Wrapper for form controls (select / input) — ::after doesn't render
+         on replaced elements, so we put the tooltip on a surrounding span. */
+      .tip-wrap { display: inline-flex; }
+      .tip-wrap > select, .tip-wrap > input { width: 100%; }
     </style>
     <div id="panel">
       <div id="header">
         <h1>Felix TM</h1>
         <span>
           <span class="badge" id="badge">TM: 0</span>
-          <button class="btn-close" id="btn-manage" title="Open side panel (manage TM / Glossary)">⚙</button>
-          <button class="btn-close" id="btn-min">−</button>
-          <button class="btn-close" id="btn-close">✕</button>
+          <button class="btn-close has-tip-below" id="btn-manage" data-tip="サイドパネル（TM・用語集・ルール管理）">⚙</button>
+          <button class="btn-close" id="btn-min" aria-label="Minimize">−</button>
+          <button class="btn-close" id="btn-close" aria-label="Close">✕</button>
         </span>
       </div>
       <div id="body">
+        <div class="action-bar">
+          <button class="btn has-tip-below" id="btn-undo" data-tip="元に戻す（Auto Translate の一括挿入も 1 回で復元）" style="padding:6px 8px;color:#5f6368">↩</button>
+          <span class="auto-label" id="lbl-auto">Auto:</span>
+          <button class="btn has-tip-below" id="btn-auto-fuzzy" data-tip="現在行から下方向へ連続翻訳。完全一致＋数値／用語集で埋められる行まで続行、埋められない差分が出たら停止／既存訳文は上書き">↓ Fuzzy</button>
+          <button class="btn has-tip-below" id="btn-auto-range" data-tip="選択範囲の空セルだけ翻訳（完全一致のみ）／既存訳文は上書きしない">↓ 範囲</button>
+          <span style="flex:1"></span>
+          <button class="btn has-tip-below" id="btn-set" data-tip="現在行の原文＋訳文を TM に登録（⌘⇧U）">Set</button>
+        </div>
         <div class="cell-label"><span id="lbl-cell">Active Cell</span> <span id="cell-ref"></span></div>
         <div class="cell-preview" id="cell-value">—</div>
         <div class="settings-row">
           <div class="mode-toggle" id="mode-toggle">
-            <span class="mode-btn mode-active" data-mode="translate" id="mode-translate">Translate</span>
-            <span class="mode-btn" data-mode="review" id="mode-review">Review</span>
+            <span class="mode-btn mode-active has-tip" data-mode="translate" id="mode-translate" data-tip="原文を見て訳文候補を探す">Translate</span>
+            <span class="mode-btn has-tip" data-mode="review" id="mode-review" data-tip="訳文を見て原文候補を探す（逆引き・チェック用）">Review</span>
           </div>
-          <select id="min-score" style="width:60px;padding:4px;font-size:11px">
+          <span class="tip-wrap has-tip" data-tip="候補を出す最低マッチ率" style="width:60px"><select id="min-score" style="padding:4px;font-size:11px">
             <option value="0.5">50%</option><option value="0.6">60%</option>
             <option value="0.7" selected>70%</option><option value="0.8">80%</option>
             <option value="0.9">90%</option>
-          </select>
+          </select></span>
         </div>
         <div class="conc-row">
-          <input class="conc-input" id="conc-query" placeholder="Concordance (Enter)">
-          <span class="regex-toggle" id="btn-regex" title="Regular Expression">.*</span>
+          <span class="tip-wrap has-tip" data-tip="TM 内を文字列検索（部分一致）" style="flex:1"><input class="conc-input" id="conc-query" placeholder="Concordance"></span>
+          <span class="regex-toggle has-tip" id="btn-regex" data-tip="正規表現モードに切り替え">.*</span>
         </div>
         <div id="results-wrap"><div id="results"><div class="empty" id="lbl-empty">Select a cell to search TM</div></div></div>
-        <div class="set-bar">
-          <button class="btn" id="btn-undo" title="Undo last write" style="padding:6px 8px;color:#5f6368">↩</button>
-          <span class="shortcut" id="shortcut-label" style="flex:1;text-align:right"></span>
-        </div>
         <div id="toast-area"></div>
       </div>
     </div>`;
@@ -346,6 +393,13 @@
     // Undo button (Set action moved to side panel; keyboard shortcut still works)
     shadow.getElementById('btn-undo').addEventListener('click', () => undoLastWrite());
 
+    // Auto-translate buttons
+    shadow.getElementById('btn-auto-fuzzy').addEventListener('click', () => autoTranslateToFuzzy());
+    shadow.getElementById('btn-auto-range').addEventListener('click', () => autoTranslateSelection());
+
+    // Set (register current row to TM)
+    shadow.getElementById('btn-set').addEventListener('click', () => doSet());
+
     // Mode toggle (Translate ↔ Review)
     shadow.querySelectorAll('.mode-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -388,6 +442,8 @@
     const set = (id, text) => { const el = s.getElementById(id); if (el) el.textContent = text; };
     set('lbl-cell', t('activeCell'));
     set('lbl-empty', t('selectCell'));
+    set('btn-auto-fuzzy', t('autoFuzzy'));
+    set('btn-auto-range', t('autoRange'));
   }
 
   function getShadow() {
@@ -413,13 +469,10 @@
     }
   }
 
-  function updateShortcutLabel() {
-    const s = getShadow();
-    if (!s) return;
-    const getKey = (settings.shortcutGet || 'Cmd+Shift+J').replace('Cmd', '⌘').replace('Shift', '⇧').replace('Ctrl', '⌃');
-    const setKey = (settings.shortcutSet || 'Cmd+Shift+U').replace('Cmd', '⌘').replace('Shift', '⇧').replace('Ctrl', '⌃');
-    s.getElementById('shortcut-label').textContent = `Get:${getKey} Set:${setKey}`;
-  }
+  /** Shortcut legend used to be shown at the bottom of the panel but has
+   *  been removed; keep this as a no-op so existing call sites don't need
+   *  branching while we decide whether / how to resurface the hints. */
+  function updateShortcutLabel() {}
 
   // === Search ===
   // Auto-detects forward vs reverse based on which column is selected
@@ -581,24 +634,15 @@
 
           insertTarget = m.target;
           tgtDisplay = esc(m.target);
-          // Placement: only on the top result, and only if no 100% match
+          // Placement: only on the top result, and only if no 100% match.
+          // Uses the same per-diff resolver as Auto Translate so what's
+          // shown in the match panel matches exactly what would be written
+          // if the user clicks the match (or runs ↓ Fuzzy on this row).
           if (!has100 && i === 0 && pct < 100) {
-            let placedTarget = m.target;
-            let badges = [];
-
-            // 1. Glossary Placement
-            if (glossHits.length) {
-              const gpl = FelixEngine.glossaryPlacement(searchQuery, m.source, placedTarget, glossaryData);
-              if (gpl.placed) { placedTarget = gpl.target; badges.push('用語'); }
-            }
-            // 2. Number Placement (on top of glossary result)
-            const npl = FelixEngine.numberPlacement(searchQuery, m.source, placedTarget);
-            if (npl.placed) { placedTarget = npl.target; badges.push('数値'); }
-            // 3. Rule-based Placement
-            if (rulesData.length) {
-              const rpl = FelixEngine.rulePlacement(searchQuery, m.source, placedTarget, rulesData);
-              if (rpl.placed) { placedTarget = rpl.target; badges.push('ルール'); }
-            }
+            const resolved = FelixEngine.resolveWithPlacement(
+              searchQuery, m.source, m.target, glossaryData, rulesData);
+            const placedTarget = resolved.target;
+            const badges = resolved.placements;
 
             if (badges.length) {
               placed = true;
@@ -876,17 +920,169 @@
 
   async function undoLastWrite() {
     const entry = _undoStack.pop();
-    if (!entry) { showToast('Nothing to undo'); return; }
+    if (!entry) { showToast('Nothing to undo'); return { reason: 'empty_stack' }; }
+    if (entry.batch && entry.batch.length) {
+      const updates = entry.batch.map(b => ({ range: b.range, value: b.oldValue }));
+      await msg('SHEETS_API_BATCH_WRITE', { spreadsheetId: entry.ssId, updates });
+      showToast(`Undo: ${entry.batch.length} cells`);
+      return { kind: 'batch', restored: entry.batch.length, firstRange: entry.batch[0].range };
+    }
     await msg('SHEETS_API_WRITE', { spreadsheetId: entry.ssId, range: entry.range, value: entry.oldValue });
     showToast(`Undo: ${entry.range}`);
+    return { kind: 'single', range: entry.range };
   }
 
-  function showToast(text) {
+  // === Auto Translate ===
+  // Faithful to Felix's "Translate to Fuzzy" / "Auto Translate Selection":
+  // only strict 100% TM matches are written. Placement (glossary/number/rule)
+  // is deliberately NOT applied — we want zero-surprise auto-fills. All writes
+  // from one invocation share a single undo entry so the user can undo the
+  // whole run in one step.
+  //
+  // The decision logic lives in FelixEngine.planAutoTranslate* (pure, unit
+  // tested). These wrappers handle I/O: read the source/target columns from
+  // Sheets, call the planner, batch-write the results, move the cursor, and
+  // push a single undo entry.
+
+  /** Translate from the current row downward; stop at first fuzzy. */
+  async function autoTranslateToFuzzy() {
+    if (!tmData.length) { showToast('No TM loaded'); return; }
+    const ref = getCellRef();
+    if (!ref) { showToast('Select a cell first'); return; }
+
+    // Accept a concrete cell (A2, A2:A5), a column-only ref (A:A, A2:A), or
+    // even a rectangular selection — we always walk down from the anchor row
+    // in settings.sourceCol. If no row is given (whole-column select), start
+    // from row 1.
+    const m = ref.match(/^([A-Z]+)(\d+)?(?::([A-Z]+)(\d+)?)?$/i);
+    if (!m) { showToast(`Unsupported selection: ${ref}`); return; }
+    const startRow = m[2] ? parseInt(m[2]) : 1;
+    const srcCol = settings.sourceCol || 'A';
+    const tgtCol = settings.targetCol || 'B';
+    const ssId = getSpreadsheetId();
+    if (!ssId) return;
+
+    const BATCH = 500;
+    const srcRange = sheetRef(`${srcCol}${startRow}:${srcCol}${startRow + BATCH - 1}`);
+    const tgtRange = sheetRef(`${tgtCol}${startRow}:${tgtCol}${startRow + BATCH - 1}`);
+    showToast('Reading sheet…');
+    const [srcResp, tgtResp] = await Promise.all([
+      msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: srcRange }),
+      msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: tgtRange }),
+    ]);
+    const srcValues = (srcResp && srcResp.values) || [];
+    const tgtValues = (tgtResp && tgtResp.values) || [];
+
+    const plan = FelixEngine.planAutoTranslateToFuzzy({
+      startRow, srcValues, tgtValues, tmData,
+      glossaryData, rulesData,
+      // minScore defaults to 0.7 inside the planner so placement can try
+      // covering non-100% matches. Exact matches still fast-path.
+    });
+
+    await executePlan(plan, { ssId, startRow, srcCol, tgtCol });
+  }
+
+  /**
+   * Auto-translate the currently selected range. Writes 100% matches only,
+   * and skips rows whose target cell is already non-empty so prior work is
+   * preserved.
+   */
+  async function autoTranslateSelection() {
+    if (!tmData.length) { showToast('No TM loaded'); return; }
+    const ref = getCellRef();
+    if (!ref) { showToast('Select a range first'); return; }
+
+    // Accept both row-qualified refs (A2, A2:A5, A2:B5) and column-only refs
+    // (A:A, A:B, A2:A — row missing on one side). For column-only selections
+    // we read an unbounded range and let the actual data length decide endRow.
+    const m = ref.match(/^([A-Z]+)(\d+)?(?::([A-Z]+)(\d+)?)?$/i);
+    if (!m) { showToast(`Unsupported selection: ${ref}`); return; }
+    const startRow = m[2] ? parseInt(m[2]) : 1;
+    const explicitEndRow = m[4] ? parseInt(m[4]) : null;
+    if (explicitEndRow != null && explicitEndRow < startRow) { showToast('Empty range'); return; }
+
+    const srcCol = settings.sourceCol || 'A';
+    const tgtCol = settings.targetCol || 'B';
+    const ssId = getSpreadsheetId();
+    if (!ssId) return;
+
+    // Unbounded range like "A2:A" is valid Sheets syntax — the API returns
+    // rows up to the last populated one.
+    const srcRange = sheetRef(explicitEndRow
+      ? `${srcCol}${startRow}:${srcCol}${explicitEndRow}`
+      : `${srcCol}${startRow}:${srcCol}`);
+    const tgtRange = sheetRef(explicitEndRow
+      ? `${tgtCol}${startRow}:${tgtCol}${explicitEndRow}`
+      : `${tgtCol}${startRow}:${tgtCol}`);
+    showToast('Reading sheet…');
+    const [srcResp, tgtResp] = await Promise.all([
+      msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: srcRange }),
+      msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: tgtRange }),
+    ]);
+    const srcValues = (srcResp && srcResp.values) || [];
+    const tgtValues = (tgtResp && tgtResp.values) || [];
+
+    const endRow = explicitEndRow != null
+      ? explicitEndRow
+      : startRow + Math.max(srcValues.length, 1) - 1;
+
+    const plan = FelixEngine.planAutoTranslateSelection({
+      startRow, endRow, srcValues, tgtValues, tmData,
+      glossaryData, rulesData,
+      // minScore defaults to 0.7 for placement coverage; exact 100% fast-paths.
+    });
+
+    await executePlan(plan, { ssId, startRow, srcCol, tgtCol });
+  }
+
+  /**
+   * Take a plan produced by a FelixEngine planner and execute the IO side
+   * of Auto Translate: write the cells, push an undo entry, move the
+   * cursor, and surface the human report. All pure helpers live in
+   * felix-engine.js and are covered by Node tests; this function is the
+   * thin glue that wires them to chrome.runtime + the Sheets API.
+   */
+  async function executePlan(plan, { ssId, startRow, srcCol, tgtCol }) {
+    const sheetName = getActiveSheetName();
+    const { updates, undoEntries, landingRow } =
+      FelixEngine.buildPlanActions(plan, { tgtCol, sheetName, startRow });
+
+    if (updates.length) {
+      showToast(`Writing ${updates.length} cells…`);
+      const resp = await msg('SHEETS_API_BATCH_WRITE', { spreadsheetId: ssId, updates });
+      if (resp && resp.error) { showToast(`Error: ${resp.error}`); return; }
+      _undoStack.push({ ssId, batch: undoEntries });
+    }
+
+    moveCursorTo(`${srcCol}${landingRow}`);
+
+    const report = FelixEngine.describePlan(plan, {
+      srcCol,
+      minScoreDefault: settings.minScore,
+    });
+    showToast(report.text, report.ms);
+  }
+
+  function moveCursorTo(ref) {
+    const nameBox = findNameBox();
+    if (!nameBox) return;
+    nameBox.focus();
+    if (nameBox.select) nameBox.select();
+    nameBox.value = ref;
+    nameBox.dispatchEvent(new Event('input', { bubbles: true }));
+    nameBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+  }
+
+  let _toastTimer = null;
+  function showToast(text, ms) {
     const s = getShadow();
     if (!s) return;
     const el = s.getElementById('toast-area');
+    if (!el) return;
     el.innerHTML = `<div class="toast">${esc(text)}</div>`;
-    setTimeout(() => el.innerHTML = '', 1000);
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => { el.innerHTML = ''; }, ms || 2000);
   }
 
   function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -1056,14 +1252,15 @@
     }
   });
 
-  // === Dev bridge: let page-context JS (e.g. Claude in Chrome) reload the extension ===
-  // Listen for a well-known postMessage, then forward to the background which
-  // calls chrome.runtime.reload(). Remove before publishing.
+  // === Dev bridge: hot-reload the extension from the page ===
+  // Only FELIX_TM_DEV_RELOAD — functional verification is the user's job,
+  // logic verification is what the Node unit tests are for. Registered with
+  // { signal } so a re-injected newer instance cleanly tears down this
+  // listener via __felixTMCleanup. Remove before publishing.
   window.addEventListener('message', (e) => {
-    if (e.source !== window) return;
-    if (!e.data || e.data.type !== 'FELIX_TM_DEV_RELOAD') return;
-    msg('DEV_RELOAD');
-  });
+    if (e.source !== window || !e.data) return;
+    if (e.data.type === 'FELIX_TM_DEV_RELOAD') msg('DEV_RELOAD');
+  }, { signal });
 
   // === Show panel on load ===
   setTimeout(() => {
