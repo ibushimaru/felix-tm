@@ -220,10 +220,16 @@
       .match-placed { border-color: #34a853; }
       .match-placed:hover { border-color: #137333; }
       .placed-badge { display: inline-block; background: #fff; color: #34a853; border: 1px solid #34a853; font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
-      .placed-original { font-size: 10px; color: #9aa0a6; margin-top: 2px; }
-      .placed-del { text-decoration: line-through; color: #c5221f; }
+      /* Placement results on the rendered target:
+         - numbers / auto-resolved glossary → blue (system handled this for you)
+         - still-unresolved glossary terms   → red   (you need to act) */
       .placed-ins { background: #e8f0fe; color: #1a73e8; border-radius: 2px; padding: 0 1px; }
       .placed-manual { background: #fce8e6; color: #c5221f; font-weight: 500; position: relative; cursor: help; }
+      /* Reference block: muted colour so the insert preview stays dominant.
+         No label text — the dashed divider alone is enough to read the
+         two lines as "registered memory". */
+      .match-ref { border-top: 1px dashed #e8eaed; margin-top: 8px; padding-top: 6px; }
+      .ref-row { color: #9aa0a6; font-size: 11px; margin-top: 2px; word-break: break-all; }
       .placed-manual::after { content: attr(data-tip); display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
       .placed-manual:hover::after { display: block; }
       .btn-del-tm:hover { color: #ea4335 !important; }
@@ -516,20 +522,53 @@
     return html;
   }
 
+  /** Render `placed` as HTML with per-region classes + optional data-tip
+   *  attributes. Regions must be non-overlapping; overlaps and malformed
+   *  entries (missing idx/len) are dropped so a bad region can't corrupt
+   *  the cursor and cause the tail to re-emit the whole string. */
+  function markRegionsMixed(text, regions) {
+    const safe = regions.filter(r =>
+      typeof r.idx === 'number' && typeof r.len === 'number' &&
+      r.idx >= 0 && r.len > 0 && r.idx + r.len <= text.length);
+    if (!safe.length) return esc(text);
+    const sorted = [...safe].sort((a, b) => a.idx - b.idx);
+    let html = '', cursor = 0;
+    for (const r of sorted) {
+      if (r.idx < cursor) continue;
+      html += esc(text.substring(cursor, r.idx));
+      const tip = r.dataTip ? ` data-tip="→ ${escA(r.dataTip)}"` : '';
+      html += `<span class="${r.cls}"${tip}>${esc(text.substring(r.idx, r.idx + r.len))}</span>`;
+      cursor = r.idx + r.len;
+    }
+    html += esc(text.substring(cursor));
+    return html;
+  }
+
   function placedHighlightHtml(original, placed, manualDiffs) {
     const { pDiffs } = findNumDiffRegions(original, placed);
-    let html = markRegions(placed, pDiffs, 'placed-ins');
-    // Mark non-numeric diffs that still need manual fixing
+    const regions = pDiffs.map(r => ({ idx: r.idx, len: r.len, cls: 'placed-ins' }));
     if (manualDiffs && manualDiffs.length) {
       for (const d of manualDiffs) {
-        const sEsc = esc(d.sText);
-        const qEsc = esc(d.qText);
-        if (sEsc && html.includes(sEsc)) {
-          html = html.replace(sEsc, `<span class="placed-manual" data-tip="→ ${qEsc}">${sEsc}</span>`);
+        if (!d.sText) continue;
+        // Source-side literal match first (same-script cases). The
+        // heuristic fallback covers bilingual targets (e.g. 光属性ダメージ
+        // in Japanese source ↔ 光屬性傷害 in Chinese target).
+        let idx, len;
+        const literal = placed.indexOf(d.sText);
+        if (literal !== -1) {
+          idx = literal; len = d.sText.length;
+        } else {
+          const heur = FelixEngine.findTargetRegionForUnresolved(placed, d.sText);
+          if (!heur) continue;
+          idx = heur.start; len = heur.len;
         }
+        if (typeof idx !== 'number' || typeof len !== 'number' || len <= 0) continue;
+        const overlaps = regions.some(r => idx < r.idx + r.len && idx + len > r.idx);
+        if (overlaps) continue;
+        regions.push({ idx, len, cls: 'placed-manual', dataTip: d.qText });
       }
     }
-    return html;
+    return markRegionsMixed(placed, regions);
   }
 
   function placedDiffHtml(original, placed) {
@@ -618,7 +657,7 @@
         const meta = m.refcount ? `${t('used')} ${m.refcount}x` : '';
         const tmIdx = tmData.indexOf(m) !== -1 ? tmData.indexOf(m) : tmData.findIndex(e => e.source === m.source && e.target === m.target);
 
-        let srcHtml, tgtDisplay, insertTarget, placed = false, insertHighlights = null;
+        let srcHtml, memSrcHtml = '', tgtDisplay, insertTarget, placed = false, insertHighlights = null;
         if (isReverse) {
           const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.target) : null;
           srcHtml = diff ? diff.sourceHtml : esc(m.target);
@@ -628,8 +667,13 @@
           if (pct === 100) {
             srcHtml = esc(m.source);
           } else {
+            // Query (what the user is translating now) with glossary hits
+            // underlined + diff marks vs. TM source. TM source is shown on
+            // its own line below so the translator can compare directly
+            // and, when a glossary entry is missing, copy both terms at once.
             const diff = FelixEngine.diffHighlight(searchQuery, m.source, glossHits);
             srcHtml = diff ? diff.queryHtml : esc(m.source);
+            memSrcHtml = diff ? diff.sourceHtml : esc(m.source);
           }
 
           insertTarget = m.target;
@@ -668,15 +712,24 @@
           }
         }
 
+        // Layout priority (for non-reverse non-100%): the insert preview is
+        // the single most important thing the translator needs to see —
+        // "what will be in the target cell if I click this?" — so it sits
+        // at the top. The TM entry's own source and target go below as a
+        // reference panel, separated by a hairline.
+        const showRef = !isReverse && pct < 100 && memSrcHtml;
         return `<div class="match${placed ? ' match-placed' : ''}" data-idx="${i}" data-target="${escA(insertTarget)}" data-highlights="${insertHighlights ? escA(JSON.stringify(insertHighlights)) : ''}" data-tm-idx="${tmIdx}">
           <span class="score ${cls}">${pct}%</span>
           <span style="float:right;display:flex;align-items:center;gap:4px">
             ${i === 0 ? `<span style="font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
             <span class="btn-del-tm" data-del-idx="${tmIdx}" title="Delete from TM" style="font-size:11px;color:#dadce0;cursor:pointer">✕</span>
           </span>
-          <div class="match-source">${srcHtml}</div>
           <div class="match-target">${tgtDisplay}</div>
-          ${placed ? `<div class="placed-original">${placedDiffHtml(m.target, insertTarget)}</div>` : ''}
+          ${showRef ? `<div class="match-ref">
+            <div class="ref-row">${esc(m.source)}</div>
+            ${placed ? `<div class="ref-row">${esc(m.target)}</div>` : ''}
+          </div>` : ''}
+          ${isReverse ? `<div class="match-source">${srcHtml}</div>` : ''}
           ${meta ? `<div class="match-meta">${meta}</div>` : ''}
         </div>`;
       }).join('');

@@ -679,6 +679,42 @@ var FelixEngine = (() => {
     return diffs;
   }
 
+  /**
+   * Walk the TM target and pick a region that's most likely to be the
+   * target-side translation of `sourceTerm`. This is an approximation used
+   * only when the glossary doesn't know the pair outright — we need
+   * something to highlight red in the insert preview so the translator
+   * sees where to focus. For Japanese↔Chinese, shared kanji across scripts
+   * drive a simple character-set overlap heuristic.
+   *
+   * Returns { start, len } or null.
+   */
+  function findTargetRegionForUnresolved(target, sourceTerm) {
+    if (!target || !sourceTerm || sourceTerm.length < 2) return null;
+    const sChars = new Set(Array.from(sourceTerm));
+    const shared = [];
+    for (let i = 0; i < target.length; i++) {
+      if (sChars.has(target[i])) shared.push(i);
+    }
+    if (!shared.length) return null;
+    // Cluster shared-char positions that sit within 2 chars of each other.
+    let best = null, curStart = shared[0], curEnd = shared[0], curCount = 1;
+    const commit = () => {
+      if (!best || curCount > best.count) best = { start: curStart, end: curEnd, count: curCount };
+    };
+    for (let k = 1; k < shared.length; k++) {
+      if (shared[k] - curEnd <= 2) { curEnd = shared[k]; curCount++; }
+      else { commit(); curStart = curEnd = shared[k]; curCount = 1; }
+    }
+    commit();
+    // Extend the cluster on the right so the translation of the
+    // non-shared portion of sourceTerm (e.g., katakana "ダメージ") gets
+    // included. Translations usually shrink vs source, so extend modestly.
+    const extra = Math.min(Math.ceil((sourceTerm.length - best.count) / 2), 3);
+    const end = Math.min(best.end + 1 + extra, target.length);
+    return { start: best.start, len: end - best.start };
+  }
+
   // === Auto-Translate planners (pure, no DOM / no I/O) ===
   //
   // The content script handles reading the sheet, writing back, and moving
@@ -1021,6 +1057,7 @@ var FelixEngine = (() => {
            glossaryPlacement, numberPlacement, rulePlacement, nonNumericDiffs,
            markGlossaryInSource, fuzzyScore, edScore, diffHighlight, tokenize,
            containsCJK, addEntry, esc,
+           findTargetRegionForUnresolved,
            resolveWithPlacement,
            planAutoTranslateSelection, planAutoTranslateToFuzzy,
            buildPlanActions, describePlan };
