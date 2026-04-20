@@ -640,7 +640,16 @@ var FelixEngine = (() => {
       }
     }
 
-    // Backtrace — collect non-numeric substitution runs
+    // Backtrace — collect non-numeric substitution runs.
+    //
+    // Path tie-breaking: when multiple optimal DP moves are equal in cost,
+    // we prefer insert/delete over substitution so that incidentally-common
+    // characters (e.g. a Japanese particle「を」sitting between a translated
+    // term and a number) can still be recognized as matches. Picking sub
+    // first would merge those common chars into the surrounding diff region
+    // and hide coverage opportunities — e.g. "MINDを5" vs "CRTを45" would
+    // collapse into a single {MINDを, CRTを4} diff that no glossary can
+    // resolve, instead of the intended {MIND, CRT} + numeric-only diff.
     const diffs = [];
     let i = n, j = m, curQ = [], curS = [];
     function flush() {
@@ -657,10 +666,13 @@ var FelixEngine = (() => {
       if (i > 0 && j > 0) {
         const match = useChar ? qTokens[i-1] === sTokens[j-1] : qTokens[i-1].toLowerCase() === sTokens[j-1].toLowerCase();
         if (match && dp[i][j] === dp[i-1][j-1]) { flush(); i--; j--; continue; }
-        if (dp[i][j] === dp[i-1][j-1] + 1) { curQ.unshift(qTokens[i-1]); curS.unshift(sTokens[j-1]); i--; j--; continue; }
       }
-      if (i > 0 && dp[i][j] === dp[i-1][j] + 1) { curQ.unshift(qTokens[i-1]); i--; continue; }
+      // Prefer insert → delete → sub when tied, to preserve later matches.
       if (j > 0 && dp[i][j] === dp[i][j-1] + 1) { curS.unshift(sTokens[j-1]); j--; continue; }
+      if (i > 0 && dp[i][j] === dp[i-1][j] + 1) { curQ.unshift(qTokens[i-1]); i--; continue; }
+      if (i > 0 && j > 0 && dp[i][j] === dp[i-1][j-1] + 1) {
+        curQ.unshift(qTokens[i-1]); curS.unshift(sTokens[j-1]); i--; j--; continue;
+      }
       break;
     }
     flush();

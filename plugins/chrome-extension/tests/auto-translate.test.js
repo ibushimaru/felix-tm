@@ -212,6 +212,40 @@ test('resolveWithPlacement: returns uncovered diffs so the caller can describe t
   assert.ok(flat.includes('Unknown'));
 });
 
+test('nonNumericDiffs: does not swallow a common particle between text and number diffs', () => {
+  // Production regression: query "...MINDを5%UPする" vs TM source
+  // "...CRTを45%UPする" used to collapse into a single diff
+  //   { qText: "MINDを", sText: "CRTを4" }
+  // because the DP backtrace preferred substitution over insert when costs
+  // were tied, hiding the common「を」. That single combined diff is never
+  // resolvable by glossary (no glossary entry literally says "MINDを"). The
+  // correct shape is a clean {MIND, CRT} diff; the '4' insertion belongs
+  // to number placement and should not appear in nonNumericDiffs at all.
+  const diffs = FelixEngine.nonNumericDiffs(
+    '味方全体のMINDを5%UPする',
+    '味方全体のCRTを45%UPする',
+  );
+  assert.equal(diffs.length, 1, 'should produce exactly one non-numeric diff');
+  assert.equal(diffs[0].qText, 'MIND');
+  assert.equal(diffs[0].sText, 'CRT');
+});
+
+test('resolveWithPlacement: the MINDを5 / CRTを45 case is covered by number + glossary', () => {
+  // End-to-end check for the same regression: the diff engine now exposes
+  // {MIND, CRT} cleanly, so resolveWithPlacement can apply number placement
+  // (5 → 5? actually 45→5) AND glossary (MIND/CRT pair) to fully cover.
+  const r = resolveWithPlacement(
+    '味方全体のMINDを5%UPする',
+    '味方全体のCRTを45%UPする',
+    '我方全體的CRT提升45%',
+    gloss(['MIND', 'MIND'], ['CRT', 'CRT']),
+    [],
+  );
+  assert.equal(r.covered, true);
+  assert.match(r.target, /MIND/);
+  assert.doesNotMatch(r.target, /CRT/);
+});
+
 test('resolveWithPlacement: scattered number + glossary diffs are resolved per-diff', () => {
   const r = resolveWithPlacement(
     'MATK110%のダメージを与え、2ターンの間、味方全体のMINDを5%UPする',
