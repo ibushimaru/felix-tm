@@ -233,7 +233,7 @@
       /* Reference block: muted colour so the insert preview stays dominant.
          No label text — the dashed divider alone is enough to read the
          two lines as "registered memory". */
-      .match-ref { border-top: 1px dashed #e8eaed; margin-top: 8px; padding-top: 6px; }
+      .match-ref { border-top: 1px dashed #e8eaed; margin-top: 8px; padding-top: 6px; cursor: text; user-select: text; }
       .ref-row { color: #9aa0a6; font-size: 11px; margin-top: 2px; word-break: break-all; }
       .btn-del-tm:hover { color: #ea4335 !important; }
       .settings-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
@@ -728,9 +728,18 @@
         </div>`;
       }).join('');
 
-      // Click: left half → next row, right half → edit target
+      // Click: left half → next row, right half → edit target.
+      // The reference block (match-ref) is a read-only lookup area for the
+      // translator to copy TM.source / TM.target from (e.g. into a new
+      // glossary entry), so clicks there must NOT trigger an insert and
+      // hover there must NOT show the active-card halves.
+      const inRef = (target) => target && typeof target.closest === 'function' && !!target.closest('.match-ref');
       el.querySelectorAll('.match').forEach(div => {
         div.addEventListener('mousemove', (e) => {
+          if (inRef(e.target)) {
+            div.classList.remove('hover-left', 'hover-right');
+            return;
+          }
           const rect = div.getBoundingClientRect();
           const isRight = (e.clientX - rect.left) > rect.width / 2;
           div.classList.toggle('hover-left', !isRight);
@@ -741,6 +750,7 @@
         });
         div.addEventListener('click', (e) => {
           if (e.target.classList.contains('btn-del-tm')) return;
+          if (inRef(e.target)) return;
           const rect = div.getBoundingClientRect();
           const isRight = (e.clientX - rect.left) > rect.width / 2;
           div.classList.add('inserted');
