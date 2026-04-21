@@ -85,9 +85,14 @@
     updateBadge();
     // Preload source column cache via Sheets API
     preloadSourceCache();
-    // Run initial search immediately after data is ready
-    const value = getCellValue();
-    if (value) {
+    // Run initial search immediately if the cell value is already in the
+    // DOM. When the panel mounts faster than Sheets stabilises the
+    // selection DOM, the first read comes back empty; schedule a
+    // one-shot retry so the translator doesn't have to click a cell
+    // just to get the first card.
+    const kickOff = () => {
+      const value = getCellValue();
+      if (!value) return false;
       lastCellValue = value;
       lastCellRef = getCellRef();
       const s = getShadow();
@@ -96,6 +101,10 @@
         s.getElementById('cell-ref').textContent = lastCellRef ? `(${lastCellRef})` : '';
       }
       doSearch(value);
+      return true;
+    };
+    if (!kickOff()) {
+      setTimeout(kickOff, 500);
     }
   }
 
@@ -1128,15 +1137,22 @@
   async function undoLastWrite() {
     const entry = _undoStack.pop();
     if (!entry) { showToast('Nothing to undo'); return { reason: 'empty_stack' }; }
+    let result;
     if (entry.batch && entry.batch.length) {
       const updates = entry.batch.map(b => ({ range: b.range, value: b.oldValue }));
       await msg('SHEETS_API_BATCH_WRITE', { spreadsheetId: entry.ssId, updates });
       showToast(`Undo: ${entry.batch.length} cells`);
-      return { kind: 'batch', restored: entry.batch.length, firstRange: entry.batch[0].range };
+      result = { kind: 'batch', restored: entry.batch.length, firstRange: entry.batch[0].range };
+    } else {
+      await msg('SHEETS_API_WRITE', { spreadsheetId: entry.ssId, range: entry.range, value: entry.oldValue });
+      showToast(`Undo: ${entry.range}`);
+      result = { kind: 'single', range: entry.range };
     }
-    await msg('SHEETS_API_WRITE', { spreadsheetId: entry.ssId, range: entry.range, value: entry.oldValue });
-    showToast(`Undo: ${entry.range}`);
-    return { kind: 'single', range: entry.range };
+    // Refresh the panel so the card that triggered the now-undone insert
+    // reflects the restored state instead of the post-insert view it was
+    // left in. No-op when no query is active.
+    if (lastCellValue) doSearch();
+    return result;
   }
 
   // === Auto Translate ===
