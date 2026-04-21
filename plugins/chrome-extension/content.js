@@ -1070,6 +1070,11 @@
     await msg('TM_SAVE', tmData);
     updateBadge();
     showToast(action === 'refcount' ? t('alreadyExists') : t('registered'));
+
+    // Refresh the results panel so the just-registered pair shows up
+    // as the 100% top match. Without this, the translator is left
+    // looking at whatever fuzzy-candidate card led them to hit Set.
+    doSearch(source);
   }
 
   // === Write to target cell via Sheets API ===
