@@ -446,6 +446,20 @@
     // Store shadow ref for updates
     host._shadow = shadow;
 
+    // Right-click → glossary registration shortcut. Bound here at panel
+    // creation so it survives every doSearch re-render and works on the
+    // active-cell preview even before the first search runs. The handler
+    // uses the user's text selection when there is one; otherwise it
+    // walks up from the click target to find a known span (glossary
+    // underline, uncovered red/yellow) and uses that span's text.
+    shadow.addEventListener('contextmenu', (e) => {
+      const text = pickContextMenuText(shadow, e.target);
+      if (!text) return;  // no usable text → leave the browser default menu
+      e.preventDefault();
+      e.stopPropagation();
+      openCtxMenu(shadow, e.clientX, e.clientY, text);
+    });
+
     updateShortcutLabel();
     applyPanelLang();
     return shadow;
@@ -821,42 +835,39 @@
     };
     bindUncoveredClick(el);
     bindUncoveredClick(s.getElementById('cell-value'));
-
-    // Right-click → glossary registration shortcut. The translator
-    // selects whatever text inside the card or the active-cell preview
-    // they want to register (e.g., 光屬性傷害 from the reference target),
-    // right-clicks, and picks whether the selection should land in the
-    // term field or the translation field. Saves the open-side-panel,
-    // tab-switch, copy-paste round-trip we used to require.
-    bindCardContextMenu(s, el);
-    bindCardContextMenu(s, s.getElementById('cell-value'));
   }
 
-  function getShadowSelectionText(s) {
-    // The Shadow Root has its own selection in modern browsers; fall back
-    // to document selection when the shadow API isn't exposed.
+  function getShadowSelectionText(shadow) {
+    // ShadowRoot.getSelection is a Chromium extension on closed shadow
+    // roots; window.getSelection sometimes still returns the selected
+    // text even though the anchorNode is reported as the host. Try both
+    // and return the first non-empty result.
     try {
-      if (s && typeof s.getSelection === 'function') {
-        const sel = s.getSelection();
-        if (sel) return (sel.toString() || '').trim();
+      if (shadow && typeof shadow.getSelection === 'function') {
+        const sel = shadow.getSelection();
+        const t = sel ? (sel.toString() || '').trim() : '';
+        if (t) return t;
       }
     } catch (_) {}
     try {
       const sel = window.getSelection();
-      if (sel) return (sel.toString() || '').trim();
+      const t = sel ? (sel.toString() || '').trim() : '';
+      if (t) return t;
     } catch (_) {}
     return '';
   }
 
-  function bindCardContextMenu(shadow, root) {
-    if (!root || root.dataset.ctxBound === '1') return;
-    root.dataset.ctxBound = '1';
-    root.addEventListener('contextmenu', (e) => {
-      const text = getShadowSelectionText(shadow);
-      if (!text) return;  // no selection — let the browser's default menu open
-      e.preventDefault();
-      openCtxMenu(shadow, e.clientX, e.clientY, text);
-    });
+  function pickContextMenuText(shadow, target) {
+    const sel = getShadowSelectionText(shadow);
+    if (sel) return sel;
+    // No selection: prefer a meaningful span the cursor is over (glossary
+    // underline, uncovered red/yellow, placement-result span). Falling
+    // back to the whole .ref-row would dump the entire TM line, which is
+    // never what the translator wanted to register.
+    if (!target || typeof target.closest !== 'function') return '';
+    const span = target.closest('.gloss_match, .diff-uncovered-missing, .diff-uncovered-present, .placed-ins, .placed-badge');
+    if (span && span.textContent) return span.textContent.trim();
+    return '';
   }
 
   function openCtxMenu(shadow, x, y, text) {
