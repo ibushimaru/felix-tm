@@ -222,15 +222,6 @@
       .match-placed { border-color: #34a853; }
       .match-placed:hover { border-color: #137333; }
       .placed-badge { display: inline-block; background: #fff; color: #34a853; border: 1px solid #34a853; font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
-      /* Placement results on the rendered target:
-         - placed-ins (blue): chars the system rewrote itself — positions
-           are known exactly (numbers, resolved-glossary, rules).
-         - placed-unverified (dotted underline): the non-placed range
-           when uncovered diffs exist. We can't pinpoint the old
-           translation inside this range, but we can honestly scope it:
-           the contamination lives somewhere within these chars. */
-      .placed-ins { background: #e8f0fe; color: #1a73e8; border-radius: 2px; padding: 0 1px; }
-      .placed-unverified { border-bottom: 1px dotted #9aa0a6; }
       /* Reference block: muted colour so the insert preview stays dominant.
          No label text — the dashed divider alone is enough to read the
          two lines as "registered memory". */
@@ -496,10 +487,6 @@
   // Cache: source value per row (populated when user is on source column)
   let _sourceCache = {}; // { rowNum: value }
 
-  // Delegate to the engine's char-level diff so card preview and the
-  // Sheets-write run-builder share one implementation.
-  const findDiffRegions = FelixEngine.findDiffRegions;
-  const unverifiedRegionsEngine = FelixEngine.unverifiedRegions;
 
   function markRegions(text, regions, cls) {
     if (!regions.length) return esc(text);
@@ -535,17 +522,8 @@
     return html;
   }
 
-  function placedHighlightHtml(original, placed, uncoveredCount) {
-    const placedRegions = findDiffRegions(original, placed);
-    const regions = placedRegions.map(r => ({
-      idx: r.idx, len: r.len, cls: 'placed-ins',
-    }));
-    if (uncoveredCount > 0) {
-      for (const r of unverifiedRegionsEngine(placedRegions, placed.length)) {
-        regions.push({ idx: r.idx, len: r.len, cls: 'placed-unverified' });
-      }
-    }
-    return markRegionsMixed(placed, regions);
+  function placedHighlightHtml(original, placed) {
+    return esc(placed);
   }
 
   function doSearch(query) {
@@ -647,12 +625,6 @@
         const tmIdx = tmData.indexOf(m) !== -1 ? tmData.indexOf(m) : tmData.findIndex(e => e.source === m.source && e.target === m.target);
 
         let srcHtml, memSrcHtml = '', tgtDisplay, insertTarget, placed = false;
-        // Char-range attributes for the eventual Sheets write: blue for
-        // chars the system itself rewrote, dotted-underline for the
-        // remaining range when any uncovered diff survived (so the cell
-        // itself carries the "contamination possible here" signal after
-        // insertion, not just the in-panel preview).
-        let placedRangesAttr = '', unverifiedRangesAttr = '';
         if (isReverse) {
           const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.target) : null;
           srcHtml = diff ? diff.sourceHtml : esc(m.target);
@@ -686,20 +658,7 @@
             if (badges.length) {
               placed = true;
               insertTarget = placedTarget;
-              const uncoveredCount = resolved.uncovered.length;
-              tgtDisplay = placedHighlightHtml(m.target, placedTarget, uncoveredCount) + `<span class="placed-badge">${badges.join('+')}置換</span>`;
-              const placedRegions = findDiffRegions(m.target, placedTarget);
-              placedRangesAttr = escA(JSON.stringify(placedRegions.map(r => ({ start: r.idx, end: r.idx + r.len }))));
-              if (uncoveredCount > 0) {
-                const unv = unverifiedRegionsEngine(placedRegions, placedTarget.length)
-                  .map(r => ({ start: r.idx, end: r.idx + r.len }));
-                unverifiedRangesAttr = escA(JSON.stringify(unv));
-              }
-            } else if (resolved.uncovered.length > 0) {
-              // No placement fired but diffs remain unresolved — the cell
-              // would receive TM.target unchanged; still flag the whole
-              // thing as unverified so the translator sees the signal.
-              unverifiedRangesAttr = escA(JSON.stringify([{ start: 0, end: m.target.length }]));
+              tgtDisplay = placedHighlightHtml(m.target, placedTarget) + `<span class="placed-badge">${badges.join('+')}置換</span>`;
             }
           }
         }
@@ -716,7 +675,7 @@
         const refSrcHtml = (showRef && i === 0 && topUncovered.length)
           ? FelixEngine.markUncoveredHtml(m.source, topUncovered, 's')
           : esc(m.source);
-        return `<div class="match${placed ? ' match-placed' : ''}" data-idx="${i}" data-target="${escA(insertTarget)}" data-placed-ranges="${placedRangesAttr}" data-unverified-ranges="${unverifiedRangesAttr}" data-tm-idx="${tmIdx}">
+        return `<div class="match${placed ? ' match-placed' : ''}" data-idx="${i}" data-target="${escA(insertTarget)}" data-tm-idx="${tmIdx}">
           <span class="score ${cls}">${pct}%</span>
           <span style="float:right;display:flex;align-items:center;gap:4px">
             ${i === 0 ? `<span style="font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
@@ -885,15 +844,7 @@
   // === Get (insert match, no TM registration) ===
   async function doGet(el, editMode) {
     const target = el.getAttribute('data-target');
-    const parseRanges = (attr) => {
-      const raw = el.getAttribute(attr);
-      if (!raw) return null;
-      try { const v = JSON.parse(raw); return Array.isArray(v) && v.length ? v : null; }
-      catch (_) { return null; }
-    };
-    const placedRanges = parseRanges('data-placed-ranges');
-    const unverifiedRanges = parseRanges('data-unverified-ranges');
-    await writeToTarget(target, editMode, { placedRanges, unverifiedRanges });
+    await writeToTarget(target, editMode);
   }
 
   function doGetTop() {
@@ -947,7 +898,7 @@
   }
 
   // === Write to target cell via Sheets API ===
-  async function writeToTarget(value, editMode, formats) {
+  async function writeToTarget(value, editMode) {
     const ref = getCellRef();
     const match = ref ? ref.match(/([A-Z]+)(\d+)/i) : null;
     if (!match) return;
@@ -963,17 +914,15 @@
     const oldValue = oldResp && oldResp.value ? oldResp.value : '';
     _undoStack.push({ ssId, range: fullRange, oldValue, newValue: value });
 
-    const placedRanges = formats && formats.placedRanges;
-    const unverifiedRanges = formats && formats.unverifiedRanges;
-    if ((placedRanges && placedRanges.length) || (unverifiedRanges && unverifiedRanges.length)) {
-      await msg('SHEETS_API_WRITE_FORMATTED', {
-        spreadsheetId: ssId, range: fullRange, value,
-        placedRanges: placedRanges || [],
-        unverifiedRanges: unverifiedRanges || [],
-      });
-    } else {
-      await msg('SHEETS_API_WRITE', { spreadsheetId: ssId, range: fullRange, value });
-    }
+    // Use the formatted write with empty ranges so any residual
+    // textFormatRuns from a previous insert (older builds painted the
+    // cell blue / underline) get reset. The batchUpdate path writes
+    // `textFormatRuns: [{ startIndex: 0, format: {} }]` which clears
+    // prior custom formatting and leaves the cell fully plain.
+    await msg('SHEETS_API_WRITE_FORMATTED', {
+      spreadsheetId: ssId, range: fullRange, value,
+      placedRanges: [], unverifiedRanges: [],
+    });
 
     const nameBox = findNameBox();
     if (!nameBox) return;
