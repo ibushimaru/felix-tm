@@ -600,6 +600,46 @@ var FelixEngine = (() => {
   }
 
   /**
+   * Dedup-aware glossary insert. Mirrors addEntry: returns 'added' when
+   * the pair is new, 'exists' when the exact pair is already registered
+   * (case-insensitive / width-insensitive via makeCmp). Always stores the
+   * term's cmp so later hot-path lookups don't recompute makeCmp(term).
+   */
+  /**
+   * Parse an A1-style Sheets reference. Accepts `A2`, `B5:B10`, `A:A`,
+   * `A2:A`, or full `Sheet!A2`. Returns null on failure.
+   *   { col, row, col2, row2 }  — col2/row2 undefined for single-cell refs.
+   * Row numbers come back as integers when present, undefined otherwise
+   * (column-only ranges like `A:A`). Column letters are uppercased.
+   */
+  function parseA1(ref) {
+    if (!ref || typeof ref !== 'string') return null;
+    const m = ref.match(/^([A-Z]+)(\d+)?(?::([A-Z]+)(\d+)?)?$/i);
+    if (!m) return null;
+    return {
+      col: m[1].toUpperCase(),
+      row: m[2] ? parseInt(m[2], 10) : undefined,
+      col2: m[3] ? m[3].toUpperCase() : undefined,
+      row2: m[4] ? parseInt(m[4], 10) : undefined,
+    };
+  }
+
+  function addGlossaryEntry(glossaryData, term, translation, notes) {
+    const tCmp = makeCmp(term);
+    const trCmp = makeCmp(translation);
+    for (const g of glossaryData) {
+      const gCmp = g.cmp || makeCmp(g.term);
+      const gTrCmp = g.translationCmp || makeCmp(g.translation);
+      if (gCmp === tCmp && gTrCmp === trCmp) return 'exists';
+    }
+    glossaryData.push({
+      term, translation, notes: notes || '',
+      cmp: tCmp, translationCmp: trCmp,
+    });
+    return 'added';
+  }
+
+  /**
    * Number Placement (Felix MatchStringPairing.cpp port).
    * Extracts number tokens from query, source, and target by position order,
    * then substitutes where source and query differ.
@@ -1396,7 +1436,7 @@ var FelixEngine = (() => {
   return { makeCmp, search, reverseSearch, concordanceSearch, glossarySearch,
            glossaryPlacement, numberPlacement, rulePlacement, nonNumericDiffs,
            markGlossaryInSource, fuzzyScore, edScore, diffHighlight, tokenize,
-           containsCJK, addEntry, esc,
+           containsCJK, addEntry, addGlossaryEntry, parseA1, esc,
            markUncoveredHtml, renderQueryCellWithUncovered,
            uncoveredRegionsForText,
            findDiffRegions, unverifiedRegions, buildCellFormatRuns,

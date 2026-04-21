@@ -411,14 +411,8 @@ async function addGlossary() {
   const trans = document.getElementById('gloss-trans').value.trim();
   if (!term || !trans) return;
 
-  const tCmp = FelixEngine.makeCmp(term);
-  const exists = glossaryData.some(e =>
-    (e.cmp || FelixEngine.makeCmp(e.term)) === tCmp &&
-    FelixEngine.makeCmp(e.translation) === FelixEngine.makeCmp(trans)
-  );
-
-  if (!exists) {
-    glossaryData.push({ term, translation: trans, notes: '', cmp: tCmp });
+  const action = FelixEngine.addGlossaryEntry(glossaryData, term, trans);
+  if (action === 'added') {
     await saveGlossary();
     updateStats();
     showToast('Added!');
@@ -440,16 +434,9 @@ function processGlossaryText(text) {
   for (let i = startIdx; i < rows.length; i++) {
     const row = rows[i];
     if (row.length >= 2 && row[0].trim() && row[1].trim()) {
-      const term = row[0].trim();
-      const trans = row[1].trim();
       const notes = row.length >= 3 ? row[2].trim() : '';
-      const tCmp = FelixEngine.makeCmp(term);
-      const exists = glossaryData.some(e =>
-        (e.cmp || FelixEngine.makeCmp(e.term)) === tCmp &&
-        FelixEngine.makeCmp(e.translation) === FelixEngine.makeCmp(trans)
-      );
-      if (!exists) { glossaryData.push({ term, translation: trans, notes, cmp: tCmp }); added++; }
-      else { dup++; }
+      const action = FelixEngine.addGlossaryEntry(glossaryData, row[0].trim(), row[1].trim(), notes);
+      if (action === 'added') added++; else dup++;
     }
   }
   saveGlossary();
@@ -710,13 +697,8 @@ async function importGlossaryFromSheet() {
     const term = (data.srcValues[i] || '').trim();
     const trans = (data.tgtValues[i] || '').trim();
     if (term && trans) {
-      const tCmp = FelixEngine.makeCmp(term);
-      const exists = glossaryData.some(e =>
-        (e.cmp || FelixEngine.makeCmp(e.term)) === tCmp &&
-        FelixEngine.makeCmp(e.translation) === FelixEngine.makeCmp(trans)
-      );
-      if (!exists) { glossaryData.push({ term, translation: trans, notes: '', cmp: tCmp }); added++; }
-      else { dup++; }
+      const action = FelixEngine.addGlossaryEntry(glossaryData, term, trans);
+      if (action === 'added') added++; else dup++;
     }
   }
 

@@ -1086,25 +1086,8 @@
       placedRanges: [], unverifiedRanges: [],
     });
 
-    const nameBox = findNameBox();
-    if (!nameBox) return;
-
-    if (editMode) {
-      // Navigate to target cell
-      nameBox.focus();
-      if (nameBox.select) nameBox.select();
-      nameBox.value = targetRef;
-      nameBox.dispatchEvent(new Event('input', { bubbles: true }));
-      nameBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-    } else {
-      // Move to next row's source cell
-      const nextRef = (settings.sourceCol || 'A') + (rowNum + 1);
-      nameBox.focus();
-      if (nameBox.select) nameBox.select();
-      nameBox.value = nextRef;
-      nameBox.dispatchEvent(new Event('input', { bubbles: true }));
-      nameBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-    }
+    // Edit mode → jump to the target cell; otherwise → next row's source.
+    moveCursorTo(editMode ? targetRef : (settings.sourceCol || 'A') + (rowNum + 1));
   }
 
   async function undoLastWrite() {
@@ -1150,9 +1133,9 @@
     // even a rectangular selection — we always walk down from the anchor row
     // in settings.sourceCol. If no row is given (whole-column select), start
     // from row 1.
-    const m = ref.match(/^([A-Z]+)(\d+)?(?::([A-Z]+)(\d+)?)?$/i);
-    if (!m) { showToast(`Unsupported selection: ${ref}`); return; }
-    const startRow = m[2] ? parseInt(m[2]) : 1;
+    const parsed = FelixEngine.parseA1(ref);
+    if (!parsed) { showToast(`Unsupported selection: ${ref}`); return; }
+    const startRow = parsed.row || 1;
     const srcCol = settings.sourceCol || 'A';
     const tgtCol = settings.targetCol || 'B';
     const ssId = getSpreadsheetId();
@@ -1192,10 +1175,10 @@
     // Accept both row-qualified refs (A2, A2:A5, A2:B5) and column-only refs
     // (A:A, A:B, A2:A — row missing on one side). For column-only selections
     // we read an unbounded range and let the actual data length decide endRow.
-    const m = ref.match(/^([A-Z]+)(\d+)?(?::([A-Z]+)(\d+)?)?$/i);
-    if (!m) { showToast(`Unsupported selection: ${ref}`); return; }
-    const startRow = m[2] ? parseInt(m[2]) : 1;
-    const explicitEndRow = m[4] ? parseInt(m[4]) : null;
+    const parsed = FelixEngine.parseA1(ref);
+    if (!parsed) { showToast(`Unsupported selection: ${ref}`); return; }
+    const startRow = parsed.row || 1;
+    const explicitEndRow = parsed.row2 || null;
     if (explicitEndRow != null && explicitEndRow < startRow) { showToast('Empty range'); return; }
 
     const srcCol = settings.sourceCol || 'A';
