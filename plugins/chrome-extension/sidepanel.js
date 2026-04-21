@@ -151,6 +151,41 @@ function applySelectionToImportRanges(sel) {
   }
 }
 
+function applyGlossaryAction(payload) {
+  if (!payload || !payload.term) return;
+  const tabBtn = document.querySelector('.tab[data-panel="glossary"]');
+  if (tabBtn) tabBtn.click();
+  const termInput = document.getElementById('gloss-term');
+  const transInput = document.getElementById('gloss-trans');
+  const filterInput = document.getElementById('gloss-filter');
+  if (payload.mode === 'browse') {
+    // Yellow span — the term is already registered somewhere. Jump to the
+    // browse filter so the translator can see the existing entry instead
+    // of accidentally creating a duplicate.
+    if (termInput) termInput.value = '';
+    if (transInput) transInput.value = '';
+    if (filterInput) {
+      filterInput.value = payload.term;
+      filterInput.dispatchEvent(new Event('input', { bubbles: true }));
+      filterInput.focus();
+      filterInput.select();
+    }
+  } else {
+    // Red span — the term is missing. Prefill the add form and focus the
+    // translation field so the translator types straight in.
+    if (filterInput) filterInput.value = '';
+    if (termInput) termInput.value = payload.term;
+    if (transInput) { transInput.value = ''; transInput.focus(); }
+  }
+}
+
+async function consumePendingGlossaryAction() {
+  try {
+    const payload = await sendBg('CONSUME_PENDING_GLOSSARY_ACTION');
+    if (payload) applyGlossaryAction(payload);
+  } catch (_) {}
+}
+
 async function init() {
   settings = await sendBg('SETTINGS_LOAD') || settings;
   tmData = await sendBg('TM_LOAD') || [];
@@ -160,6 +195,12 @@ async function init() {
   applyLang();
   loadSettingsUI();
   renderTMList();
+
+  // If the panel was just opened in response to an uncovered-term click,
+  // consume the one-shot glossary action now. The background also sends
+  // a GLOSSARY_ACTION broadcast for the already-open case, which the
+  // message listener below handles.
+  consumePendingGlossaryAction();
 
   // Ask content script for the current selection so Import range inputs
   // populate immediately instead of waiting for the next cell change.
@@ -191,6 +232,9 @@ async function init() {
     }
     if (msg.type === 'SELECTION_CHANGED' && msg.ref) {
       applySelectionToImportRanges(msg.ref);
+    }
+    if (msg.type === 'GLOSSARY_ACTION' && msg.payload) {
+      applyGlossaryAction(msg.payload);
     }
     if (msg.type === 'SETTINGS_CHANGED') {
       sendBg('SETTINGS_LOAD').then(data => { if (data && Object.keys(data).length) { settings = data; applyLang(); loadSettingsUI(); } });

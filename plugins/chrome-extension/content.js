@@ -209,6 +209,8 @@
       .btn:hover { background: #f1f3f4; }
       .toast { padding: 6px 10px; border-radius: 4px; font-size: 11px; margin-top: 6px; background: #e6f4ea; color: #137333; white-space: pre-line; line-height: 1.4; }
       .diff-match { color: #137333; }
+      .diff-uncovered-missing { background: #fce8e6; color: #c5221f; font-weight: 500; }
+      .diff-uncovered-present { background: #feefc3; color: #b06000; font-weight: 500; }
       .diff-sub { background: #fce8e6; color: #c5221f; }
       .diff-del { background: #fce8e6; color: #c5221f; }
       .diff-ins { background: #fce8e6; color: #c5221f; }
@@ -221,17 +223,19 @@
       .match-placed:hover { border-color: #137333; }
       .placed-badge { display: inline-block; background: #fff; color: #34a853; border: 1px solid #34a853; font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
       /* Placement results on the rendered target:
-         - numbers / auto-resolved glossary → blue (system handled this for you)
-         - still-unresolved glossary terms   → red   (you need to act) */
+         - placed-ins (blue): chars the system rewrote itself — positions
+           are known exactly (numbers, resolved-glossary, rules).
+         - placed-unverified (dotted underline): the non-placed range
+           when uncovered diffs exist. We can't pinpoint the old
+           translation inside this range, but we can honestly scope it:
+           the contamination lives somewhere within these chars. */
       .placed-ins { background: #e8f0fe; color: #1a73e8; border-radius: 2px; padding: 0 1px; }
-      .placed-manual { background: #fce8e6; color: #c5221f; font-weight: 500; position: relative; cursor: help; }
+      .placed-unverified { border-bottom: 1px dotted #9aa0a6; }
       /* Reference block: muted colour so the insert preview stays dominant.
          No label text — the dashed divider alone is enough to read the
          two lines as "registered memory". */
       .match-ref { border-top: 1px dashed #e8eaed; margin-top: 8px; padding-top: 6px; }
       .ref-row { color: #9aa0a6; font-size: 11px; margin-top: 2px; word-break: break-all; }
-      .placed-manual::after { content: attr(data-tip); display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
-      .placed-manual:hover::after { display: block; }
       .btn-del-tm:hover { color: #ea4335 !important; }
       .settings-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
       .mode-toggle { display: flex; border: 1px solid #dadce0; border-radius: 4px; }
@@ -492,23 +496,10 @@
   // Cache: source value per row (populated when user is on source column)
   let _sourceCache = {}; // { rowNum: value }
 
-  // Show placed target with changed parts in green
-  // Find number token positions that differ between original and placed text
-  function findNumDiffRegions(original, placed) {
-    const numRe = /(?:\d+(?:[.,]\d+)*|[０-９]+(?:[．，][０-９]+)*)/g;
-    function extract(t) { const r = []; let m; while ((m = numRe.exec(t)) !== null) r.push({ val: m[0], idx: m.index, len: m[0].length }); return r; }
-    const oNums = extract(original);
-    const pNums = extract(placed);
-    const oDiffs = [], pDiffs = []; // { idx, len } regions that changed
-    const len = Math.min(oNums.length, pNums.length);
-    for (let i = 0; i < len; i++) {
-      if (oNums[i].val !== pNums[i].val) {
-        oDiffs.push({ idx: oNums[i].idx, len: oNums[i].len });
-        pDiffs.push({ idx: pNums[i].idx, len: pNums[i].len });
-      }
-    }
-    return { oDiffs, pDiffs };
-  }
+  // Delegate to the engine's char-level diff so card preview and the
+  // Sheets-write run-builder share one implementation.
+  const findDiffRegions = FelixEngine.findDiffRegions;
+  const unverifiedRegionsEngine = FelixEngine.unverifiedRegions;
 
   function markRegions(text, regions, cls) {
     if (!regions.length) return esc(text);
@@ -544,36 +535,17 @@
     return html;
   }
 
-  function placedHighlightHtml(original, placed, manualDiffs) {
-    const { pDiffs } = findNumDiffRegions(original, placed);
-    const regions = pDiffs.map(r => ({ idx: r.idx, len: r.len, cls: 'placed-ins' }));
-    if (manualDiffs && manualDiffs.length) {
-      for (const d of manualDiffs) {
-        if (!d.sText) continue;
-        // Source-side literal match first (same-script cases). The
-        // heuristic fallback covers bilingual targets (e.g. 光属性ダメージ
-        // in Japanese source ↔ 光屬性傷害 in Chinese target).
-        let idx, len;
-        const literal = placed.indexOf(d.sText);
-        if (literal !== -1) {
-          idx = literal; len = d.sText.length;
-        } else {
-          const heur = FelixEngine.findTargetRegionForUnresolved(placed, d.sText);
-          if (!heur) continue;
-          idx = heur.start; len = heur.len;
-        }
-        if (typeof idx !== 'number' || typeof len !== 'number' || len <= 0) continue;
-        const overlaps = regions.some(r => idx < r.idx + r.len && idx + len > r.idx);
-        if (overlaps) continue;
-        regions.push({ idx, len, cls: 'placed-manual', dataTip: d.qText });
+  function placedHighlightHtml(original, placed, uncoveredCount) {
+    const placedRegions = findDiffRegions(original, placed);
+    const regions = placedRegions.map(r => ({
+      idx: r.idx, len: r.len, cls: 'placed-ins',
+    }));
+    if (uncoveredCount > 0) {
+      for (const r of unverifiedRegionsEngine(placedRegions, placed.length)) {
+        regions.push({ idx: r.idx, len: r.len, cls: 'placed-unverified' });
       }
     }
     return markRegionsMixed(placed, regions);
-  }
-
-  function placedDiffHtml(original, placed) {
-    const { oDiffs } = findNumDiffRegions(original, placed);
-    return markRegions(original, oDiffs, 'placed-del');
   }
 
   function doSearch(query) {
@@ -635,17 +607,34 @@
     const qLower = searchQuery.toLowerCase();
     const glossHits = glossHitsRaw.filter(g => qLower.includes(g.term.toLowerCase()));
 
-    // Highlight glossary terms in the cell preview (Felix: GLOSS_MATCH on QUERY side)
-    const cellPreview = s.getElementById('cell-value');
-    if (glossHits.length && searchQuery) {
-      const marked = FelixEngine.markGlossaryInSource(searchQuery, glossHits);
-      if (marked) cellPreview.innerHTML = marked;
-    }
-
     const el = s.getElementById('results');
     const label = panelMode === 'review' ? '↔ Review' : (onTarget ? (isReverse ? '↔ Reverse' : '← Source') : '');
     // Check if any match is 100% — if so, skip Placement entirely
     const has100 = !isReverse && matches.some(m => Math.round(m.score * 100) === 100);
+
+    // Compute uncovered for the top non-reverse fuzzy match up front so the
+    // active-cell preview can paint query-side uncovered regions (red for
+    // the side missing from glossary, yellow for the side present but
+    // blocked by a missing counterpart). The same resolved object is reused
+    // inside the match loop to avoid recomputing.
+    let topResolved = null;
+    if (!isReverse && !has100 && matches.length) {
+      const top = matches[0];
+      const topPct = Math.round(top.score * 100);
+      if (topPct < 100) {
+        topResolved = FelixEngine.resolveWithPlacement(
+          searchQuery, top.source, top.target, glossaryData, rulesData);
+      }
+    }
+    const topUncovered = topResolved ? topResolved.uncovered : [];
+
+    // Cell preview: glossary underlines + uncovered coloring on the query
+    const cellPreview = s.getElementById('cell-value');
+    if (searchQuery) {
+      const rendered = FelixEngine.renderQueryCellWithUncovered(
+        searchQuery, glossHits, topUncovered);
+      if (rendered) cellPreview.innerHTML = rendered;
+    }
 
     if (!matches.length) {
       el.innerHTML = `<div class="empty">${t('noMatch')} ${label} (${ms}ms)</div>`;
@@ -657,7 +646,13 @@
         const meta = m.refcount ? `${t('used')} ${m.refcount}x` : '';
         const tmIdx = tmData.indexOf(m) !== -1 ? tmData.indexOf(m) : tmData.findIndex(e => e.source === m.source && e.target === m.target);
 
-        let srcHtml, memSrcHtml = '', tgtDisplay, insertTarget, placed = false, insertHighlights = null;
+        let srcHtml, memSrcHtml = '', tgtDisplay, insertTarget, placed = false;
+        // Char-range attributes for the eventual Sheets write: blue for
+        // chars the system itself rewrote, dotted-underline for the
+        // remaining range when any uncovered diff survived (so the cell
+        // itself carries the "contamination possible here" signal after
+        // insertion, not just the in-panel preview).
+        let placedRangesAttr = '', unverifiedRangesAttr = '';
         if (isReverse) {
           const diff = pct < 100 ? FelixEngine.diffHighlight(query, m.target) : null;
           srcHtml = diff ? diff.sourceHtml : esc(m.target);
@@ -683,7 +678,7 @@
           // shown in the match panel matches exactly what would be written
           // if the user clicks the match (or runs ↓ Fuzzy on this row).
           if (!has100 && i === 0 && pct < 100) {
-            const resolved = FelixEngine.resolveWithPlacement(
+            const resolved = topResolved || FelixEngine.resolveWithPlacement(
               searchQuery, m.source, m.target, glossaryData, rulesData);
             const placedTarget = resolved.target;
             const badges = resolved.placements;
@@ -691,23 +686,20 @@
             if (badges.length) {
               placed = true;
               insertTarget = placedTarget;
-              const manualDiffs = FelixEngine.nonNumericDiffs(searchQuery, m.source);
-              // Build cell formatting highlights for manual-fix parts
-              if (manualDiffs.length) {
-                const seen = new Set();
-                const hl = [];
-                for (const d of manualDiffs) {
-                  if (!d.sText) continue;
-                  const idx = insertTarget.indexOf(d.sText);
-                  if (idx < 0) continue;
-                  const key = idx + ':' + d.sText.length;
-                  if (seen.has(key)) continue;
-                  seen.add(key);
-                  hl.push({ start: idx, end: idx + d.sText.length });
-                }
-                if (hl.length) insertHighlights = hl;
+              const uncoveredCount = resolved.uncovered.length;
+              tgtDisplay = placedHighlightHtml(m.target, placedTarget, uncoveredCount) + `<span class="placed-badge">${badges.join('+')}置換</span>`;
+              const placedRegions = findDiffRegions(m.target, placedTarget);
+              placedRangesAttr = escA(JSON.stringify(placedRegions.map(r => ({ start: r.idx, end: r.idx + r.len }))));
+              if (uncoveredCount > 0) {
+                const unv = unverifiedRegionsEngine(placedRegions, placedTarget.length)
+                  .map(r => ({ start: r.idx, end: r.idx + r.len }));
+                unverifiedRangesAttr = escA(JSON.stringify(unv));
               }
-              tgtDisplay = placedHighlightHtml(m.target, placedTarget, manualDiffs) + `<span class="placed-badge">${badges.join('+')}置換</span>`;
+            } else if (resolved.uncovered.length > 0) {
+              // No placement fired but diffs remain unresolved — the cell
+              // would receive TM.target unchanged; still flag the whole
+              // thing as unverified so the translator sees the signal.
+              unverifiedRangesAttr = escA(JSON.stringify([{ start: 0, end: m.target.length }]));
             }
           }
         }
@@ -718,7 +710,13 @@
         // at the top. The TM entry's own source and target go below as a
         // reference panel, separated by a hairline.
         const showRef = !isReverse && pct < 100 && memSrcHtml;
-        return `<div class="match${placed ? ' match-placed' : ''}" data-idx="${i}" data-target="${escA(insertTarget)}" data-highlights="${insertHighlights ? escA(JSON.stringify(insertHighlights)) : ''}" data-tm-idx="${tmIdx}">
+        // TM.source in the reference block gets uncovered coloring only for
+        // the top match (where topResolved was computed). Subsequent cards
+        // stay plain since placement is only applied to the top result.
+        const refSrcHtml = (showRef && i === 0 && topUncovered.length)
+          ? FelixEngine.markUncoveredHtml(m.source, topUncovered, 's')
+          : esc(m.source);
+        return `<div class="match${placed ? ' match-placed' : ''}" data-idx="${i}" data-target="${escA(insertTarget)}" data-placed-ranges="${placedRangesAttr}" data-unverified-ranges="${unverifiedRangesAttr}" data-tm-idx="${tmIdx}">
           <span class="score ${cls}">${pct}%</span>
           <span style="float:right;display:flex;align-items:center;gap:4px">
             ${i === 0 ? `<span style="font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
@@ -726,7 +724,7 @@
           </span>
           <div class="match-target">${tgtDisplay}</div>
           ${showRef ? `<div class="match-ref">
-            <div class="ref-row">${esc(m.source)}</div>
+            <div class="ref-row">${refSrcHtml}</div>
             ${placed ? `<div class="ref-row">${esc(m.target)}</div>` : ''}
           </div>` : ''}
           ${isReverse ? `<div class="match-source">${srcHtml}</div>` : ''}
@@ -783,18 +781,34 @@
       });
     });
 
-    // Manual-fix term click → copy correct value
-    el.querySelectorAll('.placed-manual').forEach(span => {
-      span.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const text = (span.getAttribute('data-tip') || '').replace(/^→\s*/, '');
-        if (!text) return;
-        navigator.clipboard.writeText(text).then(() => {
-          showToast(`Copied: ${text}`);
-        }).catch(() => {});
+    // Uncovered term click → open the Chrome side panel with a one-shot
+    // intent. Red (missing) sends 'add' so the translator can type the
+    // translation straight away; yellow (registered elsewhere but blocked
+    // by a missing counterpart) sends 'browse' so they jump to the
+    // existing entry in the glossary list. The intent is held in the
+    // service worker because content scripts can't read chrome.storage.session
+    // by default, and a direct broadcast would race the panel mount.
+    // stopPropagation prevents the click from bubbling into the .match
+    // card's insert handler.
+    const bindUncoveredClick = (root) => {
+      if (!root) return;
+      root.querySelectorAll('.diff-uncovered-missing, .diff-uncovered-present').forEach(span => {
+        if (span.dataset.bound === '1') return;
+        span.dataset.bound = '1';
+        span.style.cursor = 'pointer';
+        span.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const term = span.textContent || '';
+          if (!term) return;
+          const registered = span.classList.contains('diff-uncovered-present');
+          const mode = registered ? 'browse' : 'add';
+          msg('OPEN_GLOSSARY_WITH_ACTION', { term, mode });
+          showToast(registered ? `検索: ${term}` : `用語集へ: ${term}`);
+        });
       });
-    });
-
+    };
+    bindUncoveredClick(el);
+    bindUncoveredClick(s.getElementById('cell-value'));
   }
 
   // === Concordance Search ===
@@ -871,9 +885,15 @@
   // === Get (insert match, no TM registration) ===
   async function doGet(el, editMode) {
     const target = el.getAttribute('data-target');
-    const hlAttr = el.getAttribute('data-highlights');
-    const highlights = hlAttr ? JSON.parse(hlAttr) : null;
-    await writeToTarget(target, editMode, highlights);
+    const parseRanges = (attr) => {
+      const raw = el.getAttribute(attr);
+      if (!raw) return null;
+      try { const v = JSON.parse(raw); return Array.isArray(v) && v.length ? v : null; }
+      catch (_) { return null; }
+    };
+    const placedRanges = parseRanges('data-placed-ranges');
+    const unverifiedRanges = parseRanges('data-unverified-ranges');
+    await writeToTarget(target, editMode, { placedRanges, unverifiedRanges });
   }
 
   function doGetTop() {
@@ -927,7 +947,7 @@
   }
 
   // === Write to target cell via Sheets API ===
-  async function writeToTarget(value, editMode, highlights) {
+  async function writeToTarget(value, editMode, formats) {
     const ref = getCellRef();
     const match = ref ? ref.match(/([A-Z]+)(\d+)/i) : null;
     if (!match) return;
@@ -943,9 +963,14 @@
     const oldValue = oldResp && oldResp.value ? oldResp.value : '';
     _undoStack.push({ ssId, range: fullRange, oldValue, newValue: value });
 
-    // Write via background (with formatting if highlights exist)
-    if (highlights && highlights.length) {
-      await msg('SHEETS_API_WRITE_FORMATTED', { spreadsheetId: ssId, range: fullRange, value, highlights });
+    const placedRanges = formats && formats.placedRanges;
+    const unverifiedRanges = formats && formats.unverifiedRanges;
+    if ((placedRanges && placedRanges.length) || (unverifiedRanges && unverifiedRanges.length)) {
+      await msg('SHEETS_API_WRITE_FORMATTED', {
+        spreadsheetId: ssId, range: fullRange, value,
+        placedRanges: placedRanges || [],
+        unverifiedRanges: unverifiedRanges || [],
+      });
     } else {
       await msg('SHEETS_API_WRITE', { spreadsheetId: ssId, range: fullRange, value });
     }

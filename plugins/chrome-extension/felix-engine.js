@@ -209,6 +209,96 @@ var FelixEngine = (() => {
   }
 
   /**
+   * Map uncovered diffs to char ranges in the given text ('q' → query /
+   * qText, 's' → TM.source / sText). Positions come from the DP backtrace
+   * and point at the specific diff region, so a sText like "全" that also
+   * happens to appear in a matched segment elsewhere in the sentence
+   * won't get painted a second time.
+   *
+   * The class distinction drives the two-color UX: red for the side that's
+   * actually missing (translator must add a glossary entry), yellow for
+   * the side that's registered but still uncovered because its
+   * counterpart is missing.
+   */
+  function uncoveredRegionsForText(text, uncovered, side) {
+    if (!text || !uncovered || !uncovered.length) return [];
+    const regions = [];
+    for (const d of uncovered) {
+      const start = side === 'q' ? d.qStart : d.sStart;
+      const end = side === 'q' ? d.qEnd : d.sEnd;
+      const registered = side === 'q' ? d.qRegistered : d.sRegistered;
+      if (typeof start !== 'number' || typeof end !== 'number') continue;
+      if (end <= start || start < 0 || end > text.length) continue;
+      const cls = registered ? 'diff-uncovered-present' : 'diff-uncovered-missing';
+      regions.push({ start, end, cls });
+    }
+    regions.sort((a, b) => a.start - b.start || a.end - b.end);
+    const merged = [];
+    for (const r of regions) {
+      const prev = merged[merged.length - 1];
+      if (prev && r.start < prev.end) continue;
+      merged.push(r);
+    }
+    return merged;
+  }
+
+  /**
+   * Render plain text with uncovered regions wrapped in the appropriate
+   * class. Used for TM.source inside match-ref (no glossary underline
+   * overlay needed). For query/cell rendering that also carries glossary
+   * underlines, use renderQueryCellWithUncovered instead.
+   */
+  function markUncoveredHtml(text, uncovered, side) {
+    const regions = uncoveredRegionsForText(text, uncovered, side);
+    if (!regions.length) return esc(text);
+    let html = '', cursor = 0;
+    for (const r of regions) {
+      html += esc(text.substring(cursor, r.start));
+      html += `<span class="${r.cls}">${esc(text.substring(r.start, r.end))}</span>`;
+      cursor = r.end;
+    }
+    html += esc(text.substring(cursor));
+    return html;
+  }
+
+  /**
+   * Render the active-cell / query text with two layers of markup:
+   *   - glossary underlines (gloss_match) for registered terms
+   *   - uncovered coloring (red / yellow) for terms inside unresolved diffs
+   *
+   * Layers are emitted per-character so nested state changes (glossary
+   * starts inside an uncovered region, or vice versa) stay well-formed.
+   * Returns HTML, or null when neither layer has anything to add — callers
+   * fall back to their existing plain-text rendering in that case.
+   */
+  function renderQueryCellWithUncovered(text, glossHits, uncovered) {
+    const glossRegions = glossHits && glossHits.length ? glossRegionsForText(text, glossHits) : [];
+    const uncRegions = uncoveredRegionsForText(text, uncovered, 'q');
+    if (!glossRegions.length && !uncRegions.length) return null;
+    const inRegion = (regions, pos) => {
+      for (const r of regions) if (pos >= r.start && pos < r.end) return r;
+      return null;
+    };
+    let html = '';
+    let prevG = null, prevU = null;
+    for (let i = 0; i < text.length; i++) {
+      const g = inRegion(glossRegions, i);
+      const u = inRegion(uncRegions, i);
+      if (g !== prevG || u !== prevU) {
+        if (prevG) html += '</span>';
+        if (prevU) html += '</span>';
+        if (u) html += `<span class="${u.cls}">`;
+        if (g) html += `<span class="gloss_match" data-tip="${esc(g.translation)}">`;
+      }
+      html += esc(text[i]);
+      prevG = g; prevU = u;
+    }
+    if (prevG) html += '</span>';
+    if (prevU) html += '</span>';
+    return html;
+  }
+
+  /**
    * Glossary Placement (Felix gloss_placement.cpp port).
    * Given a TM match (source + target) and the query, find the "hole" (differing part),
    * look up glossary translations for both holes, and substitute in the target.
@@ -528,14 +618,40 @@ var FelixEngine = (() => {
     function extractNums(text) {
       const nums = [];
       let m;
+      numRe.lastIndex = 0;
       while ((m = numRe.exec(text)) !== null) {
         nums.push({ value: narrowNum(m[0]), index: m.index, length: m[0].length });
       }
       return nums;
     }
 
-    const qNums = extractNums(query);
-    const sNums = extractNums(tmSource);
+    // A digit sitting inside a non-numeric diff region (e.g. the 4 in
+    // `ランダム4体` that aligned against `全体`) is part of the lexical
+    // diff, not an independent numeric slot. Counting it here would make
+    // query and source disagree on the number of slots and silently
+    // disable placement for the entire row. We mask those ranges on both
+    // sides symmetrically, using the DP-computed positions from
+    // nonNumericDiffs — so the masking can't create its own asymmetry.
+    function maskRanges(text, ranges) {
+      if (!ranges.length) return text;
+      const sorted = [...ranges].sort((a, b) => a.start - b.start);
+      let out = '';
+      let cursor = 0;
+      for (const r of sorted) {
+        if (r.end <= r.start || r.start < cursor) continue;
+        out += text.substring(cursor, r.start) + ' '.repeat(r.end - r.start);
+        cursor = r.end;
+      }
+      out += text.substring(cursor);
+      return out;
+    }
+
+    const nnd = nonNumericDiffs(query, tmSource);
+    const qMasked = maskRanges(query, nnd.map(d => ({ start: d.qStart, end: d.qEnd })));
+    const sMasked = maskRanges(tmSource, nnd.map(d => ({ start: d.sStart, end: d.sEnd })));
+
+    const qNums = extractNums(qMasked);
+    const sNums = extractNums(sMasked);
     const tNums = extractNums(tmTarget);
 
     // Source and query must have the same count of number tokens
@@ -619,8 +735,12 @@ var FelixEngine = (() => {
 
   /**
    * Extract non-numeric substitution pairs from query vs source diff.
-   * Returns [{ qText, sText }] — parts that changed but aren't numbers.
-   * Used to highlight "needs manual fix" in placed targets.
+   * Returns [{ qText, sText, qStart, qEnd, sStart, sEnd }] — parts that
+   * changed but aren't numbers, plus the char-level span each side
+   * occupies in its source string. The positions let the UI mark the
+   * specific diff region instead of searching by string content, which
+   * would false-positive when the same text also appears in matched
+   * regions elsewhere in the sentence.
    */
   function nonNumericDiffs(query, tmSource) {
     if (!query || !tmSource || query === tmSource) return [];
@@ -628,6 +748,29 @@ var FelixEngine = (() => {
     const qTokens = useChar ? Array.from(query) : tokenize(query);
     const sTokens = useChar ? Array.from(tmSource) : tokenize(tmSource);
     const sep = useChar ? '' : ' ';
+
+    // For char mode, token index == char index directly. For word mode we
+    // need to remember where each token starts in the original string so
+    // the UI can address char ranges; the lookup below handles both.
+    function buildTokenCharPos(text, tokens) {
+      const pos = new Array(tokens.length + 1);
+      let cursor = 0;
+      for (let k = 0; k < tokens.length; k++) {
+        const idx = text.indexOf(tokens[k], cursor);
+        pos[k] = idx === -1 ? cursor : idx;
+        cursor = pos[k] + tokens[k].length;
+      }
+      pos[tokens.length] = text.length;
+      return pos;
+    }
+    const qCharPos = useChar ? null : buildTokenCharPos(query, qTokens);
+    const sCharPos = useChar ? null : buildTokenCharPos(tmSource, sTokens);
+    const tokStartToChar = (tokStart, tokens, charPos, uc) => uc ? tokStart : charPos[tokStart];
+    const tokEndToChar = (tokEndExcl, tokens, charPos, uc) => {
+      if (uc) return tokEndExcl;
+      if (tokEndExcl <= 0) return 0;
+      return charPos[tokEndExcl - 1] + tokens[tokEndExcl - 1].length;
+    };
 
     const n = qTokens.length, m = sTokens.length;
     const dp = [];
@@ -652,15 +795,23 @@ var FelixEngine = (() => {
     // resolve, instead of the intended {MIND, CRT} + numeric-only diff.
     const diffs = [];
     let i = n, j = m, curQ = [], curS = [];
+    let _qTokStart = null, _qTokEnd = null, _sTokStart = null, _sTokEnd = null;
     function flush() {
       if (curQ.length && curS.length) {
         const q = curQ.join(sep), s = curS.join(sep);
         // Skip if both are purely numeric
         if (!(/^\d+[.,]?\d*$/.test(q) && /^\d+[.,]?\d*$/.test(s))) {
-          diffs.push({ qText: q, sText: s });
+          diffs.push({
+            qText: q, sText: s,
+            qStart: tokStartToChar(_qTokStart ?? 0, qTokens, qCharPos, useChar),
+            qEnd: tokEndToChar(_qTokEnd ?? 0, qTokens, qCharPos, useChar),
+            sStart: tokStartToChar(_sTokStart ?? 0, sTokens, sCharPos, useChar),
+            sEnd: tokEndToChar(_sTokEnd ?? 0, sTokens, sCharPos, useChar),
+          });
         }
       }
       curQ = []; curS = [];
+      _qTokStart = _qTokEnd = _sTokStart = _sTokEnd = null;
     }
     while (i > 0 || j > 0) {
       if (i > 0 && j > 0) {
@@ -668,51 +819,31 @@ var FelixEngine = (() => {
         if (match && dp[i][j] === dp[i-1][j-1]) { flush(); i--; j--; continue; }
       }
       // Prefer insert → delete → sub when tied, to preserve later matches.
-      if (j > 0 && dp[i][j] === dp[i][j-1] + 1) { curS.unshift(sTokens[j-1]); j--; continue; }
-      if (i > 0 && dp[i][j] === dp[i-1][j] + 1) { curQ.unshift(qTokens[i-1]); i--; continue; }
+      if (j > 0 && dp[i][j] === dp[i][j-1] + 1) {
+        j--;
+        curS.unshift(sTokens[j]);
+        if (_sTokEnd == null) _sTokEnd = j + 1;
+        _sTokStart = j;
+        continue;
+      }
+      if (i > 0 && dp[i][j] === dp[i-1][j] + 1) {
+        i--;
+        curQ.unshift(qTokens[i]);
+        if (_qTokEnd == null) _qTokEnd = i + 1;
+        _qTokStart = i;
+        continue;
+      }
       if (i > 0 && j > 0 && dp[i][j] === dp[i-1][j-1] + 1) {
-        curQ.unshift(qTokens[i-1]); curS.unshift(sTokens[j-1]); i--; j--; continue;
+        i--; j--;
+        curQ.unshift(qTokens[i]); curS.unshift(sTokens[j]);
+        if (_qTokEnd == null) _qTokEnd = i + 1; _qTokStart = i;
+        if (_sTokEnd == null) _sTokEnd = j + 1; _sTokStart = j;
+        continue;
       }
       break;
     }
     flush();
     return diffs;
-  }
-
-  /**
-   * Walk the TM target and pick a region that's most likely to be the
-   * target-side translation of `sourceTerm`. This is an approximation used
-   * only when the glossary doesn't know the pair outright — we need
-   * something to highlight red in the insert preview so the translator
-   * sees where to focus. For Japanese↔Chinese, shared kanji across scripts
-   * drive a simple character-set overlap heuristic.
-   *
-   * Returns { start, len } or null.
-   */
-  function findTargetRegionForUnresolved(target, sourceTerm) {
-    if (!target || !sourceTerm || sourceTerm.length < 2) return null;
-    const sChars = new Set(Array.from(sourceTerm));
-    const shared = [];
-    for (let i = 0; i < target.length; i++) {
-      if (sChars.has(target[i])) shared.push(i);
-    }
-    if (!shared.length) return null;
-    // Cluster shared-char positions that sit within 2 chars of each other.
-    let best = null, curStart = shared[0], curEnd = shared[0], curCount = 1;
-    const commit = () => {
-      if (!best || curCount > best.count) best = { start: curStart, end: curEnd, count: curCount };
-    };
-    for (let k = 1; k < shared.length; k++) {
-      if (shared[k] - curEnd <= 2) { curEnd = shared[k]; curCount++; }
-      else { commit(); curStart = curEnd = shared[k]; curCount = 1; }
-    }
-    commit();
-    // Extend the cluster on the right so the translation of the
-    // non-shared portion of sourceTerm (e.g., katakana "ダメージ") gets
-    // included. Translations usually shrink vs source, so extend modestly.
-    const extra = Math.min(Math.ceil((sourceTerm.length - best.count) / 2), 3);
-    const end = Math.min(best.end + 1 + extra, target.length);
-    return { start: best.start, len: end - best.start };
   }
 
   // === Auto-Translate planners (pure, no DOM / no I/O) ===
@@ -839,12 +970,20 @@ var FelixEngine = (() => {
   function resolveWithPlacement(query, tmSource, tmTarget, glossaryData, rulesData) {
     let target = tmTarget;
     let remaining = nonNumericDiffs(query, tmSource);
-    const placements = [];  // collected badges, in application order
-    const uncovered = [];   // diffs we couldn't resolve — reported back so
-                            // the caller can tell the user what's missing
+    const placements = [];
+
+    const indexByCmp = new Map();
+    if (glossaryData && glossaryData.length) {
+      for (const g of glossaryData) {
+        const c = g.cmp || makeCmp(g.term);
+        if (!indexByCmp.has(c)) indexByCmp.set(c, g);
+      }
+    }
 
     // Number placement handles numeric diffs (which nonNumericDiffs already
-    // excluded from `remaining`).
+    // excluded from `remaining`). numberPlacement itself masks non-numeric
+    // diff regions symmetrically so digits inside a diff (e.g. the 4 in
+    // ランダム4体 aligned against 全体) don't inflate the count on one side.
     const np = numberPlacement(query, tmSource, target);
     if (np.placed) { target = np.target; placements.push('数値'); }
 
@@ -853,29 +992,32 @@ var FelixEngine = (() => {
     // differences (number + number + term + number). Here we walk each
     // non-numeric diff and check the glossary independently: if both sides
     // of the diff have glossary entries we know how to rewrite the target
-    // segment that corresponds to sEntry.translation.
-    if (glossaryData && glossaryData.length && remaining.length) {
-      const indexByCmp = new Map();
-      for (const g of glossaryData) {
-        const c = g.cmp || makeCmp(g.term);
-        if (!indexByCmp.has(c)) indexByCmp.set(c, g);
-      }
+    // segment that corresponds to sEntry.translation. Uncovered entries
+    // carry registration flags so the UI can distinguish which side is
+    // missing from the glossary (red) from which side is present but
+    // blocked by a missing counterpart (yellow).
+    if (remaining.length) {
       const stillRemaining = [];
       let glossaryApplied = false;
       for (const d of remaining) {
         const qEntry = indexByCmp.get(makeCmp(d.qText));
         const sEntry = indexByCmp.get(makeCmp(d.sText));
-        if (!qEntry || !sEntry) { stillRemaining.push(d); continue; }
-        // Substitute sEntry.translation → qEntry.translation in target
-        // (first occurrence, case-insensitive like glossaryPlacement does).
-        const tgtLower = target.toLowerCase();
-        const fromLower = sEntry.translation.toLowerCase();
-        const idx = tgtLower.indexOf(fromLower);
-        if (idx === -1) { stillRemaining.push(d); continue; }
-        target = target.substring(0, idx)
-               + qEntry.translation
-               + target.substring(idx + sEntry.translation.length);
-        glossaryApplied = true;
+        if (qEntry && sEntry) {
+          const tgtLower = target.toLowerCase();
+          const fromLower = sEntry.translation.toLowerCase();
+          const idx = tgtLower.indexOf(fromLower);
+          if (idx !== -1) {
+            target = target.substring(0, idx)
+                   + qEntry.translation
+                   + target.substring(idx + sEntry.translation.length);
+            glossaryApplied = true;
+            continue;
+          }
+        }
+        stillRemaining.push({
+          ...d,
+          qRegistered: !!qEntry, sRegistered: !!sEntry,
+        });
       }
       if (glossaryApplied) placements.push('用語');
       remaining = stillRemaining;
@@ -889,11 +1031,7 @@ var FelixEngine = (() => {
       if (rp.placed) { target = rp.target; placements.push('ルール'); }
     }
 
-    // Diffs still in `remaining` at this point are what the user needs to
-    // address — typically "term missing from glossary" on one or both sides.
-    for (const d of remaining) uncovered.push(d);
-
-    return { target, covered: uncovered.length === 0, placements, uncovered };
+    return { target, covered: remaining.length === 0, placements, uncovered: remaining };
   }
 
   /**
@@ -1052,12 +1190,134 @@ var FelixEngine = (() => {
     return { text: `${head}\n(${reason})`, ms: 4000 };
   }
 
+  // === Placement-result char-range derivation (shared by card preview + Sheets write) ===
+  //
+  // findDiffRegions: char ranges in `placed` that differ from `original`.
+  //   Used to colour the system's own substitutions blue. Any change —
+  //   number, glossary-resolved, rule-applied — shows up here by construction,
+  //   without needing each placement to report its position.
+  //
+  // unverifiedRegions: the complement of the placed ranges over `placedLen`.
+  //   When any uncovered diff survives, this is the char span that STILL
+  //   carries TM.target content — somewhere in here, the old translation of
+  //   the uncovered source term persists. We scope the risk to the range
+  //   instead of guessing a char-level location.
+  //
+  // buildCellFormatRuns: turn the two range sets into Sheets textFormatRuns,
+  //   resolving overlaps so a placement range always wins over an
+  //   unverified range (placement positions are exact; unverified is the
+  //   "somewhere in this range" complement).
+  function findDiffRegions(original, placed) {
+    if (!original || !placed || original === placed) {
+      return original === placed ? [] : [{ idx: 0, len: (placed || '').length }];
+    }
+    const n = original.length, m = placed.length;
+    const dp = [];
+    for (let i = 0; i <= n; i++) { dp[i] = new Array(m + 1); dp[i][0] = i; }
+    for (let j = 0; j <= m; j++) dp[0][j] = j;
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        const cost = original[i-1] === placed[j-1] ? 0 : 1;
+        dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost);
+      }
+    }
+    const regions = [];
+    let i = n, j = m;
+    let curStart = null, curEnd = null;
+    function flush() {
+      if (curStart != null) {
+        regions.push({ idx: curStart, len: curEnd - curStart });
+        curStart = curEnd = null;
+      }
+    }
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && original[i-1] === placed[j-1] && dp[i][j] === dp[i-1][j-1]) {
+        flush();
+        i--; j--;
+        continue;
+      }
+      if (i > 0 && j > 0 && dp[i][j] === dp[i-1][j-1] + 1) {
+        i--; j--;
+        if (curEnd == null) curEnd = j + 1;
+        curStart = j;
+        continue;
+      }
+      if (j > 0 && dp[i][j] === dp[i][j-1] + 1) {
+        j--;
+        if (curEnd == null) curEnd = j + 1;
+        curStart = j;
+        continue;
+      }
+      if (i > 0 && dp[i][j] === dp[i-1][j] + 1) {
+        i--;
+        continue;
+      }
+      break;
+    }
+    flush();
+    return regions.reverse();
+  }
+
+  function unverifiedRegions(placedRegions, placedLen) {
+    const out = [];
+    let cursor = 0;
+    const sorted = [...(placedRegions || [])].sort((a, b) => a.idx - b.idx);
+    for (const r of sorted) {
+      if (r.idx > cursor) out.push({ idx: cursor, len: r.idx - cursor });
+      cursor = r.idx + r.len;
+    }
+    if (cursor < placedLen) out.push({ idx: cursor, len: placedLen - cursor });
+    return out;
+  }
+
+  const CELL_FMT_PLACED = { foregroundColorStyle: { rgbColor: { red: 0.102, green: 0.451, blue: 0.910 } } };
+  const CELL_FMT_UNVERIFIED = { underline: true, foregroundColorStyle: { rgbColor: { red: 0.604, green: 0.627, blue: 0.651 } } };
+
+  function buildCellFormatRuns(text, placedRanges, unverifiedRanges) {
+    const valueLen = text ? text.length : 0;
+    const placed = [];
+    for (const h of (placedRanges || [])) {
+      if (h.end > h.start) placed.push({ start: h.start, end: h.end, fmt: CELL_FMT_PLACED });
+    }
+    placed.sort((a, b) => a.start - b.start);
+    // Chop each unverified range around every placed range that overlaps it.
+    // Placed takes precedence because its positions are exact; unverified
+    // is the "somewhere in this range" complement.
+    const unverified = [];
+    for (const h of (unverifiedRanges || [])) {
+      if (h.end <= h.start) continue;
+      let cur = h.start;
+      for (const p of placed) {
+        if (p.end <= cur) continue;
+        if (p.start >= h.end) break;
+        if (p.start > cur) unverified.push({ start: cur, end: p.start, fmt: CELL_FMT_UNVERIFIED });
+        cur = Math.max(cur, p.end);
+      }
+      if (cur < h.end) unverified.push({ start: cur, end: h.end, fmt: CELL_FMT_UNVERIFIED });
+    }
+    const resolved = [...placed, ...unverified].sort((a, b) => a.start - b.start);
+    const runs = [];
+    let cursor = 0;
+    for (const h of resolved) {
+      if (h.start > cursor) runs.push({ startIndex: cursor, format: {} });
+      runs.push({ startIndex: h.start, format: h.fmt });
+      cursor = h.end;
+    }
+    if (!runs.length) return [{ startIndex: 0, format: {} }];
+    if (runs[0].startIndex > 0) runs.unshift({ startIndex: 0, format: {} });
+    if (cursor < valueLen) runs.push({ startIndex: cursor, format: {} });
+    return runs;
+  }
+
   // === Public API ===
   return { makeCmp, search, reverseSearch, concordanceSearch, glossarySearch,
            glossaryPlacement, numberPlacement, rulePlacement, nonNumericDiffs,
            markGlossaryInSource, fuzzyScore, edScore, diffHighlight, tokenize,
            containsCJK, addEntry, esc,
-           findTargetRegionForUnresolved,
+           markUncoveredHtml, renderQueryCellWithUncovered,
+           uncoveredRegionsForText,
+           findDiffRegions, unverifiedRegions, buildCellFormatRuns,
+           CELL_FMT_PLACED, CELL_FMT_UNVERIFIED,
            resolveWithPlacement,
            planAutoTranslateSelection, planAutoTranslateToFuzzy,
            buildPlanActions, describePlan };

@@ -4,10 +4,16 @@
  */
 
 // Import IndexedDB wrapper
-importScripts('db.js');
+importScripts('db.js', 'felix-engine.js');
 
 // Track the last active Google Sheets tab
 let _lastSheetsTabId = null;
+
+// One-shot intent for the glossary tab of the side panel. Set by the
+// content script when an uncovered term is clicked; consumed by the side
+// panel on mount (via CONSUME_PENDING_GLOSSARY_ACTION) or live via the
+// broadcast below when the panel is already open.
+let _pendingGlossaryAction = null;
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   chrome.tabs.get(tabId, (tab) => {
@@ -114,6 +120,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const windowId = sender && sender.tab ? sender.tab.windowId : undefined;
     openSidePanel(windowId);
     sendResponse({ ok: true });
+    return;
+  }
+
+  // Open the side panel and stash a one-shot intent for the glossary tab.
+  // Content scripts can't reach chrome.storage.session with the default
+  // access level, and a direct broadcast would race the panel mount, so
+  // the service worker holds the intent in memory and hands it off either
+  // via the mount-time CONSUME_PENDING_GLOSSARY_ACTION request or via an
+  // immediate GLOSSARY_ACTION broadcast for an already-open panel.
+  if (msg.type === 'OPEN_GLOSSARY_WITH_ACTION') {
+    _pendingGlossaryAction = msg.data || msg.payload || null;
+    const windowId = sender && sender.tab ? sender.tab.windowId : undefined;
+    openSidePanel(windowId);
+    if (_pendingGlossaryAction) {
+      chrome.runtime.sendMessage({ type: 'GLOSSARY_ACTION', payload: _pendingGlossaryAction }).catch(() => {});
+    }
+    // Safety net: if neither CONSUME nor the broadcast delivery picked up
+    // the pending action (e.g. the panel was never open and never mounts),
+    // drop it so a later unrelated open doesn't replay a stale click.
+    setTimeout(() => { _pendingGlossaryAction = null; }, 5000);
+    sendResponse({ ok: true });
+    return;
+  }
+
+  if (msg.type === 'CONSUME_PENDING_GLOSSARY_ACTION') {
+    const payload = _pendingGlossaryAction;
+    _pendingGlossaryAction = null;
+    sendResponse(payload);
     return;
   }
 
@@ -330,34 +364,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const sheet = meta.sheets.find(s => s.properties.title === sheetName);
         const sheetId = sheet ? sheet.properties.sheetId : 0;
 
-        // Build textFormatRuns
-        const runs = [{ startIndex: 0, format: {} }];
-        if (d.highlights && d.highlights.length) {
-          // Sort then merge overlapping/adjacent ranges so startIndex stays strictly increasing
-          const sorted = [...d.highlights].sort((a, b) => a.start - b.start || a.end - b.end);
-          const merged = [];
-          for (const h of sorted) {
-            if (h.end <= h.start) continue;
-            const last = merged[merged.length - 1];
-            if (last && h.start <= last.end) {
-              last.end = Math.max(last.end, h.end);
-            } else {
-              merged.push({ start: h.start, end: h.end });
-            }
-          }
-          const allRuns = [];
-          let lastEnd = 0;
-          for (const h of merged) {
-            if (h.start > lastEnd) allRuns.push({ startIndex: lastEnd, format: {} });
-            allRuns.push({ startIndex: h.start, format: { foregroundColorStyle: { rgbColor: { red: 0.77, green: 0.13, blue: 0.12 } } } });
-            lastEnd = h.end;
-          }
-          if (allRuns.length) {
-            if (lastEnd < d.value.length) allRuns.push({ startIndex: lastEnd, format: {} });
-            runs.length = 0;
-            runs.push(...allRuns);
-          }
-        }
+        const runs = FelixEngine.buildCellFormatRuns(
+          d.value, d.placedRanges || [], d.unverifiedRanges || [],
+        );
 
         const body = {
           requests: [{
