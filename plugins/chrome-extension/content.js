@@ -208,6 +208,14 @@
       .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid #dadce0; cursor: pointer; font-size: 11px; font-weight: 500; background: #fff; color: #1a73e8; }
       .btn:hover { background: #f1f3f4; }
       .toast { padding: 6px 10px; border-radius: 4px; font-size: 11px; margin-top: 6px; background: #e6f4ea; color: #137333; white-space: pre-line; line-height: 1.4; }
+      /* Card preview of the placement output:
+         - placed-ins (blue): chars the system rewrote itself (numbers,
+           resolved-glossary, rules) — positions are known exactly.
+         - placed-unverified (dotted underline): the non-placed range
+           when any uncovered diff survived. Range-level "contamination
+           somewhere in here" marker, not a pinpoint. */
+      .placed-ins { background: #e8f0fe; color: #1a73e8; border-radius: 2px; padding: 0 1px; }
+      .placed-unverified { border-bottom: 1px dotted #9aa0a6; }
       .diff-match { color: #137333; }
       .diff-uncovered-missing { background: #fce8e6; color: #c5221f; font-weight: 500; }
       .diff-uncovered-present { background: #feefc3; color: #b06000; font-weight: 500; }
@@ -522,8 +530,36 @@
     return html;
   }
 
-  function placedHighlightHtml(original, placed) {
-    return esc(placed);
+  /**
+   * Complement of the placement-changed regions over the full string.
+   * When uncovered > 0, the non-placed range is where the old TM
+   * translation persists — the exact char can't be located without a
+   * glossary entry, but we can honestly scope the risk to "within this
+   * range, somewhere" in the card preview.
+   */
+  function unverifiedRegionsEngineLocal(placedRegions, placedLen) {
+    const out = [];
+    let cursor = 0;
+    const sorted = [...placedRegions].sort((a, b) => a.idx - b.idx);
+    for (const r of sorted) {
+      if (r.idx > cursor) out.push({ idx: cursor, len: r.idx - cursor });
+      cursor = r.idx + r.len;
+    }
+    if (cursor < placedLen) out.push({ idx: cursor, len: placedLen - cursor });
+    return out;
+  }
+
+  function placedHighlightHtml(original, placed, uncoveredCount) {
+    const placedRegions = FelixEngine.findDiffRegions(original, placed);
+    const regions = placedRegions.map(r => ({
+      idx: r.idx, len: r.len, cls: 'placed-ins',
+    }));
+    if (uncoveredCount > 0) {
+      for (const r of unverifiedRegionsEngineLocal(placedRegions, placed.length)) {
+        regions.push({ idx: r.idx, len: r.len, cls: 'placed-unverified' });
+      }
+    }
+    return markRegionsMixed(placed, regions);
   }
 
   function doSearch(query) {
@@ -658,7 +694,8 @@
             if (badges.length) {
               placed = true;
               insertTarget = placedTarget;
-              tgtDisplay = placedHighlightHtml(m.target, placedTarget) + `<span class="placed-badge">${badges.join('+')}置換</span>`;
+              const uncoveredCount = resolved.uncovered.length;
+              tgtDisplay = placedHighlightHtml(m.target, placedTarget, uncoveredCount) + `<span class="placed-badge">${badges.join('+')}置換</span>`;
             }
           }
         }
