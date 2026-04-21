@@ -159,11 +159,9 @@ function applyGlossaryAction(payload) {
   const transInput = document.getElementById('gloss-trans');
   const filterInput = document.getElementById('gloss-filter');
   if (payload.mode === 'browse') {
-    // Yellow span — the term is already registered somewhere. Jump to the
-    // browse filter so the translator can see the existing entry instead
-    // of accidentally creating a duplicate.
-    if (termInput) termInput.value = '';
-    if (transInput) transInput.value = '';
+    // Browse — the caller wants to look the term up in existing entries,
+    // not add a duplicate. Route to the filter and leave the add form
+    // untouched so a half-finished add doesn't silently get wiped.
     if (filterInput) {
       filterInput.value = payload.term;
       filterInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -171,11 +169,19 @@ function applyGlossaryAction(payload) {
       filterInput.select();
     }
   } else {
-    // Red span — the term is missing. Prefill the add form and focus the
-    // translation field so the translator types straight in.
+    // Add — prefill the add form. prefillSide decides which field the
+    // selection goes into; when omitted, default to the term field.
+    // 'translation' is used by right-click-on-target flows where the
+    // translator grabs the target-side text first and will type the
+    // source-side term next.
     if (filterInput) filterInput.value = '';
-    if (termInput) termInput.value = payload.term;
-    if (transInput) { transInput.value = ''; transInput.focus(); }
+    if (payload.prefillSide === 'translation') {
+      if (transInput) transInput.value = payload.term;
+      if (termInput) { termInput.value = ''; termInput.focus(); }
+    } else {
+      if (termInput) termInput.value = payload.term;
+      if (transInput) { transInput.value = ''; transInput.focus(); }
+    }
   }
 }
 

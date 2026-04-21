@@ -236,6 +236,12 @@
       .match-ref { border-top: 1px dashed #e8eaed; margin-top: 8px; padding-top: 6px; cursor: text; user-select: text; }
       .ref-row { color: #9aa0a6; font-size: 11px; margin-top: 2px; word-break: break-all; }
       .btn-del-tm:hover { color: #ea4335 !important; }
+      /* Right-click popover for glossary registration from a text
+         selection inside the card. Sits above every other panel chrome. */
+      .ctx-menu { position: fixed; z-index: 1000; background: #fff; border: 1px solid #dadce0; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 180px; padding: 4px 0; font-size: 12px; color: #202124; }
+      .ctx-menu-item { padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+      .ctx-menu-item:hover { background: #f1f3f4; }
+      .ctx-menu-label { padding: 4px 12px; font-size: 10px; color: #9aa0a6; border-bottom: 1px solid #e8eaed; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
       .settings-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
       .mode-toggle { display: flex; border: 1px solid #dadce0; border-radius: 4px; }
       .mode-btn { padding: 3px 8px; font-size: 10px; cursor: pointer; color: #5f6368; user-select: none; }
@@ -815,6 +821,92 @@
     };
     bindUncoveredClick(el);
     bindUncoveredClick(s.getElementById('cell-value'));
+
+    // Right-click → glossary registration shortcut. The translator
+    // selects whatever text inside the card or the active-cell preview
+    // they want to register (e.g., 光屬性傷害 from the reference target),
+    // right-clicks, and picks whether the selection should land in the
+    // term field or the translation field. Saves the open-side-panel,
+    // tab-switch, copy-paste round-trip we used to require.
+    bindCardContextMenu(s, el);
+    bindCardContextMenu(s, s.getElementById('cell-value'));
+  }
+
+  function getShadowSelectionText(s) {
+    // The Shadow Root has its own selection in modern browsers; fall back
+    // to document selection when the shadow API isn't exposed.
+    try {
+      if (s && typeof s.getSelection === 'function') {
+        const sel = s.getSelection();
+        if (sel) return (sel.toString() || '').trim();
+      }
+    } catch (_) {}
+    try {
+      const sel = window.getSelection();
+      if (sel) return (sel.toString() || '').trim();
+    } catch (_) {}
+    return '';
+  }
+
+  function bindCardContextMenu(shadow, root) {
+    if (!root || root.dataset.ctxBound === '1') return;
+    root.dataset.ctxBound = '1';
+    root.addEventListener('contextmenu', (e) => {
+      const text = getShadowSelectionText(shadow);
+      if (!text) return;  // no selection — let the browser's default menu open
+      e.preventDefault();
+      openCtxMenu(shadow, e.clientX, e.clientY, text);
+    });
+  }
+
+  function openCtxMenu(shadow, x, y, text) {
+    closeCtxMenu(shadow);
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    const label = document.createElement('div');
+    label.className = 'ctx-menu-label';
+    label.textContent = text.length > 40 ? text.slice(0, 40) + '…' : text;
+    menu.appendChild(label);
+    const mkItem = (caption, onPick) => {
+      const item = document.createElement('div');
+      item.className = 'ctx-menu-item';
+      item.textContent = caption;
+      item.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        onPick();
+        closeCtxMenu(shadow);
+      });
+      menu.appendChild(item);
+    };
+    mkItem('用語として用語集へ', () => sendGlossaryAction(text, 'add', 'term'));
+    mkItem('訳語として用語集へ', () => sendGlossaryAction(text, 'add', 'translation'));
+    mkItem('用語集で検索', () => sendGlossaryAction(text, 'browse'));
+    shadow.appendChild(menu);
+    // Dismiss on next outside-click / escape.
+    const dismiss = (ev) => {
+      if (ev.type === 'keydown' && ev.key !== 'Escape') return;
+      closeCtxMenu(shadow);
+    };
+    setTimeout(() => {
+      document.addEventListener('mousedown', dismiss, { once: true, capture: true });
+      document.addEventListener('keydown', dismiss, { once: true, capture: true });
+    }, 0);
+  }
+
+  function closeCtxMenu(shadow) {
+    if (!shadow) return;
+    const existing = shadow.querySelector('.ctx-menu');
+    if (existing) existing.remove();
+  }
+
+  function sendGlossaryAction(text, mode, prefillSide) {
+    // mode: 'add' | 'browse'
+    // prefillSide (only when mode === 'add'): 'term' | 'translation'
+    msg('OPEN_GLOSSARY_WITH_ACTION', { term: text, mode, prefillSide });
+    showToast(mode === 'browse' ? `検索: ${text}` : (prefillSide === 'translation' ? `訳語へ: ${text}` : `用語へ: ${text}`));
   }
 
   // === Concordance Search ===
