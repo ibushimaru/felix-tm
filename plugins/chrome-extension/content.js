@@ -238,10 +238,6 @@
       .btn-del-tm:hover { color: #ea4335 !important; }
       /* Right-click popover for glossary registration from a text
          selection inside the card. Sits above every other panel chrome. */
-      .ctx-menu { position: fixed; z-index: 1000; background: #fff; border: 1px solid #dadce0; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 180px; padding: 4px 0; font-size: 12px; color: #202124; }
-      .ctx-menu-item { padding: 6px 12px; cursor: pointer; white-space: nowrap; }
-      .ctx-menu-item:hover { background: #f1f3f4; }
-      .ctx-menu-label { padding: 4px 12px; font-size: 10px; color: #9aa0a6; border-bottom: 1px solid #e8eaed; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
       .settings-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
       .mode-toggle { display: flex; border: 1px solid #dadce0; border-radius: 4px; }
       .mode-btn { padding: 3px 8px; font-size: 10px; cursor: pointer; color: #5f6368; user-select: none; }
@@ -870,36 +866,66 @@
     return '';
   }
 
-  function openCtxMenu(shadow, x, y, text) {
-    closeCtxMenu(shadow);
+  // The menu attaches to document.body (not the shadow root) because the
+  // in-page panel has overflow:hidden on its #panel wrapper; rendering a
+  // position:fixed child inside the shadow was getting clipped. Inline
+  // styles stand in for the shadow-scoped CSS we no longer inherit.
+  const CTX_MENU_ID = 'felix-tm-ctx-menu';
+  function openCtxMenu(_shadow, x, y, text) {
+    closeCtxMenu();
     const menu = document.createElement('div');
-    menu.className = 'ctx-menu';
-    menu.style.left = `${x}px`;
-    menu.style.top = `${y}px`;
+    menu.id = CTX_MENU_ID;
+    menu.style.cssText = [
+      'position:fixed',
+      'z-index:2147483647',
+      'background:#fff',
+      'border:1px solid #dadce0',
+      'border-radius:6px',
+      'box-shadow:0 4px 12px rgba(0,0,0,0.15)',
+      'min-width:200px',
+      'padding:4px 0',
+      'font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      'font-size:13px',
+      'color:#202124',
+      'user-select:none',
+    ].join(';');
+
     const label = document.createElement('div');
-    label.className = 'ctx-menu-label';
     label.textContent = text.length > 40 ? text.slice(0, 40) + '…' : text;
+    label.style.cssText = 'padding:4px 12px;font-size:11px;color:#9aa0a6;border-bottom:1px solid #e8eaed;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px';
     menu.appendChild(label);
+
     const mkItem = (caption, onPick) => {
       const item = document.createElement('div');
-      item.className = 'ctx-menu-item';
       item.textContent = caption;
+      item.style.cssText = 'padding:7px 14px;cursor:pointer;white-space:nowrap';
+      item.addEventListener('mouseenter', () => { item.style.background = '#f1f3f4'; });
+      item.addEventListener('mouseleave', () => { item.style.background = ''; });
       item.addEventListener('mousedown', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
         onPick();
-        closeCtxMenu(shadow);
+        closeCtxMenu();
       });
       menu.appendChild(item);
     };
     mkItem('用語として用語集へ', () => sendGlossaryAction(text, 'add', 'term'));
     mkItem('訳語として用語集へ', () => sendGlossaryAction(text, 'add', 'translation'));
     mkItem('用語集で検索', () => sendGlossaryAction(text, 'browse'));
-    shadow.appendChild(menu);
-    // Dismiss on next outside-click / escape.
+
+    document.body.appendChild(menu);
+
+    // Clamp to viewport so the menu doesn't shoot off the right or
+    // bottom edge when the cursor is near those boundaries.
+    const rect = menu.getBoundingClientRect();
+    const maxX = window.innerWidth - rect.width - 4;
+    const maxY = window.innerHeight - rect.height - 4;
+    menu.style.left = Math.max(4, Math.min(x, maxX)) + 'px';
+    menu.style.top = Math.max(4, Math.min(y, maxY)) + 'px';
+
     const dismiss = (ev) => {
       if (ev.type === 'keydown' && ev.key !== 'Escape') return;
-      closeCtxMenu(shadow);
+      closeCtxMenu();
     };
     setTimeout(() => {
       document.addEventListener('mousedown', dismiss, { once: true, capture: true });
@@ -907,9 +933,8 @@
     }, 0);
   }
 
-  function closeCtxMenu(shadow) {
-    if (!shadow) return;
-    const existing = shadow.querySelector('.ctx-menu');
+  function closeCtxMenu() {
+    const existing = document.getElementById(CTX_MENU_ID);
     if (existing) existing.remove();
   }
 
