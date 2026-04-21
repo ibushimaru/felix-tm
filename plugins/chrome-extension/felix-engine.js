@@ -604,7 +604,7 @@ var FelixEngine = (() => {
    * Extracts number tokens from query, source, and target by position order,
    * then substitutes where source and query differ.
    */
-  function numberPlacement(query, tmSource, tmTarget) {
+  function numberPlacement(query, tmSource, tmTarget, glossaryData) {
     if (!query || !tmSource || !tmTarget) return { placed: false };
     if (query === tmSource) return { placed: false };
 
@@ -646,7 +646,7 @@ var FelixEngine = (() => {
       return out;
     }
 
-    const nnd = nonNumericDiffs(query, tmSource);
+    const nnd = nonNumericDiffs(query, tmSource, glossaryData);
     const qMasked = maskRanges(query, nnd.map(d => ({ start: d.qStart, end: d.qEnd })));
     const sMasked = maskRanges(tmSource, nnd.map(d => ({ start: d.sStart, end: d.sEnd })));
 
@@ -734,43 +734,98 @@ var FelixEngine = (() => {
   }
 
   /**
+   * Build a glossary-aware token stream. Each element is
+   * { text, start, end } where start/end are char offsets in the
+   * original string. Glossary-entry occurrences collapse into a single
+   * atomic token so downstream DP aligns on lexical units instead of
+   * accidentally-shared characters (e.g. `体` between `ランダム4体` and
+   * `全体`, or `確率` between `中確率` and `低確率`). Non-glossary text
+   * falls back to char tokens (CJK / single-word) or whitespace-split
+   * word tokens (Western). When glossaryData is empty this is identical
+   * to the old char/word tokenizer.
+   */
+  function tokenizeGlossaryAware(text, glossaryData, useChar) {
+    const atoms = [];
+    if (glossaryData && glossaryData.length) {
+      const lower = text.toLowerCase();
+      for (const g of glossaryData) {
+        const term = g && g.term;
+        if (!term) continue;
+        const tl = term.toLowerCase();
+        let pos = 0;
+        while (pos <= text.length - term.length) {
+          const idx = lower.indexOf(tl, pos);
+          if (idx === -1) break;
+          atoms.push({ start: idx, end: idx + term.length });
+          pos = idx + term.length;
+        }
+      }
+      atoms.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+      const kept = [];
+      let lastEnd = 0;
+      for (const a of atoms) {
+        if (a.start < lastEnd) continue;
+        kept.push(a);
+        lastEnd = a.end;
+      }
+      atoms.length = 0;
+      atoms.push(...kept);
+    }
+
+    const tokens = [];
+    function pushPlain(start, end) {
+      if (start >= end) return;
+      if (useChar) {
+        for (let k = start; k < end; k++) {
+          tokens.push({ text: text[k], start: k, end: k + 1 });
+        }
+      } else {
+        let k = start;
+        while (k < end) {
+          while (k < end && text[k] === ' ') k++;
+          if (k >= end) break;
+          let we = k;
+          while (we < end && text[we] !== ' ') we++;
+          tokens.push({ text: text.substring(k, we), start: k, end: we });
+          k = we;
+        }
+      }
+    }
+    let cursor = 0;
+    for (const a of atoms) {
+      pushPlain(cursor, a.start);
+      tokens.push({ text: text.substring(a.start, a.end), start: a.start, end: a.end });
+      cursor = a.end;
+    }
+    pushPlain(cursor, text.length);
+    return tokens;
+  }
+
+  /**
    * Extract non-numeric substitution pairs from query vs source diff.
    * Returns [{ qText, sText, qStart, qEnd, sStart, sEnd }] — parts that
-   * changed but aren't numbers, plus the char-level span each side
-   * occupies in its source string. The positions let the UI mark the
-   * specific diff region instead of searching by string content, which
-   * would false-positive when the same text also appears in matched
-   * regions elsewhere in the sentence.
+   * changed in a lexical sense, plus the char span each side occupies in
+   * its original string.
+   *
+   * Glossary awareness: when `glossaryData` is passed, every glossary
+   * entry occurrence becomes an atomic token before DP runs. Diff
+   * boundaries therefore always coincide with lexical units — a registered
+   * pair fires per-diff glossary reliably, red/yellow uncovered marks
+   * wrap the full term, and click-to-prefill carries the whole key. The
+   * same code handles JP-CN and JP-EN without per-language branching.
+   *
+   * Digit-only variance filter: a diff whose two sides share the same
+   * non-digit skeleton (`2ターンの間 ↔ 3ターンの間`, or the older
+   * pure-numeric `2 ↔ 3`) isn't a lexical substitution — it's a number
+   * swap that numberPlacement handles positionally. Those diffs are
+   * dropped here so the translator doesn't have to register every
+   * numeric variant of the same phrase as a separate glossary entry.
    */
-  function nonNumericDiffs(query, tmSource) {
+  function nonNumericDiffs(query, tmSource, glossaryData) {
     if (!query || !tmSource || query === tmSource) return [];
     const useChar = containsCJK(query) || query.indexOf(' ') === -1;
-    const qTokens = useChar ? Array.from(query) : tokenize(query);
-    const sTokens = useChar ? Array.from(tmSource) : tokenize(tmSource);
-    const sep = useChar ? '' : ' ';
-
-    // For char mode, token index == char index directly. For word mode we
-    // need to remember where each token starts in the original string so
-    // the UI can address char ranges; the lookup below handles both.
-    function buildTokenCharPos(text, tokens) {
-      const pos = new Array(tokens.length + 1);
-      let cursor = 0;
-      for (let k = 0; k < tokens.length; k++) {
-        const idx = text.indexOf(tokens[k], cursor);
-        pos[k] = idx === -1 ? cursor : idx;
-        cursor = pos[k] + tokens[k].length;
-      }
-      pos[tokens.length] = text.length;
-      return pos;
-    }
-    const qCharPos = useChar ? null : buildTokenCharPos(query, qTokens);
-    const sCharPos = useChar ? null : buildTokenCharPos(tmSource, sTokens);
-    const tokStartToChar = (tokStart, tokens, charPos, uc) => uc ? tokStart : charPos[tokStart];
-    const tokEndToChar = (tokEndExcl, tokens, charPos, uc) => {
-      if (uc) return tokEndExcl;
-      if (tokEndExcl <= 0) return 0;
-      return charPos[tokEndExcl - 1] + tokens[tokEndExcl - 1].length;
-    };
+    const qTokens = tokenizeGlossaryAware(query, glossaryData, useChar);
+    const sTokens = tokenizeGlossaryAware(tmSource, glossaryData, useChar);
 
     const n = qTokens.length, m = sTokens.length;
     const dp = [];
@@ -778,66 +833,56 @@ var FelixEngine = (() => {
     for (let j = 0; j <= m; j++) dp[0][j] = j;
     for (let i = 1; i <= n; i++) {
       for (let j = 1; j <= m; j++) {
-        const cost = (useChar ? qTokens[i-1] === sTokens[j-1] : qTokens[i-1].toLowerCase() === sTokens[j-1].toLowerCase()) ? 0 : 1;
+        const cost = qTokens[i-1].text.toLowerCase() === sTokens[j-1].text.toLowerCase() ? 0 : 1;
         dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost);
       }
     }
 
-    // Backtrace — collect non-numeric substitution runs.
-    //
-    // Path tie-breaking: when multiple optimal DP moves are equal in cost,
-    // we prefer insert/delete over substitution so that incidentally-common
-    // characters (e.g. a Japanese particle「を」sitting between a translated
-    // term and a number) can still be recognized as matches. Picking sub
-    // first would merge those common chars into the surrounding diff region
-    // and hide coverage opportunities — e.g. "MINDを5" vs "CRTを45" would
-    // collapse into a single {MINDを, CRTを4} diff that no glossary can
-    // resolve, instead of the intended {MIND, CRT} + numeric-only diff.
+    // Backtrace — collect substitution runs. When tied we prefer
+    // insert/delete over substitution so a stray common token (e.g. a
+    // particle 「を」 stuck between a translated term and a number) stays
+    // a match and doesn't merge the surrounding diff into one
+    // unresolvable region.
+    const DIGIT_STRIP = /[\d.,０-９．，]/g;
     const diffs = [];
-    let i = n, j = m, curQ = [], curS = [];
-    let _qTokStart = null, _qTokEnd = null, _sTokStart = null, _sTokEnd = null;
+    let i = n, j = m;
+    let qTokStart = null, qTokEnd = null, sTokStart = null, sTokEnd = null;
     function flush() {
-      if (curQ.length && curS.length) {
-        const q = curQ.join(sep), s = curS.join(sep);
-        // Skip if both are purely numeric
-        if (!(/^\d+[.,]?\d*$/.test(q) && /^\d+[.,]?\d*$/.test(s))) {
-          diffs.push({
-            qText: q, sText: s,
-            qStart: tokStartToChar(_qTokStart ?? 0, qTokens, qCharPos, useChar),
-            qEnd: tokEndToChar(_qTokEnd ?? 0, qTokens, qCharPos, useChar),
-            sStart: tokStartToChar(_sTokStart ?? 0, sTokens, sCharPos, useChar),
-            sEnd: tokEndToChar(_sTokEnd ?? 0, sTokens, sCharPos, useChar),
-          });
+      if (qTokStart == null && sTokStart == null) return;
+      const qStart = qTokStart != null ? qTokens[qTokStart].start : 0;
+      const qEnd = qTokEnd != null && qTokEnd > 0 ? qTokens[qTokEnd - 1].end : qStart;
+      const sStart = sTokStart != null ? sTokens[sTokStart].start : 0;
+      const sEnd = sTokEnd != null && sTokEnd > 0 ? sTokens[sTokEnd - 1].end : sStart;
+      const q = query.substring(qStart, qEnd);
+      const s = tmSource.substring(sStart, sEnd);
+      if (q.length || s.length) {
+        if (q.replace(DIGIT_STRIP, '') !== s.replace(DIGIT_STRIP, '')) {
+          diffs.push({ qText: q, sText: s, qStart, qEnd, sStart, sEnd });
         }
       }
-      curQ = []; curS = [];
-      _qTokStart = _qTokEnd = _sTokStart = _sTokEnd = null;
+      qTokStart = qTokEnd = sTokStart = sTokEnd = null;
     }
     while (i > 0 || j > 0) {
       if (i > 0 && j > 0) {
-        const match = useChar ? qTokens[i-1] === sTokens[j-1] : qTokens[i-1].toLowerCase() === sTokens[j-1].toLowerCase();
+        const match = qTokens[i-1].text.toLowerCase() === sTokens[j-1].text.toLowerCase();
         if (match && dp[i][j] === dp[i-1][j-1]) { flush(); i--; j--; continue; }
       }
-      // Prefer insert → delete → sub when tied, to preserve later matches.
       if (j > 0 && dp[i][j] === dp[i][j-1] + 1) {
         j--;
-        curS.unshift(sTokens[j]);
-        if (_sTokEnd == null) _sTokEnd = j + 1;
-        _sTokStart = j;
+        if (sTokEnd == null) sTokEnd = j + 1;
+        sTokStart = j;
         continue;
       }
       if (i > 0 && dp[i][j] === dp[i-1][j] + 1) {
         i--;
-        curQ.unshift(qTokens[i]);
-        if (_qTokEnd == null) _qTokEnd = i + 1;
-        _qTokStart = i;
+        if (qTokEnd == null) qTokEnd = i + 1;
+        qTokStart = i;
         continue;
       }
       if (i > 0 && j > 0 && dp[i][j] === dp[i-1][j-1] + 1) {
         i--; j--;
-        curQ.unshift(qTokens[i]); curS.unshift(sTokens[j]);
-        if (_qTokEnd == null) _qTokEnd = i + 1; _qTokStart = i;
-        if (_sTokEnd == null) _sTokEnd = j + 1; _sTokStart = j;
+        if (qTokEnd == null) qTokEnd = i + 1; qTokStart = i;
+        if (sTokEnd == null) sTokEnd = j + 1; sTokStart = j;
         continue;
       }
       break;
@@ -969,7 +1014,7 @@ var FelixEngine = (() => {
    */
   function resolveWithPlacement(query, tmSource, tmTarget, glossaryData, rulesData) {
     let target = tmTarget;
-    let remaining = nonNumericDiffs(query, tmSource);
+    let remaining = nonNumericDiffs(query, tmSource, glossaryData);
     const placements = [];
 
     const indexByCmp = new Map();
@@ -984,7 +1029,7 @@ var FelixEngine = (() => {
     // excluded from `remaining`). numberPlacement itself masks non-numeric
     // diff regions symmetrically so digits inside a diff (e.g. the 4 in
     // ランダム4体 aligned against 全体) don't inflate the count on one side.
-    const np = numberPlacement(query, tmSource, target);
+    const np = numberPlacement(query, tmSource, target, glossaryData);
     if (np.placed) { target = np.target; placements.push('数値'); }
 
     // Per-diff glossary coverage. Felix's glossaryPlacement is restricted to

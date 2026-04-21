@@ -35,8 +35,8 @@ function gloss(pairs) {
   return pairs.map(([term, translation]) => ({ term, translation, cmp: makeCmp(term) }));
 }
 
-function runPipeline({ query, tmData, glossaryData = [], rulesData = [] }) {
-  const matches = search(query, tmData, 0.5);
+function runPipeline({ query, tmData, glossaryData = [], rulesData = [], minScore = 0.5 }) {
+  const matches = search(query, tmData, minScore);
   const top = matches[0] || null;
   if (!top) return { matches, top: null };
   const resolved = resolveWithPlacement(query, top.source, top.target, glossaryData, rulesData);
@@ -110,17 +110,21 @@ test('scenario: ランダム4体 row — what actually hits the cell', () => {
   assert.ok(r.resolved.target.includes('ATK130%'));
   assert.ok(r.resolved.target.includes('在2回合內'));
   assert.ok(r.resolved.target.includes('提升10%'));
-  // CRT got replaced by 爆擊傷害 (glossary).
+  // With glossary-aware DP, both the CRT pair AND the ランダム4体/全体
+  // pair now align as single lexical diffs. Per-diff glossary fires for
+  // each, so the row is fully covered: CRT → 爆擊傷害, 全體 → 隨機4敵人.
   assert.ok(r.resolved.placements.includes('用語'));
   assert.ok(r.resolved.target.includes('爆擊傷害'));
   assert.ok(!r.resolved.target.includes('CRT'));
-  // The ランダム4 ↔ 全 diff could NOT be lifted to the lexical term
-  // (DP segmentation), so it stays uncovered — the old translation 全體
-  // is still present and the cell should carry the unverified signal.
-  assert.equal(r.resolved.covered, false);
-  assert.ok(r.unverifiedRanges.length > 0, 'uncovered diff should produce unverified ranges');
-  // The target string unchanged by any placement still contains 全體.
-  assert.ok(r.resolved.target.includes('全體'));
+  assert.ok(r.resolved.target.includes('隨機4敵人'));
+  // `/全體/` (the slot-path segment) was the one occurrence in target
+  // corresponding to the 全体 source diff — it's been replaced. The
+  // standalone 全體 inside `我方全體的` stays because it's a match region
+  // (both sides have 全体 there), not a diff.
+  assert.ok(r.resolved.target.includes('/隨機4敵人/'));
+  assert.ok(r.resolved.target.includes('我方全體的'));
+  assert.equal(r.resolved.covered, true);
+  assert.equal(r.unverifiedRanges.length, 0, 'fully covered row: no unverified ranges');
 });
 
 // =========================================================================
@@ -243,6 +247,138 @@ test('scenario: overlap resolution — placed beats unverified inside it', () =>
   assert.deepEqual(described[0], { start: 0, text: 'ABC', kind: 'UNVERIFIED' });
   assert.deepEqual(described[1], { start: 3, text: 'DEF', kind: 'PLACED' });
   assert.deepEqual(described[2], { start: 6, text: 'GHIJ', kind: 'UNVERIFIED' });
+});
+
+// =========================================================================
+// Scenario 5a — DP previously fragmented `中確率 ↔ 低確率` into `{中 ↔ 低}`
+// because char-level DP matched `確率` on both sides. With
+// glossary-aware tokenization the DP sees both as atoms and per-diff
+// glossary fires, so the TM.target's 低機率 gets swapped for 中機率
+// instead of silently staying behind.
+// =========================================================================
+test('scenario: 中確率 vs 低確率 — glossary-aware DP restores the lexical boundary', () => {
+  const q = '対象に中確率で暗闇を付与し、クリティカルダメージを20%UPする';
+  const sSrc = '対象に低確率で暗闇を付与し、クリティカルダメージを15%UPする';
+  const sTgt = '低機率對目標賦予幽暗，暴擊傷害提升15%';
+
+  const r = runPipeline({
+    query: q,
+    tmData: tm([[sSrc, sTgt]]),
+    glossaryData: gloss([
+      ['中確率', '中機率'],
+      ['低確率', '低機率'],
+      ['クリティカルダメージ', '暴擊傷害'],
+    ]),
+  });
+
+  log('top match', { source: r.top.source, score: r.top.score });
+  log('resolved', {
+    placements: r.resolved.placements, covered: r.resolved.covered,
+    target: r.resolved.target,
+    uncovered: r.resolved.uncovered.map(u => ({ q: u.qText, s: u.sText })),
+  });
+
+  assert.equal(r.resolved.covered, true);
+  assert.ok(r.resolved.target.includes('中機率'));
+  assert.ok(!r.resolved.target.includes('低機率'));
+  assert.ok(r.resolved.target.includes('提升20%'));
+});
+
+// =========================================================================
+// Scenario 5b — JP-EN: a multi-word glossary atom (`critical damage`)
+// aligned against its English counterpart (`magic damage`). Char-level
+// DP would match the shared word `damage` and split the diff into
+// `{critical ↔ magic}`, which is not in glossary. Glossary-aware tokens
+// keep the multi-word entries intact.
+// =========================================================================
+test('scenario: critical damage vs magic damage (word-mode, multi-word atoms)', () => {
+  const q = 'deal critical damage to ENEMY';
+  const sSrc = 'deal magic damage to HERO';
+  const sTgt = 'HEROに魔法ダメージを与える';
+
+  const r = runPipeline({
+    query: q,
+    tmData: tm([[sSrc, sTgt]]),
+    glossaryData: gloss([
+      ['critical damage', 'クリティカルダメージ'],
+      ['magic damage', '魔法ダメージ'],
+      ['ENEMY', 'ENEMY'],
+      ['HERO', 'HERO'],
+    ]),
+  });
+
+  log('top match', { source: r.top.source, score: r.top.score });
+  log('resolved', {
+    placements: r.resolved.placements, covered: r.resolved.covered,
+    target: r.resolved.target,
+    uncovered: r.resolved.uncovered.map(u => ({ q: u.qText, s: u.sText })),
+  });
+
+  assert.equal(r.resolved.covered, true);
+  assert.ok(r.resolved.target.includes('クリティカルダメージ'));
+  assert.ok(!r.resolved.target.includes('魔法ダメージ'));
+  assert.ok(r.resolved.target.includes('ENEMYに'));
+  assert.ok(!r.resolved.target.includes('HEROに'));
+});
+
+// =========================================================================
+// Scenario 5c — `HERO ↔ ENEMY` used to split into `{H ↔ EN}` and
+// `{RO ↔ MY}` because DP matched the coincidental `E` and `O`.
+// Glossary atoms keep the whole word as one diff.
+// =========================================================================
+test('scenario: HERO vs ENEMY — no more coincidental-char fragmentation', () => {
+  const q = 'HEROに50ダメージを与える';
+  const sSrc = 'ENEMYに100ダメージを与える';
+  const sTgt = '對 ENEMY 造成 100 點傷害';
+
+  // In this project HERO/ENEMY are kept untranslated on purpose — the
+  // glossary just declares them as atoms so the DP doesn't shred them.
+  const r = runPipeline({
+    query: q,
+    tmData: tm([[sSrc, sTgt]]),
+    glossaryData: gloss([
+      ['HERO', 'HERO'],
+      ['ENEMY', 'ENEMY'],
+    ]),
+    minScore: 0.3,
+  });
+
+  log('top match', { source: r.top.source, score: r.top.score });
+  log('resolved', {
+    placements: r.resolved.placements, covered: r.resolved.covered,
+    target: r.resolved.target,
+    uncovered: r.resolved.uncovered.map(u => ({ q: u.qText, s: u.sText })),
+  });
+
+  assert.equal(r.resolved.covered, true);
+  assert.ok(r.resolved.target.includes('HERO'));
+  assert.ok(!r.resolved.target.includes('ENEMY'));
+  assert.ok(r.resolved.target.includes('50'));
+  assert.ok(!r.resolved.target.includes('100'));
+});
+
+// =========================================================================
+// Scenario 5d — digit-variant phrase (`2ターンの間 ↔ 3ターンの間`) must
+// NOT become a glossary-uncovered diff just because a glossary atom
+// tokenized the one side. Number placement is still the right tool for
+// the numeric slot; the digit-strip filter keeps the diff out of the
+// non-numeric list so numberPlacement can align positions.
+// =========================================================================
+test('scenario: digit-variant phrase stays with number placement', () => {
+  const q = '2ターンの間、攻撃力UP';
+  const sSrc = '3ターンの間、攻撃力UP';
+  const sTgt = '3回合內，ATK UP';
+  const r = runPipeline({
+    query: q,
+    tmData: tm([[sSrc, sTgt]]),
+    glossaryData: gloss([['2ターンの間', '2回合內']]),
+  });
+  log('resolved', { placements: r.resolved.placements, target: r.resolved.target });
+
+  assert.equal(r.resolved.covered, true);
+  assert.ok(r.resolved.placements.includes('数値'));
+  assert.ok(r.resolved.target.includes('2回合內'));
+  assert.ok(!r.resolved.target.includes('3回合內'));
 });
 
 // =========================================================================
