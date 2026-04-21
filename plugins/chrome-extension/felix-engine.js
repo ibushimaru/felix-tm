@@ -112,11 +112,12 @@ var FelixEngine = (() => {
     if (!query || !tmData || !tmData.length) return [];
     const qCmp = makeCmp(query);
     const matches = [];
-    for (const entry of tmData) {
+    for (let i = 0; i < tmData.length; i++) {
+      const entry = tmData[i];
       const sCmp = entry.cmp || makeCmp(entry.source);
       const score = fuzzyScore(qCmp, sCmp, minScore);
       if (score >= minScore) {
-        matches.push({ ...entry, score });
+        matches.push({ ...entry, score, tmIdx: i });
       }
     }
     matches.sort((a, b) => b.score - a.score || (b.refcount || 0) - (a.refcount || 0));
@@ -545,11 +546,12 @@ var FelixEngine = (() => {
 
     const hits = [];
     const qLower = useRegex ? null : query.toLowerCase();
-    for (const entry of tmData) {
+    for (let i = 0; i < tmData.length; i++) {
+      const entry = tmData[i];
       const inSource = re ? re.test(entry.source) : entry.source.toLowerCase().includes(qLower);
       const inTarget = re ? re.test(entry.target) : entry.target.toLowerCase().includes(qLower);
       if (inSource || inTarget) {
-        hits.push({ ...entry, matchField: inSource ? 'source' : 'target' });
+        hits.push({ ...entry, matchField: inSource ? 'source' : 'target', tmIdx: i });
       }
       if (hits.length >= (maxResults || 50)) break;
     }
@@ -562,11 +564,12 @@ var FelixEngine = (() => {
     if (!query || !tmData || !tmData.length) return [];
     const qCmp = makeCmp(query);
     const matches = [];
-    for (const entry of tmData) {
-      const tCmp = makeCmp(entry.target);
+    for (let i = 0; i < tmData.length; i++) {
+      const entry = tmData[i];
+      const tCmp = entry.targetCmp || makeCmp(entry.target);
       const score = fuzzyScore(qCmp, tCmp, minScore);
       if (score >= minScore) {
-        matches.push({ ...entry, score });
+        matches.push({ ...entry, score, tmIdx: i });
       }
     }
     matches.sort((a, b) => b.score - a.score);
@@ -644,7 +647,7 @@ var FelixEngine = (() => {
    * Extracts number tokens from query, source, and target by position order,
    * then substitutes where source and query differ.
    */
-  function numberPlacement(query, tmSource, tmTarget, glossaryData) {
+  function numberPlacement(query, tmSource, tmTarget, glossaryData, precomputedDiffs) {
     if (!query || !tmSource || !tmTarget) return { placed: false };
     if (query === tmSource) return { placed: false };
 
@@ -686,7 +689,9 @@ var FelixEngine = (() => {
       return out;
     }
 
-    const nnd = nonNumericDiffs(query, tmSource, glossaryData);
+    // When the caller already ran nonNumericDiffs (e.g. resolveWithPlacement),
+    // reuse the result instead of paying for a second DP pass.
+    const nnd = precomputedDiffs || nonNumericDiffs(query, tmSource, glossaryData);
     const qMasked = maskRanges(query, nnd.map(d => ({ start: d.qStart, end: d.qEnd })));
     const sMasked = maskRanges(tmSource, nnd.map(d => ({ start: d.sStart, end: d.sEnd })));
 
@@ -1090,24 +1095,37 @@ var FelixEngine = (() => {
    * multiple diffs in ways that are hard to attribute safely, and we'd
    * rather under-cover (stop) than over-cover (wrong insert).
    */
+  // Cache the cmp → entry index keyed on the glossaryData array
+  // reference. Auto Translate resolves placement once per row and each
+  // row used to rebuild this index by scanning the whole glossary; a
+  // WeakMap lets us reuse one build across every row until the caller
+  // swaps in a fresh array (which `DATA_CHANGED` does on every save).
+  const _glossaryIndexCache = new WeakMap();
+  function glossaryIndex(glossaryData) {
+    if (!glossaryData || !glossaryData.length) return null;
+    let cached = _glossaryIndexCache.get(glossaryData);
+    if (cached) return cached;
+    cached = new Map();
+    for (const g of glossaryData) {
+      const c = g.cmp || makeCmp(g.term);
+      if (!cached.has(c)) cached.set(c, g);
+    }
+    _glossaryIndexCache.set(glossaryData, cached);
+    return cached;
+  }
+
   function resolveWithPlacement(query, tmSource, tmTarget, glossaryData, rulesData) {
     let target = tmTarget;
     let remaining = nonNumericDiffs(query, tmSource, glossaryData);
     const placements = [];
 
-    const indexByCmp = new Map();
-    if (glossaryData && glossaryData.length) {
-      for (const g of glossaryData) {
-        const c = g.cmp || makeCmp(g.term);
-        if (!indexByCmp.has(c)) indexByCmp.set(c, g);
-      }
-    }
+    const indexByCmp = glossaryIndex(glossaryData) || new Map();
 
     // Number placement handles numeric diffs (which nonNumericDiffs already
     // excluded from `remaining`). numberPlacement itself masks non-numeric
     // diff regions symmetrically so digits inside a diff (e.g. the 4 in
     // ランダム4体 aligned against 全体) don't inflate the count on one side.
-    const np = numberPlacement(query, tmSource, target, glossaryData);
+    const np = numberPlacement(query, tmSource, target, glossaryData, remaining);
     if (np.placed) { target = np.target; placements.push('数値'); }
 
     // Per-diff glossary coverage. Felix's glossaryPlacement is restricted to
@@ -1334,13 +1352,31 @@ var FelixEngine = (() => {
     if (!original || !placed || original === placed) {
       return original === placed ? [] : [{ idx: 0, len: (placed || '').length }];
     }
-    const n = original.length, m = placed.length;
+    // Strip common prefix / suffix before DP. Placement output is
+    // usually a tiny edit of TM.target, so this collapses the hot
+    // quadratic work to a small band around the actual changes
+    // instead of filling a 500×500 matrix for a 3-char number swap.
+    let pre = 0;
+    const maxPre = Math.min(original.length, placed.length);
+    while (pre < maxPre && original.charCodeAt(pre) === placed.charCodeAt(pre)) pre++;
+    let suf = 0;
+    const maxSuf = Math.min(original.length - pre, placed.length - pre);
+    while (suf < maxSuf
+        && original.charCodeAt(original.length - 1 - suf)
+        === placed.charCodeAt(placed.length - 1 - suf)) suf++;
+    const oCore = original.substring(pre, original.length - suf);
+    const pCore = placed.substring(pre, placed.length - suf);
+    if (!oCore && !pCore) return [];
+    if (!oCore) return [{ idx: pre, len: pCore.length }];
+    if (!pCore) return [];
+
+    const n = oCore.length, m = pCore.length;
     const dp = [];
     for (let i = 0; i <= n; i++) { dp[i] = new Array(m + 1); dp[i][0] = i; }
     for (let j = 0; j <= m; j++) dp[0][j] = j;
     for (let i = 1; i <= n; i++) {
       for (let j = 1; j <= m; j++) {
-        const cost = original[i-1] === placed[j-1] ? 0 : 1;
+        const cost = oCore[i-1] === pCore[j-1] ? 0 : 1;
         dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost);
       }
     }
@@ -1354,7 +1390,7 @@ var FelixEngine = (() => {
       }
     }
     while (i > 0 || j > 0) {
-      if (i > 0 && j > 0 && original[i-1] === placed[j-1] && dp[i][j] === dp[i-1][j-1]) {
+      if (i > 0 && j > 0 && oCore[i-1] === pCore[j-1] && dp[i][j] === dp[i-1][j-1]) {
         flush();
         i--; j--;
         continue;
@@ -1378,6 +1414,10 @@ var FelixEngine = (() => {
       break;
     }
     flush();
+    // Offset the core-local positions back into the full-string coordinates.
+    if (pre) {
+      for (const r of regions) r.idx += pre;
+    }
     return regions.reverse();
   }
 

@@ -33,7 +33,17 @@
   let panelMode = 'translate'; // 'translate' | 'review'
   let concRegex = false;
   const _undoStack = []; // { ssId, range, oldValue, newValue }
+  const UNDO_STACK_MAX = 50;
   let _pollTimer = null;
+
+  function pushUndo(entry) {
+    _undoStack.push(entry);
+    // Cap the stack so a long translation session doesn't grow unbounded.
+    // 50 is deep enough to cover typical undo depth; the oldest entry
+    // that falls off was for a cell the translator edited ~50 inserts
+    // ago, i.e. beyond any realistic undo reach.
+    while (_undoStack.length > UNDO_STACK_MAX) _undoStack.shift();
+  }
 
   // Register cleanup for next re-injection
   window.__felixTMCleanup = () => {
@@ -656,7 +666,7 @@
         const pct = Math.round(m.score * 100);
         const cls = pct >= 90 ? 'score-high' : pct >= 70 ? 'score-mid' : 'score-low';
         const meta = m.refcount ? `${t('used')} ${m.refcount}x` : '';
-        const tmIdx = tmData.indexOf(m) !== -1 ? tmData.indexOf(m) : tmData.findIndex(e => e.source === m.source && e.target === m.target);
+        const tmIdx = typeof m.tmIdx === 'number' ? m.tmIdx : tmData.findIndex(e => e.source === m.source && e.target === m.target);
 
         let srcHtml, memSrcHtml = '', tgtDisplay, insertTarget, placed = false;
         if (isReverse) {
@@ -905,19 +915,27 @@
     menu.style.left = Math.max(4, Math.min(x, maxX)) + 'px';
     menu.style.top = Math.max(4, Math.min(y, maxY)) + 'px';
 
+    // One AbortController tears down whichever of the two dismiss
+    // listeners (mousedown / Escape) fires first, so the other doesn't
+    // linger on `document` waiting forever.
+    const abort = new AbortController();
     const dismiss = (ev) => {
       if (ev.type === 'keydown' && ev.key !== 'Escape') return;
+      abort.abort();
       closeCtxMenu();
     };
     setTimeout(() => {
-      document.addEventListener('mousedown', dismiss, { once: true, capture: true });
-      document.addEventListener('keydown', dismiss, { once: true, capture: true });
+      document.addEventListener('mousedown', dismiss, { capture: true, signal: abort.signal });
+      document.addEventListener('keydown', dismiss, { capture: true, signal: abort.signal });
     }, 0);
+    _ctxMenuAbort = abort;
   }
 
+  let _ctxMenuAbort = null;
   function closeCtxMenu() {
     const existing = document.getElementById(CTX_MENU_ID);
     if (existing) existing.remove();
+    if (_ctxMenuAbort) { _ctxMenuAbort.abort(); _ctxMenuAbort = null; }
   }
 
   function sendGlossaryAction(text, mode, prefillSide) {
@@ -980,7 +998,7 @@
 
     el.innerHTML = `<div style="font-size:10px;color:#1a73e8;margin-bottom:4px">Concordance: ${hits.length} hits (${ms}ms)</div>` +
       hits.map((h, i) => {
-        const tmIdx = tmData.findIndex(e => e.source === h.source && e.target === h.target);
+        const tmIdx = typeof h.tmIdx === 'number' ? h.tmIdx : tmData.findIndex(e => e.source === h.source && e.target === h.target);
         return `<div class="match" data-idx="${i}" data-target="${escA(h.target)}" data-tm-idx="${tmIdx}">
           <div class="match-source">${highlightTerm(h.source)}</div>
           <div class="match-target">${highlightTerm(h.target)}</div>
@@ -1074,7 +1092,7 @@
     const fullRange = sheetRef(targetRef);
     const oldResp = await msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: fullRange });
     const oldValue = oldResp && oldResp.value ? oldResp.value : '';
-    _undoStack.push({ ssId, range: fullRange, oldValue, newValue: value });
+    pushUndo({ ssId, range: fullRange, oldValue, newValue: value });
 
     // Use the formatted write with empty ranges so any residual
     // textFormatRuns from a previous insert (older builds painted the
@@ -1231,7 +1249,7 @@
       showToast(`Writing ${updates.length} cells…`);
       const resp = await msg('SHEETS_API_BATCH_WRITE', { spreadsheetId: ssId, updates });
       if (resp && resp.error) { showToast(`Error: ${resp.error}`); return; }
-      _undoStack.push({ ssId, batch: undoEntries });
+      pushUndo({ ssId, batch: undoEntries });
     }
 
     moveCursorTo(`${srcCol}${landingRow}`);
