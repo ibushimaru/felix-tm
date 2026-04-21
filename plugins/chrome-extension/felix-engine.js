@@ -777,7 +777,7 @@ var FelixEngine = (() => {
       if (start >= end) return;
       if (useChar) {
         for (let k = start; k < end; k++) {
-          tokens.push({ text: text[k], start: k, end: k + 1 });
+          tokens.push({ text: text[k], start: k, end: k + 1, atom: false });
         }
       } else {
         let k = start;
@@ -786,7 +786,7 @@ var FelixEngine = (() => {
           if (k >= end) break;
           let we = k;
           while (we < end && text[we] !== ' ') we++;
-          tokens.push({ text: text.substring(k, we), start: k, end: we });
+          tokens.push({ text: text.substring(k, we), start: k, end: we, atom: false });
           k = we;
         }
       }
@@ -794,11 +794,24 @@ var FelixEngine = (() => {
     let cursor = 0;
     for (const a of atoms) {
       pushPlain(cursor, a.start);
-      tokens.push({ text: text.substring(a.start, a.end), start: a.start, end: a.end });
+      tokens.push({ text: text.substring(a.start, a.end), start: a.start, end: a.end, atom: true });
       cursor = a.end;
     }
     pushPlain(cursor, text.length);
     return tokens;
+  }
+
+  // Classify a token for run-boundary decisions in nonNumericDiffs. We
+  // flush a diff run between consecutive substitutions whose token types
+  // differ on both sides, so a glossary atom paired with its counterpart
+  // never merges with an adjacent digit-only sub (e.g. `MATK↔ATK` plus
+  // `1↔2` stops collapsing into a single `{MATK1, ATK2}` run that loses
+  // both the glossary lookup and the number-placement slot).
+  const DIGIT_TOKEN = /^[\d.,０-９．，]+$/;
+  function tokenTypeOf(tok) {
+    if (tok.atom) return 'atom';
+    if (DIGIT_TOKEN.test(tok.text)) return 'digit';
+    return 'other';
   }
 
   /**
@@ -847,8 +860,21 @@ var FelixEngine = (() => {
     const diffs = [];
     let i = n, j = m;
     let qTokStart = null, qTokEnd = null, sTokStart = null, sTokEnd = null;
+    // Track whether the current run is all-sub (no insert/delete) plus the
+    // token-types of its accumulated sides. Used to split adjacent subs
+    // whose types change in lockstep — the MATK↔ATK (atom) followed by
+    // 1↔2 (digit) case, where merging would make the glossary lookup
+    // target `MATK1`/`ATK2` and silently disable both glossary and
+    // number placement. Mixed runs (any insert/delete) stay fused so the
+    // digit-strip safety net keeps working for digit-variant phrases like
+    // `2ターンの間 ↔ 3ターンの間`.
+    let runAllSubs = true;
+    let runQType = null, runSType = null;
     function flush() {
-      if (qTokStart == null && sTokStart == null) return;
+      if (qTokStart == null && sTokStart == null) {
+        runAllSubs = true; runQType = null; runSType = null;
+        return;
+      }
       const qStart = qTokStart != null ? qTokens[qTokStart].start : 0;
       const qEnd = qTokEnd != null && qTokEnd > 0 ? qTokens[qTokEnd - 1].end : qStart;
       const sStart = sTokStart != null ? sTokens[sTokStart].start : 0;
@@ -861,6 +887,7 @@ var FelixEngine = (() => {
         }
       }
       qTokStart = qTokEnd = sTokStart = sTokEnd = null;
+      runAllSubs = true; runQType = null; runSType = null;
     }
     while (i > 0 || j > 0) {
       if (i > 0 && j > 0) {
@@ -871,18 +898,29 @@ var FelixEngine = (() => {
         j--;
         if (sTokEnd == null) sTokEnd = j + 1;
         sTokStart = j;
+        runAllSubs = false;
+        runSType = tokenTypeOf(sTokens[j]);
         continue;
       }
       if (i > 0 && dp[i][j] === dp[i-1][j] + 1) {
         i--;
         if (qTokEnd == null) qTokEnd = i + 1;
         qTokStart = i;
+        runAllSubs = false;
+        runQType = tokenTypeOf(qTokens[i]);
         continue;
       }
       if (i > 0 && j > 0 && dp[i][j] === dp[i-1][j-1] + 1) {
+        const nextQType = tokenTypeOf(qTokens[i-1]);
+        const nextSType = tokenTypeOf(sTokens[j-1]);
+        if (runAllSubs && runQType !== null
+            && nextQType !== runQType && nextSType !== runSType) {
+          flush();
+        }
         i--; j--;
         if (qTokEnd == null) qTokEnd = i + 1; qTokStart = i;
         if (sTokEnd == null) sTokEnd = j + 1; sTokStart = j;
+        runQType = nextQType; runSType = nextSType;
         continue;
       }
       break;

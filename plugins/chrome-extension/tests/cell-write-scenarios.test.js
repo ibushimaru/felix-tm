@@ -358,6 +358,47 @@ test('scenario: HERO vs ENEMY — no more coincidental-char fragmentation', () =
 });
 
 // =========================================================================
+// Scenario 5e — glossary atom immediately adjacent to a differing digit
+// run on both sides. Before the run-boundary flush, DP merged the
+// atom-sub with the digit-sub into one diff ({MATK1, ATK2}), and
+// both glossary lookup and number placement lost the slot. The sub-to-
+// sub type-boundary flush splits them: {MATK, ATK} goes through
+// glossary; {1, 2} becomes a filtered pure-numeric diff that
+// numberPlacement handles positionally.
+// =========================================================================
+test('scenario: MATK vs ATK with adjacent digits — atoms no longer swallow the digit', () => {
+  const q = '{attackType.1}/{attackRange}/単体/{category} MATK100%のダメージを与え、2ターンの間、MINDを5%UPする';
+  const sSrc = '{attackType.1}/{attackRange}/単体/{category} ATK200%のダメージを与え、3ターンの間、CRTを45%UPする';
+  const sTgt = '{attackType.1}/{attackRange}/單體/{category} 造成ATK200%傷害，在3回合內，CRT提升45%';
+
+  const r = runPipeline({
+    query: q,
+    tmData: tm([[sSrc, sTgt]]),
+    glossaryData: gloss([
+      ['MATK', 'MATK'],
+      ['ATK', 'ATK'],
+      ['MIND', 'MIND'],
+      ['CRT', 'CRT'],
+    ]),
+  });
+  log('resolved', { placements: r.resolved.placements, covered: r.resolved.covered, target: r.resolved.target });
+  log('uncovered', r.resolved.uncovered.map(u => ({ q: u.qText, s: u.sText, qReg: u.qRegistered, sReg: u.sRegistered })));
+
+  // ATK → MATK via per-diff glossary, CRT → MIND via per-diff glossary.
+  assert.ok(r.resolved.placements.includes('用語'));
+  assert.ok(r.resolved.target.includes('造成MATK'));
+  assert.ok(!r.resolved.target.match(/造成ATK[^M]/));
+  // Numbers all aligned: 200→100, 3→2, 45→5.
+  assert.ok(r.resolved.placements.includes('数値'));
+  assert.ok(r.resolved.target.includes('MATK100%'));
+  assert.ok(r.resolved.target.includes('在2回合內'));
+  assert.ok(r.resolved.target.includes('提升5%'));
+  assert.ok(!r.resolved.target.includes('200'));
+  assert.ok(!r.resolved.target.includes('45'));
+  assert.equal(r.resolved.covered, true);
+});
+
+// =========================================================================
 // Scenario 5d — digit-variant phrase (`2ターンの間 ↔ 3ターンの間`) must
 // NOT become a glossary-uncovered diff just because a glossary atom
 // tokenized the one side. Number placement is still the right tool for
