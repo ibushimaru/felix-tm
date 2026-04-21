@@ -1435,14 +1435,26 @@
   // IndexedDB has no onChanged event, so manage page broadcasts DATA_CHANGED
   chrome.runtime.onMessage.addListener((m2) => {
     if (m2.type === 'DATA_CHANGED') {
-      msg('TM_LOAD').then(data => { tmData = data || []; updateBadge(); if (lastCellValue) doSearch(); });
-      msg('GLOSSARY_LOAD').then(data => { glossaryData = data || []; updateBadge(); });
-      msg('RULES_LOAD').then(data => { rulesData = data || []; });
+      // Re-fetch all three in parallel, then run a single doSearch so
+      // the card picks up TM, glossary, and rule changes atomically.
+      // Without the single doSearch at the end, adding a glossary
+      // entry from the side panel or via right-click would leave the
+      // active card painted red / underlined even though the new
+      // entry would now resolve it.
+      Promise.all([
+        msg('TM_LOAD').then(data => { tmData = data || []; }),
+        msg('GLOSSARY_LOAD').then(data => { glossaryData = data || []; }),
+        msg('RULES_LOAD').then(data => { rulesData = data || []; }),
+      ]).then(() => {
+        updateBadge();
+        if (lastCellValue) doSearch();
+      });
     }
     if (m2.type === 'SETTINGS_CHANGED') {
       msg('SETTINGS_LOAD').then(data => {
         if (data && Object.keys(data).length) {
           const oldSourceCol = settings.sourceCol;
+          const oldMinScore = settings.minScore;
           Object.assign(settings, data);
           updateShortcutLabel();
           applyPanelLang();
@@ -1453,6 +1465,13 @@
           if (settings.sourceCol !== oldSourceCol) {
             _sourceCache = {};
             preloadSourceCache();
+          }
+          // If the threshold or source column changed, current results
+          // are stale — rerun so the visible card reflects the new
+          // settings without waiting for the translator to touch a
+          // different cell.
+          if ((settings.minScore !== oldMinScore || settings.sourceCol !== oldSourceCol) && lastCellValue) {
+            doSearch();
           }
         }
       });
