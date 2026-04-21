@@ -209,7 +209,6 @@
       .score-mid { background: #fff; color: #202124; border: 1px solid #f9ab00; }
       .score-low { background: #fff; color: #202124; border: 1px solid #ea4335; }
       .match-source { color: #5f6368; font-size: 11px; margin-top: 3px; word-break: break-all; }
-      .diff-missing { margin-left: 4px; }
       .match-target { color: #202124; font-size: 12px; margin-top: 2px; word-break: break-all; }
       .match-meta { color: #9aa0a6; font-size: 10px; margin-top: 3px; }
       .empty { text-align: center; color: #9aa0a6; padding: 16px 8px; font-size: 12px; }
@@ -231,7 +230,6 @@
       .diff-sub { background: #fce8e6; color: #c5221f; }
       .diff-del { background: #fce8e6; color: #c5221f; }
       .diff-ins { background: #fce8e6; color: #c5221f; }
-      .shortcut { font-size: 10px; color: #9aa0a6; }
       .gloss_match { text-decoration: underline; text-decoration-color: #1a73e8; text-underline-offset: 2px; cursor: pointer; position: relative; }
       .gloss_match::after { content: attr(data-tip); display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
       .gloss_match:hover::after { display: block; }
@@ -462,10 +460,9 @@
       if (!text) return;  // no usable text → leave the browser default menu
       e.preventDefault();
       e.stopPropagation();
-      openCtxMenu(shadow, e.clientX, e.clientY, text);
+      openCtxMenu(e.clientX, e.clientY, text);
     });
 
-    updateShortcutLabel();
     applyPanelLang();
     return shadow;
   }
@@ -502,11 +499,6 @@
       s.getElementById('badge').textContent = parts.join(' | ');
     }
   }
-
-  /** Shortcut legend used to be shown at the bottom of the panel but has
-   *  been removed; keep this as a no-op so existing call sites don't need
-   *  branching while we decide whether / how to resurface the hints. */
-  function updateShortcutLabel() {}
 
   // === Search ===
   // Auto-detects forward vs reverse based on which column is selected
@@ -555,32 +547,13 @@
     return html;
   }
 
-  /**
-   * Complement of the placement-changed regions over the full string.
-   * When uncovered > 0, the non-placed range is where the old TM
-   * translation persists — the exact char can't be located without a
-   * glossary entry, but we can honestly scope the risk to "within this
-   * range, somewhere" in the card preview.
-   */
-  function unverifiedRegionsEngineLocal(placedRegions, placedLen) {
-    const out = [];
-    let cursor = 0;
-    const sorted = [...placedRegions].sort((a, b) => a.idx - b.idx);
-    for (const r of sorted) {
-      if (r.idx > cursor) out.push({ idx: cursor, len: r.idx - cursor });
-      cursor = r.idx + r.len;
-    }
-    if (cursor < placedLen) out.push({ idx: cursor, len: placedLen - cursor });
-    return out;
-  }
-
   function placedHighlightHtml(original, placed, uncoveredCount) {
     const placedRegions = FelixEngine.findDiffRegions(original, placed);
     const regions = placedRegions.map(r => ({
       idx: r.idx, len: r.len, cls: 'placed-ins',
     }));
     if (uncoveredCount > 0) {
-      for (const r of unverifiedRegionsEngineLocal(placedRegions, placed.length)) {
+      for (const r of FelixEngine.unverifiedRegions(placedRegions, placed.length)) {
         regions.push({ idx: r.idx, len: r.len, cls: 'placed-unverified' });
       }
     }
@@ -880,7 +853,7 @@
   // position:fixed child inside the shadow was getting clipped. Inline
   // styles stand in for the shadow-scoped CSS we no longer inherit.
   const CTX_MENU_ID = 'felix-tm-ctx-menu';
-  function openCtxMenu(_shadow, x, y, text) {
+  function openCtxMenu(x, y, text) {
     closeCtxMenu();
     const menu = document.createElement('div');
     menu.id = CTX_MENU_ID;
@@ -1411,15 +1384,8 @@
       sendResponse({ spreadsheetId: getSpreadsheetId(), sheetName });
       return;
     }
-    if (m.type === 'SHORTCUTS_UPDATED') {
-      if (m.get) settings.shortcutGet = m.get;
-      if (m.set) settings.shortcutSet = m.set;
-      updateShortcutLabel();
-      return;
-    }
     if (m.type === 'SETTINGS_UPDATED' && m.settings) {
       Object.assign(settings, m.settings);
-      updateShortcutLabel();
       applyPanelLang();
       const s = getShadow();
       if (s) {
@@ -1431,19 +1397,6 @@
       writeToTarget(m.value);
       sendResponse({ ok: true });
       return;
-    }
-    if (m.type === 'GET_TARGET_CELL') {
-      const ref = getCellRef();
-      const match = ref ? ref.match(/([A-Z]+)(\d+)/i) : null;
-      if (match) {
-        const targetRef = (m.targetCol || settings.targetCol || 'B') + match[2];
-        const ssId = getSpreadsheetId();
-        msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: sheetRef(targetRef) }).then(r => {
-          sendResponse({ value: r && r.value ? r.value : '', ref: targetRef });
-        });
-        return true;
-      }
-      sendResponse({ value: '', ref: '' });
     }
   });
 
@@ -1472,7 +1425,6 @@
           const oldSourceCol = settings.sourceCol;
           const oldMinScore = settings.minScore;
           Object.assign(settings, data);
-          updateShortcutLabel();
           applyPanelLang();
           const s = getShadow();
           if (s) {

@@ -80,26 +80,6 @@ function openSidePanel(windowId) {
   });
 }
 
-// Inject content script programmatically when needed
-async function ensureContentScript(tabId) {
-  try {
-    // Check if already injected by sending a ping
-    await chrome.tabs.sendMessage(tabId, { type: 'PING' });
-    return { injected: true, method: 'already' };
-  } catch {
-    // Not injected yet — inject programmatically
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        files: ['content.js'],
-      });
-      return { injected: true, method: 'programmatic' };
-    } catch (err) {
-      return { injected: false, error: err.message };
-    }
-  }
-}
-
 // Message routing
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
@@ -151,12 +131,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
 
-  // Cell change: forward to all listeners
-  if (msg.type === 'CELL_CHANGED') {
-    chrome.runtime.sendMessage(msg).catch(() => {});
-    return;
-  }
-
   // Broadcast to both content scripts (Sheets tabs) and extension pages
   // (side panel, popup). chrome.tabs.sendMessage reaches only content scripts,
   // so we also call chrome.runtime.sendMessage to cover extension contexts.
@@ -167,45 +141,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.tabs.sendMessage(tab.id, msg.payload).catch(() => {});
       }
     });
-    return;
-  }
-
-  // Ensure content script is injected, then forward message to it
-  if (msg.type === 'ENSURE_CONTENT_SCRIPT') {
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-      if (tabs[0]) {
-        const result = await ensureContentScript(tabs[0].id);
-        sendResponse(result);
-      } else {
-        sendResponse({ injected: false, error: 'No active tab' });
-      }
-    });
-    return true;
-  }
-
-  // Forward to content script in active tab
-  if (msg.type === 'TO_CONTENT') {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, msg.payload, (resp) => {
-          sendResponse(resp || {});
-        });
-      } else {
-        sendResponse({ error: 'No active tab' });
-      }
-    });
-    return true;
-  }
-
-  if (msg.type === 'WRITE_TO_SHEET') {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          type: 'WRITE_CELL', value: msg.value, targetCol: msg.targetCol || 'B',
-        }).catch(() => {});
-      }
-    });
-    sendResponse({ ok: true });
     return;
   }
 
@@ -226,16 +161,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ values: [[d.value]] }),
-      }).then(r => {
-        // console.log('[FelixTM BG] Response status:', r.status);
-        return r.json();
-      }).then(data => {
-        // console.log('[FelixTM BG] Response:', JSON.stringify(data).substring(0, 200));
-        sendResponse(data);
-      }).catch(err => {
-        // console.log('[FelixTM BG] Error:', err.message);
-        sendResponse({ error: err.message });
-      });
+      }).then(r => r.json()).then(data => sendResponse(data))
+        .catch(err => sendResponse({ error: err.message }));
     });
     return true;
   }
@@ -284,7 +211,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   // Sheets API read (from content script directly)
-  if (msg.type === 'SHEETS_API_READ_DIRECT' || msg.type === 'SHEETS_API_READ') {
+  if (msg.type === 'SHEETS_API_READ_DIRECT') {
     const d = msg.data || msg;
     chrome.identity.getAuthToken({ interactive: false }, (token) => {
       if (!token) { sendResponse({ value: '' }); return; }

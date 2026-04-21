@@ -83,8 +83,6 @@ function applyLang() {
   ph('reg-source', t('source'));
   ph('reg-target', t('target'));
   set('h-build', t('import'));
-  set('p-bulk-desc', t('bulkDesc'));
-  set('btn-paste-import', t('pasteImport'));
   set('btn-import-sheet', t('importFromSheet'));
   set('p-sheet-import-desc', t('sheetImportDesc'));
   set('p-gloss-sheet-desc', t('glossSheetImportDesc'));
@@ -101,8 +99,6 @@ function applyLang() {
   ph('gloss-trans', t('termTgt'));
   set('btn-add-gloss', t('add'));
   set('h-gloss-import', t('glossImport'));
-  set('p-gloss-desc', t('glossDesc'));
-  set('btn-paste-gloss', t('pasteImport'));
   set('h-browse-gloss', t('browse'));
   set('btn-export-gloss', t('exportGloss'));
   // Rules
@@ -262,7 +258,7 @@ async function registerTM() {
   updateStats();
   renderTMList();
 
-  showToast('reg-toast', action === 'refcount' ? t('alreadyExists') : t('registered'));
+  showToast(action === 'refcount' ? t('alreadyExists') : t('registered'));
   document.getElementById('reg-target').value = '';
 }
 
@@ -425,9 +421,9 @@ async function addGlossary() {
     glossaryData.push({ term, translation: trans, notes: '', cmp: tCmp });
     await saveGlossary();
     updateStats();
-    showToast('gloss-toast', 'Added!');
+    showToast('Added!');
   } else {
-    showToast('gloss-toast', 'Already exists');
+    showToast('Already exists');
   }
 
   document.getElementById('gloss-term').value = '';
@@ -459,7 +455,7 @@ function processGlossaryText(text) {
   saveGlossary();
   updateStats();
   renderGlossaryList();
-  showToast('gloss-toast', `${added} added, ${dup} duplicates`);
+  showToast(`${added} added, ${dup} duplicates`);
 }
 
 
@@ -554,21 +550,21 @@ async function addRule() {
 
   // Validate regex
   try { new RegExp(srcPat); } catch (_) {
-    showToast('rule-toast', t('invalidRegex'));
+    showToast(t('invalidRegex'));
     return;
   }
 
   // Check duplicate
   const exists = rulesData.some(r => r.sourcePattern === srcPat && r.targetTemplate === tgtTpl);
   if (exists) {
-    showToast('rule-toast', t('ruleExists'));
+    showToast(t('ruleExists'));
     return;
   }
 
   rulesData.push({ sourcePattern: srcPat, targetTemplate: tgtTpl, enabled: true });
   await saveRules();
   renderRulesList();
-  showToast('rule-toast', t('ruleAdded'));
+  showToast(t('ruleAdded'));
   document.getElementById('rule-source').value = '';
   document.getElementById('rule-target').value = '';
 }
@@ -637,7 +633,7 @@ function processRulesText(text) {
   }
   saveRules();
   renderRulesList();
-  showToast('rule-toast', `${added} added${dup ? `, ${dup} dup` : ''}${invalid ? `, ${invalid} invalid` : ''}`);
+  showToast(`${added} added${dup ? `, ${dup} dup` : ''}${invalid ? `, ${invalid} invalid` : ''}`);
 }
 
 function exportRulesTSV() {
@@ -661,15 +657,15 @@ async function getActiveSheetInfo() {
   });
 }
 
-async function readSheetRange(srcId, tgtId, toastId) {
+async function readSheetRange(srcId, tgtId) {
   const srcRangeRaw = document.getElementById(srcId).value.trim() || 'A2:A';
   const tgtRangeRaw = document.getElementById(tgtId).value.trim() || 'B2:B';
 
-  showToast(toastId, 'Reading from sheet...');
+  showToast('Reading from sheet...');
 
   const info = await getActiveSheetInfo();
   if (!info.spreadsheetId) {
-    showToast(toastId, 'No active Google Sheet found. Open a spreadsheet first.');
+    showToast('No active Google Sheet found. Open a spreadsheet first.');
     return null;
   }
 
@@ -683,7 +679,7 @@ async function readSheetRange(srcId, tgtId, toastId) {
 }
 
 async function importFromSheet() {
-  const data = await readSheetRange('import-src-range', 'import-tgt-range', 'sheet-import-toast');
+  const data = await readSheetRange('import-src-range', 'import-tgt-range');
   if (!data) return;
 
   const len = Math.max(data.srcValues.length, data.tgtValues.length);
@@ -701,11 +697,11 @@ async function importFromSheet() {
   await saveTM();
   updateStats();
   renderTMList();
-  showToast('sheet-import-toast', `${t('imported')}: ${added} new, ${updated} updated, ${skipped} skipped (${len} rows)`);
+  showToast(`${t('imported')}: ${added} new, ${updated} updated, ${skipped} skipped (${len} rows)`);
 }
 
 async function importGlossaryFromSheet() {
-  const data = await readSheetRange('gloss-import-src-range', 'gloss-import-tgt-range', 'gloss-sheet-toast');
+  const data = await readSheetRange('gloss-import-src-range', 'gloss-import-tgt-range');
   if (!data) return;
 
   const len = Math.max(data.srcValues.length, data.tgtValues.length);
@@ -727,7 +723,7 @@ async function importGlossaryFromSheet() {
   await saveGlossary();
   updateStats();
   renderGlossaryList();
-  showToast('gloss-sheet-toast', `${added} added, ${dup} duplicates (${len} rows)`);
+  showToast(`${added} added, ${dup} duplicates (${len} rows)`);
 }
 
 // ============================================================
@@ -771,7 +767,7 @@ function importTMX(xml) {
   saveTM();
   updateStats();
   renderTMList();
-  showToast('import-toast', `Imported ${added} entries from TMX`);
+  showToast(`Imported ${added} entries from TMX`);
 }
 
 function importTSV(text) {
@@ -791,7 +787,7 @@ function importTSV(text) {
   saveTM();
   updateStats();
   renderTMList();
-  showToast('import-toast', `Imported ${added} entries from TSV`);
+  showToast(`Imported ${added} entries from TSV`);
 }
 
 // ============================================================
@@ -859,7 +855,7 @@ function updateStats() {
 }
 
 let _toastTimer = null;
-function showToast(_elId, msg) {
+function showToast(msg) {
   const container = document.getElementById('global-toast');
   if (!container) return;
   container.querySelector('div').textContent = msg;
@@ -894,7 +890,7 @@ async function saveSettingsUI() {
     payload: { type: 'SETTINGS_CHANGED' },
   }).catch(() => {});
   applyLang();
-  showToast('settings-toast', t('saved'));
+  showToast(t('saved'));
 }
 
 function inlineConfirm(btnId, message, onConfirm) {
@@ -916,7 +912,7 @@ function clearAllTM() {
     await saveTM();
     updateStats();
     renderTMList();
-    showToast(null, 'TM cleared');
+    showToast('TM cleared');
   });
 }
 
@@ -926,7 +922,7 @@ function clearAllGlossary() {
     await saveGlossary();
     updateStats();
     renderGlossaryList();
-    showToast(null, 'Glossary cleared');
+    showToast('Glossary cleared');
   });
 }
 
