@@ -692,26 +692,45 @@ var FelixEngine = (() => {
     // When the caller already ran nonNumericDiffs (e.g. resolveWithPlacement),
     // reuse the result instead of paying for a second DP pass.
     const nnd = precomputedDiffs || nonNumericDiffs(query, tmSource, glossaryData);
-    const qMasked = maskRanges(query, nnd.map(d => ({ start: d.qStart, end: d.qEnd })));
-    const sMasked = maskRanges(tmSource, nnd.map(d => ({ start: d.sStart, end: d.sEnd })));
+
+    // Count total digits inside the non-numeric diff regions on each
+    // side. Masking is only needed when this total is asymmetric —
+    // e.g. `ランダム4体 ↔ 全体` where query has a 4 inside the diff but
+    // source has no digit there. When both sides contribute the same
+    // number of digits to the diff region (`20%UP` / `ダメージカット20%`
+    // each carrying one `20`), the raw digits align positionally by
+    // themselves and masking would just break target-side count match.
+    const DIGIT_RE = /[\d０-９]/g;
+    const qDigitsInDiff = nnd.reduce((n, d) => n + (d.qText.match(DIGIT_RE) || []).length, 0);
+    const sDigitsInDiff = nnd.reduce((n, d) => n + (d.sText.match(DIGIT_RE) || []).length, 0);
+    const asymmetric = qDigitsInDiff !== sDigitsInDiff;
+
+    const qMasked = asymmetric
+      ? maskRanges(query, nnd.map(d => ({ start: d.qStart, end: d.qEnd })))
+      : query;
+    const sMasked = asymmetric
+      ? maskRanges(tmSource, nnd.map(d => ({ start: d.sStart, end: d.sEnd })))
+      : tmSource;
 
     // Target-side digits that correspond to a masked source-side lexical
-    // diff need to drop out of the numeric count too, or the q/s/t
-    // count stays uneven and placement refuses to fire. When the diff
-    // has a glossary entry on the source side, the translation gives
-    // us the exact target range to mask.
-    const gIdx = glossaryIndex(glossaryData);
-    const tMaskRanges = [];
-    if (gIdx) {
-      for (const d of nnd) {
-        const sEntry = gIdx.get(makeCmp(d.sText));
-        if (!sEntry || !sEntry.translation) continue;
-        const tr = sEntry.translation;
-        const pos = tmTarget.indexOf(tr);
-        if (pos !== -1) tMaskRanges.push({ start: pos, end: pos + tr.length });
+    // diff need to drop out of the numeric count too. Only relevant when
+    // we actually masked the source side (asymmetric case), AND we can
+    // identify the corresponding target range via a glossary translation.
+    let tMasked = tmTarget;
+    if (asymmetric) {
+      const gIdx = glossaryIndex(glossaryData);
+      const tMaskRanges = [];
+      if (gIdx) {
+        for (const d of nnd) {
+          const sEntry = gIdx.get(makeCmp(d.sText));
+          if (!sEntry || !sEntry.translation) continue;
+          const tr = sEntry.translation;
+          const pos = tmTarget.indexOf(tr);
+          if (pos !== -1) tMaskRanges.push({ start: pos, end: pos + tr.length });
+        }
       }
+      if (tMaskRanges.length) tMasked = maskRanges(tmTarget, tMaskRanges);
     }
-    const tMasked = tMaskRanges.length ? maskRanges(tmTarget, tMaskRanges) : tmTarget;
 
     const qNums = extractNums(qMasked);
     const sNums = extractNums(sMasked);

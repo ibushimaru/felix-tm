@@ -505,11 +505,19 @@ test('scenario: spurious DP atom pair — 20%UP ↔ 付与 rejected when 付与 
 
   log('resolved', { placements: r.resolved.placements, target: r.resolved.target });
 
-  // The spurious pair must NOT have fired — target stays untouched by
-  // glossary substitution. Number placement also fails honestly
-  // (count mismatch), so `数値` shouldn't be on the badge either.
+  // The spurious pair must NOT have fired — no `用語` on the badge and
+  // the target's first `賦予` must not have been rewritten to `提升20%`.
+  // Number placement CAN still run on the obvious leading slot:
+  // `ATK260%` → `ATK360%` (outside any diff). The target-unchanged
+  // check is narrowed to "no glossary substitution" rather than
+  // "identical to TM.target".
   assert.ok(!r.resolved.placements.includes('用語'));
-  assert.ok(r.resolved.target === sTgt, 'target should equal TM.target unchanged');
+  assert.ok(!r.resolved.target.includes('提升20%'),
+    'spurious pair must not have injected 提升20% into target');
+  assert.ok(r.resolved.target.includes('ATK360%'),
+    'number placement should still swap the obvious ATK digit slot');
+  assert.ok(r.resolved.target.includes('賦予我方全體傷害減免20%'),
+    'TM.target segment stays intact when glossary has no real pair');
 });
 
 // =========================================================================
