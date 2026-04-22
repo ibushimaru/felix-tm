@@ -957,40 +957,34 @@ var FelixEngine = (() => {
         const match = qTokens[i-1].text.toLowerCase() === sTokens[j-1].text.toLowerCase();
         if (match && dp[i][j] === dp[i-1][j-1]) { flush(); i--; j--; continue; }
       }
-      // Choose the next op. Priority: atom-atom sub first (so two glossary
-      // atoms that DP could align never get buried under insert/delete of
-      // atoms), then insert → delete → sub as before (prefers common-char
+      // Priority order: insert → delete → sub (prefer common-char
       // matches over collapsing common chars into a single substitution).
-      const subValid = i > 0 && j > 0 && dp[i][j] === dp[i-1][j-1] + 1;
-      const insValid = j > 0 && dp[i][j] === dp[i][j-1] + 1;
-      const delValid = i > 0 && dp[i][j] === dp[i-1][j] + 1;
-      let op = null;
-      if (subValid && qTokens[i-1].atom && sTokens[j-1].atom) op = 'sub';
-      else if (insValid) op = 'ins';
-      else if (delValid) op = 'del';
-      else if (subValid) op = 'sub';
-      if (!op) break;
-
-      // Atom-isolation: when a SUB op pairs atoms on BOTH sides, flush
-      // any ongoing run first and flush again after so the atom pair
-      // becomes its own diff. This keeps a registered 20%UP /
-      // ダメージカット20% pair discoverable even when DP would otherwise
-      // bury it in a long surrounding mixed-ops run. Asymmetric cases
-      // (atom on one side vs chars on the other, e.g. 2ターンの間 atom
-      // against the unregistered 3ターンの間 chars) intentionally stay
-      // merged so the digit-strip filter can drop the whole thing as a
-      // numeric variant of the same phrase.
-      const qTok = (op === 'del' || op === 'sub') ? qTokens[i-1] : null;
-      const sTok = (op === 'ins' || op === 'sub') ? sTokens[j-1] : null;
-      const bothAtoms = op === 'sub' && qTok && sTok && qTok.atom && sTok.atom;
-      if (bothAtoms && (qTokStart != null || sTokStart != null)) flush();
-
-      if (op === 'sub') {
-        // Same-lockstep type-flush (retained): splits MATK↔ATK from 1↔2
-        // in pure-sub runs where no insert/delete intervenes.
+      // Atom pairing is NOT forced here — DP might naturally sub unrelated
+      // atoms (e.g. `20%UP ↔ 土属性`) because the cost table doesn't know
+      // they are semantically unrelated. Post-processing at the end
+      // corrects this using shared-char similarity.
+      if (j > 0 && dp[i][j] === dp[i][j-1] + 1) {
+        j--;
+        if (sTokEnd == null) sTokEnd = j + 1;
+        sTokStart = j;
+        runAllSubs = false;
+        runSType = tokenTypeOf(sTokens[j]);
+        continue;
+      }
+      if (i > 0 && dp[i][j] === dp[i-1][j] + 1) {
+        i--;
+        if (qTokEnd == null) qTokEnd = i + 1;
+        qTokStart = i;
+        runAllSubs = false;
+        runQType = tokenTypeOf(qTokens[i]);
+        continue;
+      }
+      if (i > 0 && j > 0 && dp[i][j] === dp[i-1][j-1] + 1) {
+        // Same-lockstep type-flush (kept): splits MATK↔ATK from 1↔2 in
+        // pure-sub runs where no insert/delete intervenes.
         const nextQType = tokenTypeOf(qTokens[i-1]);
         const nextSType = tokenTypeOf(sTokens[j-1]);
-        if (!bothAtoms && runAllSubs && runQType !== null
+        if (runAllSubs && runQType !== null
             && nextQType !== runQType && nextSType !== runSType) {
           flush();
         }
@@ -998,21 +992,9 @@ var FelixEngine = (() => {
         if (qTokEnd == null) qTokEnd = i + 1; qTokStart = i;
         if (sTokEnd == null) sTokEnd = j + 1; sTokStart = j;
         runQType = nextQType; runSType = nextSType;
-      } else if (op === 'ins') {
-        j--;
-        if (sTokEnd == null) sTokEnd = j + 1;
-        sTokStart = j;
-        runAllSubs = false;
-        runSType = tokenTypeOf(sTokens[j]);
-      } else { // 'del'
-        i--;
-        if (qTokEnd == null) qTokEnd = i + 1;
-        qTokStart = i;
-        runAllSubs = false;
-        runQType = tokenTypeOf(qTokens[i]);
+        continue;
       }
-
-      if (bothAtoms) flush();
+      break;
     }
     flush();
 
