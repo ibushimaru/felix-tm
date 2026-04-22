@@ -470,6 +470,49 @@ test('scenario: ATK360% — atom pair buried in long diff, red-herring atom on o
 });
 
 // =========================================================================
+// Scenario 5g — DP aligns `20%UP` and `付与` as atom-atom sub because
+// both are registered, but `付与` ALSO appears in the query (in the
+// unrelated `応戦(2回)を付与する` tail). Per-diff glossary used to fire
+// on this spurious pairing and rewrite the target's first `賦予` to
+// `提升20%`, producing garbled output. The spurious-pair guard skips
+// substitution when the two terms share no chars AND one of them is
+// present on the other side of the row — i.e., the atom isn't
+// genuinely cross-side differential, DP just couldn't pair it locally.
+// =========================================================================
+test('scenario: spurious DP atom pair — 20%UP ↔ 付与 rejected when 付与 also in query', () => {
+  const q = '{attackType.1}/全体/{category} ATK360%のダメージを与え、2ターンの間、光属性の味方の斧槌ダメージを20%UPし、応戦(2回)を付与する';
+  const sSrc = '{attackType.1}/全体/{category} ATK260%のダメージを与え、2ターンの間、味方全体にダメージカット20%を付与し、土属性の味方に応戦(2回)を付与する';
+  const sTgt = '{attackType.1}/全體/{category} 造成ATK260%傷害，在2回合內，賦予我方全體傷害減免20%，賦予土屬性我方應戰（2次）';
+
+  // Glossary as the translator might actually have it: 20%UP and 付与 are
+  // both registered, but ダメージカット20% is NOT. The DP aligns
+  // 20%UP ↔ 付与 because they're both atoms; without the guard, target
+  // would gain a stray `提升20%` before `我方全體傷害減免20%`.
+  const r = runPipeline({
+    query: q,
+    tmData: tm([[sSrc, sTgt]]),
+    glossaryData: gloss([
+      ['20%UP', '提升20%'],
+      ['付与', '賦予'],
+      ['応戦(2回)', '應戰（2次）'],
+      ['2ターンの間', '在2回合內'],
+      ['全体', '全體'],
+      ['光属性', '光屬性'],
+      ['土属性', '土屬性'],
+      ['味方', '我方'],
+    ]),
+  });
+
+  log('resolved', { placements: r.resolved.placements, target: r.resolved.target });
+
+  // The spurious pair must NOT have fired — target stays untouched by
+  // glossary substitution. Number placement also fails honestly
+  // (count mismatch), so `数値` shouldn't be on the badge either.
+  assert.ok(!r.resolved.placements.includes('用語'));
+  assert.ok(r.resolved.target === sTgt, 'target should equal TM.target unchanged');
+});
+
+// =========================================================================
 // Scenario 6 — multiple disjoint placed regions with unverified between
 // them. Ensures runs include the plain head, unverified gap, placed,
 // unverified gap, placed, plain tail (when applicable).

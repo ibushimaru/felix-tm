@@ -1242,6 +1242,35 @@ var FelixEngine = (() => {
     return cached;
   }
 
+  /**
+   * Per-diff glossary will happily substitute on any diff pair whose two
+   * sides both happen to be registered atoms. DP sometimes aligns
+   * unrelated atoms via cost-minimum sub (e.g. source's leftover `付与`
+   * with query's `20%UP`), and without a guard the target ends up with
+   * the wrong segment rewritten (first `賦予` → `提升20%`). This detects
+   * obvious bogus pairs: no shared characters AND one of the two terms
+   * already appears on the OTHER side of the row, meaning the atom
+   * isn't really a cross-side differential — it's present on both
+   * sides, and DP just couldn't find it a counterpart here.
+   *
+   * Kept intentionally narrow so legitimate 0-overlap cross-script
+   * pairs (MIND ↔ 光属性ダメージ, HP ↔ 生命値, etc.) still fire.
+   */
+  function isSpuriousDiffPair(qEntry, sEntry, query, tmSource) {
+    const q = (qEntry.term || '').toLowerCase();
+    const s = (sEntry.term || '').toLowerCase();
+    if (!q || !s) return false;
+    const qChars = new Set(q);
+    for (const ch of s) {
+      if (qChars.has(ch)) return false;  // shared char → not spurious
+    }
+    // No shared chars. Spurious only if one term also appears on the
+    // other side of the row (so it's not a genuine cross-side diff).
+    if (tmSource.toLowerCase().includes(q)) return true;
+    if (query.toLowerCase().includes(s)) return true;
+    return false;
+  }
+
   function resolveWithPlacement(query, tmSource, tmTarget, glossaryData, rulesData) {
     let target = tmTarget;
     let remaining = nonNumericDiffs(query, tmSource, glossaryData);
@@ -1271,7 +1300,7 @@ var FelixEngine = (() => {
       for (const d of remaining) {
         const qEntry = indexByCmp.get(makeCmp(d.qText));
         const sEntry = indexByCmp.get(makeCmp(d.sText));
-        if (qEntry && sEntry) {
+        if (qEntry && sEntry && !isSpuriousDiffPair(qEntry, sEntry, query, tmSource)) {
           const tgtLower = target.toLowerCase();
           const fromLower = sEntry.translation.toLowerCase();
           const idx = tgtLower.indexOf(fromLower);
