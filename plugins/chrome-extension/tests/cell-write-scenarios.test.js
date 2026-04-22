@@ -423,6 +423,53 @@ test('scenario: digit-variant phrase stays with number placement', () => {
 });
 
 // =========================================================================
+// Scenario 5f — the ATK360% case. The merged diff contains a glossary
+// atom pair (20%UP ↔ ダメージカット20%) buried in a long surrounding
+// non-atom substitution, and the source side also contains a red-herring
+// atom (全体) that has no counterpart on the query side. DP's min-cost
+// path walked around the atoms via common surrounding chars, so neither
+// the atom-atom sub nor the tie-break gave us the split. The atom-pair
+// post-processor recovers it by pairing via shared-char similarity —
+// 20%UP shares `2 0 %` with ダメージカット20% but nothing with 全体.
+// With the pair split out, per-diff glossary fires; with the target-side
+// mask tied to that sEntry.translation, numberPlacement aligns the
+// remaining digits and ATK260% flips to ATK360%.
+// =========================================================================
+test('scenario: ATK360% — atom pair buried in long diff, red-herring atom on one side', () => {
+  const q = '{attackType.1}/全体/{category} ATK360%のダメージを与え、2ターンの間、光属性の味方の斧槌ダメージを20%UPし、応戦(2回)を付与する';
+  const sSrc = '{attackType.1}/全体/{category} ATK260%のダメージを与え、2ターンの間、味方全体にダメージカット20%を付与し、土属性の味方に応戦(2回)を付与する';
+  const sTgt = '{attackType.1}/全體/{category} 造成ATK260%傷害，在2回合內，賦予我方全體傷害減免20%，賦予土屬性我方應戰（2次）';
+
+  const r = runPipeline({
+    query: q,
+    tmData: tm([[sSrc, sTgt]]),
+    glossaryData: gloss([
+      ['全体', '全體'],
+      ['20%UP', '提升20%'],
+      ['ダメージカット20%', '傷害減免20%'],
+      ['応戦(2回)', '應戰（2次）'],
+      ['2ターンの間', '在2回合內'],
+    ]),
+  });
+
+  log('resolved', { placements: r.resolved.placements, target: r.resolved.target });
+  log('uncovered', r.resolved.uncovered.map(u => ({ q: u.qText, s: u.sText })));
+
+  // numberPlacement must fire: the target-side mask for the paired
+  // atom's translation releases the target-side `20` so q/s/t counts
+  // line up for positional substitution.
+  assert.ok(r.resolved.placements.includes('数値'));
+  assert.ok(r.resolved.target.includes('造成ATK360%'));
+  assert.ok(!r.resolved.target.includes('造成ATK260%'));
+  // per-diff glossary must fire for the paired atoms.
+  assert.ok(r.resolved.placements.includes('用語'));
+  assert.ok(r.resolved.target.includes('提升20%'));
+  // The red-herring atom (全体) must NOT pair with 20%UP — otherwise
+  // the target's `/全體/` slot path would have flipped to `/提升20%/`.
+  assert.ok(r.resolved.target.includes('/全體/'));
+});
+
+// =========================================================================
 // Scenario 6 — multiple disjoint placed regions with unverified between
 // them. Ensures runs include the plain head, unverified gap, placed,
 // unverified gap, placed, plain tail (when applicable).

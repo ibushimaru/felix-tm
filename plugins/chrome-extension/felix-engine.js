@@ -695,9 +695,27 @@ var FelixEngine = (() => {
     const qMasked = maskRanges(query, nnd.map(d => ({ start: d.qStart, end: d.qEnd })));
     const sMasked = maskRanges(tmSource, nnd.map(d => ({ start: d.sStart, end: d.sEnd })));
 
+    // Target-side digits that correspond to a masked source-side lexical
+    // diff need to drop out of the numeric count too, or the q/s/t
+    // count stays uneven and placement refuses to fire. When the diff
+    // has a glossary entry on the source side, the translation gives
+    // us the exact target range to mask.
+    const gIdx = glossaryIndex(glossaryData);
+    const tMaskRanges = [];
+    if (gIdx) {
+      for (const d of nnd) {
+        const sEntry = gIdx.get(makeCmp(d.sText));
+        if (!sEntry || !sEntry.translation) continue;
+        const tr = sEntry.translation;
+        const pos = tmTarget.indexOf(tr);
+        if (pos !== -1) tMaskRanges.push({ start: pos, end: pos + tr.length });
+      }
+    }
+    const tMasked = tMaskRanges.length ? maskRanges(tmTarget, tMaskRanges) : tmTarget;
+
     const qNums = extractNums(qMasked);
     const sNums = extractNums(sMasked);
-    const tNums = extractNums(tmTarget);
+    const tNums = extractNums(tMasked);
 
     // Source and query must have the same count of number tokens
     if (!qNums.length || qNums.length !== sNums.length) return { placed: false };
@@ -939,26 +957,40 @@ var FelixEngine = (() => {
         const match = qTokens[i-1].text.toLowerCase() === sTokens[j-1].text.toLowerCase();
         if (match && dp[i][j] === dp[i-1][j-1]) { flush(); i--; j--; continue; }
       }
-      if (j > 0 && dp[i][j] === dp[i][j-1] + 1) {
-        j--;
-        if (sTokEnd == null) sTokEnd = j + 1;
-        sTokStart = j;
-        runAllSubs = false;
-        runSType = tokenTypeOf(sTokens[j]);
-        continue;
-      }
-      if (i > 0 && dp[i][j] === dp[i-1][j] + 1) {
-        i--;
-        if (qTokEnd == null) qTokEnd = i + 1;
-        qTokStart = i;
-        runAllSubs = false;
-        runQType = tokenTypeOf(qTokens[i]);
-        continue;
-      }
-      if (i > 0 && j > 0 && dp[i][j] === dp[i-1][j-1] + 1) {
+      // Choose the next op. Priority: atom-atom sub first (so two glossary
+      // atoms that DP could align never get buried under insert/delete of
+      // atoms), then insert → delete → sub as before (prefers common-char
+      // matches over collapsing common chars into a single substitution).
+      const subValid = i > 0 && j > 0 && dp[i][j] === dp[i-1][j-1] + 1;
+      const insValid = j > 0 && dp[i][j] === dp[i][j-1] + 1;
+      const delValid = i > 0 && dp[i][j] === dp[i-1][j] + 1;
+      let op = null;
+      if (subValid && qTokens[i-1].atom && sTokens[j-1].atom) op = 'sub';
+      else if (insValid) op = 'ins';
+      else if (delValid) op = 'del';
+      else if (subValid) op = 'sub';
+      if (!op) break;
+
+      // Atom-isolation: when a SUB op pairs atoms on BOTH sides, flush
+      // any ongoing run first and flush again after so the atom pair
+      // becomes its own diff. This keeps a registered 20%UP /
+      // ダメージカット20% pair discoverable even when DP would otherwise
+      // bury it in a long surrounding mixed-ops run. Asymmetric cases
+      // (atom on one side vs chars on the other, e.g. 2ターンの間 atom
+      // against the unregistered 3ターンの間 chars) intentionally stay
+      // merged so the digit-strip filter can drop the whole thing as a
+      // numeric variant of the same phrase.
+      const qTok = (op === 'del' || op === 'sub') ? qTokens[i-1] : null;
+      const sTok = (op === 'ins' || op === 'sub') ? sTokens[j-1] : null;
+      const bothAtoms = op === 'sub' && qTok && sTok && qTok.atom && sTok.atom;
+      if (bothAtoms && (qTokStart != null || sTokStart != null)) flush();
+
+      if (op === 'sub') {
+        // Same-lockstep type-flush (retained): splits MATK↔ATK from 1↔2
+        // in pure-sub runs where no insert/delete intervenes.
         const nextQType = tokenTypeOf(qTokens[i-1]);
         const nextSType = tokenTypeOf(sTokens[j-1]);
-        if (runAllSubs && runQType !== null
+        if (!bothAtoms && runAllSubs && runQType !== null
             && nextQType !== runQType && nextSType !== runSType) {
           flush();
         }
@@ -966,12 +998,126 @@ var FelixEngine = (() => {
         if (qTokEnd == null) qTokEnd = i + 1; qTokStart = i;
         if (sTokEnd == null) sTokEnd = j + 1; sTokStart = j;
         runQType = nextQType; runSType = nextSType;
-        continue;
+      } else if (op === 'ins') {
+        j--;
+        if (sTokEnd == null) sTokEnd = j + 1;
+        sTokStart = j;
+        runAllSubs = false;
+        runSType = tokenTypeOf(sTokens[j]);
+      } else { // 'del'
+        i--;
+        if (qTokEnd == null) qTokEnd = i + 1;
+        qTokStart = i;
+        runAllSubs = false;
+        runQType = tokenTypeOf(qTokens[i]);
       }
-      break;
+
+      if (bothAtoms) flush();
     }
     flush();
+
+    // Post-process: when DP bundled atom-atom pairs inside a larger
+    // mixed diff (because its optimal path aligned around the atoms
+    // via common surrounding chars rather than sub'ing them), split
+    // the merged diff so each atom pair becomes its own standalone
+    // entry. Without this, per-diff glossary can't match the atoms
+    // (the whole merged qText isn't in glossary) and numberPlacement
+    // ends up with asymmetric masking.
+    if (glossaryData && glossaryData.length) {
+      return diffs.flatMap(d => splitDiffAtAtomPairs(d, glossaryData));
+    }
     return diffs;
+  }
+
+  // Find every non-overlapping glossary-atom occurrence inside `text`.
+  // Results are sorted by start; on overlap the longer / earlier atom wins.
+  function findAllAtoms(text, glossaryData) {
+    if (!text || !glossaryData) return [];
+    const lower = text.toLowerCase();
+    const raw = [];
+    for (const g of glossaryData) {
+      const term = g && g.term;
+      if (!term) continue;
+      const tl = term.toLowerCase();
+      let pos = 0;
+      while (pos <= text.length - term.length) {
+        const idx = lower.indexOf(tl, pos);
+        if (idx === -1) break;
+        raw.push({ start: idx, end: idx + term.length, entry: g });
+        pos = idx + term.length;
+      }
+    }
+    raw.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+    const kept = [];
+    let lastEnd = 0;
+    for (const r of raw) {
+      if (r.start < lastEnd) continue;
+      kept.push(r);
+      lastEnd = r.end;
+    }
+    return kept;
+  }
+
+  // Pair a qAtom with its best sAtom counterpart by char-set overlap.
+  // Pure positional pairing fails when one side contains extra atoms
+  // (e.g. source has 全体 AND ダメージカット20% while query only has
+  // 20%UP — "first" on source is 全体 but the pair the translator
+  // means is 20%UP ↔ ダメージカット20%). Overlap-scoring catches that:
+  // 20%UP shares `2 0 %` with ダメージカット20% but nothing with 全体.
+  function bestPairForAtom(qAtom, sAtoms) {
+    if (!sAtoms.length) return -1;
+    const qChars = new Set(qAtom.entry.term.toLowerCase());
+    let bestIdx = -1, bestScore = -1;
+    for (let i = 0; i < sAtoms.length; i++) {
+      let score = 0;
+      for (const ch of sAtoms[i].entry.term.toLowerCase()) {
+        if (qChars.has(ch)) score++;
+      }
+      if (score > bestScore) { bestScore = score; bestIdx = i; }
+    }
+    return bestScore > 0 ? bestIdx : -1;
+  }
+
+  function splitDiffAtAtomPairs(diff, glossaryData) {
+    const qAtoms = findAllAtoms(diff.qText, glossaryData);
+    if (!qAtoms.length) return [diff];
+    const sAtoms = findAllAtoms(diff.sText, glossaryData);
+    if (!sAtoms.length) return [diff];
+    // Take the first qAtom; find its best sAtom partner by shared chars.
+    const qAtom = qAtoms[0];
+    const sIdx = bestPairForAtom(qAtom, sAtoms);
+    if (sIdx < 0) return [diff];
+    const sAtom = sAtoms[sIdx];
+    const out = [];
+    if (qAtom.start > 0 || sAtom.start > 0) {
+      out.push(...splitDiffAtAtomPairs({
+        qText: diff.qText.substring(0, qAtom.start),
+        sText: diff.sText.substring(0, sAtom.start),
+        qStart: diff.qStart,
+        qEnd: diff.qStart + qAtom.start,
+        sStart: diff.sStart,
+        sEnd: diff.sStart + sAtom.start,
+      }, glossaryData));
+    }
+    out.push({
+      qText: diff.qText.substring(qAtom.start, qAtom.end),
+      sText: diff.sText.substring(sAtom.start, sAtom.end),
+      qStart: diff.qStart + qAtom.start,
+      qEnd: diff.qStart + qAtom.end,
+      sStart: diff.sStart + sAtom.start,
+      sEnd: diff.sStart + sAtom.end,
+    });
+    if (qAtom.end < diff.qText.length || sAtom.end < diff.sText.length) {
+      out.push(...splitDiffAtAtomPairs({
+        qText: diff.qText.substring(qAtom.end),
+        sText: diff.sText.substring(sAtom.end),
+        qStart: diff.qStart + qAtom.end,
+        qEnd: diff.qEnd,
+        sStart: diff.sStart + sAtom.end,
+        sEnd: diff.sEnd,
+      }, glossaryData));
+    }
+    return out;
   }
 
   // === Auto-Translate planners (pure, no DOM / no I/O) ===
