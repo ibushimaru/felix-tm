@@ -15,6 +15,19 @@ var FelixEngine = (() => {
     return s.replace(/\s+/g, ' ').trim();
   }
 
+  // Length-preserving variant of makeCmp — applies only the 1-to-1 char
+  // substitutions (full/half width, hiragana→katakana, lowercase, ideographic
+  // space → ascii space) so char indices map back to the original text.
+  // Used wherever tokenization / DP alignment must treat ％ ≡ %, ３ ≡ 3,
+  // ひらがな ≡ カタカナ, etc. without shifting positions.
+  function cmpLen(text) {
+    return String(text)
+      .replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+      .replace(/\u3000/g, ' ')
+      .replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60))
+      .toLowerCase();
+  }
+
   function containsCJK(text) {
     return /[\u3000-\u9FFF\uF900-\uFAFF]/.test(text);
   }
@@ -829,11 +842,11 @@ var FelixEngine = (() => {
   function tokenizeGlossaryAware(text, glossaryData, useChar) {
     const atoms = [];
     if (glossaryData && glossaryData.length) {
-      const lower = text.toLowerCase();
+      const lower = cmpLen(text);
       for (const g of glossaryData) {
         const term = g && g.term;
         if (!term) continue;
-        const tl = term.toLowerCase();
+        const tl = cmpLen(term);
         let pos = 0;
         while (pos <= text.length - term.length) {
           const idx = lower.indexOf(tl, pos);
@@ -923,12 +936,17 @@ var FelixEngine = (() => {
     const sTokens = tokenizeGlossaryAware(tmSource, glossaryData, useChar);
 
     const n = qTokens.length, m = sTokens.length;
+    // Precompute normalized token strings so ％ ≡ %, 全角数字 ≡ 半角数字,
+    // ひらがな ≡ カタカナ don't fall into the diff just because the source
+    // cell was entered with different widths than the query.
+    const qNorm = new Array(n); for (let i = 0; i < n; i++) qNorm[i] = cmpLen(qTokens[i].text);
+    const sNorm = new Array(m); for (let j = 0; j < m; j++) sNorm[j] = cmpLen(sTokens[j].text);
     const dp = [];
     for (let i = 0; i <= n; i++) { dp[i] = new Array(m + 1); dp[i][0] = i; }
     for (let j = 0; j <= m; j++) dp[0][j] = j;
     for (let i = 1; i <= n; i++) {
       for (let j = 1; j <= m; j++) {
-        const cost = qTokens[i-1].text.toLowerCase() === sTokens[j-1].text.toLowerCase() ? 0 : 1;
+        const cost = qNorm[i-1] === sNorm[j-1] ? 0 : 1;
         dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost);
       }
     }
@@ -973,7 +991,7 @@ var FelixEngine = (() => {
     }
     while (i > 0 || j > 0) {
       if (i > 0 && j > 0) {
-        const match = qTokens[i-1].text.toLowerCase() === sTokens[j-1].text.toLowerCase();
+        const match = qNorm[i-1] === sNorm[j-1];
         if (match && dp[i][j] === dp[i-1][j-1]) { flush(); i--; j--; continue; }
       }
       // Priority order: insert → delete → sub (prefer common-char

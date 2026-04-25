@@ -521,6 +521,46 @@ test('scenario: spurious DP atom pair — 20%UP ↔ 付与 rejected when 付与 
 });
 
 // =========================================================================
+// Scenario — full-width ％ in TM source must not split an atom that is
+// registered with half-width % in the glossary. Previously the tokenizer
+// used a bare toLowerCase() for atom indexOf, so `15％UP` in the source
+// stayed unatomized while `15%UP` in the query got atomized. DP then
+// aligned `q=[15%UP]` against `s=[UP]`, and per-diff glossary substituted
+// the target's `提升` (inside the neighbouring `提升15%`) with `提升15%`,
+// producing `提升15%15%` — a silent, hard-to-notice placement bug.
+// =========================================================================
+test('scenario: width-insensitive atom detection — 15%UP vs 15％UP stays aligned', () => {
+  const q    = '{attackType.1}/全体/{category} ATK180%のダメージを与え、2ターンの間、光属性の味方の斧槌ダメージを15%UPし、応戦(1回)を付与する';
+  const sSrc = '{attackType.1}/全体/{category} MATK180%のダメージを与え、2ターンの間、闇属性の味方の弓・槍ダメージを15％UPし、味方全体の状態異常を1つ解除する';
+  const sTgt = '{attackType.1}/全體/{category} 造成MATK180%傷害，在2回合內，闇屬性我方的弓、槍傷害提升15%，解除我方全體1個狀態異常';
+
+  const r = runPipeline({
+    query: q,
+    tmData: tm([[sSrc, sTgt]]),
+    glossaryData: gloss([
+      ['15%UP', '提升15%'],
+      ['UP', '提升'],
+      ['斧槌ダメージ', '斧槌傷害'],
+      ['槍ダメージ', '槍傷害'],
+      ['光属性', '光屬性'],
+      ['闇属性', '闇屬性'],
+      ['ATK', 'ATK'],
+      ['MATK', 'MATK'],
+    ]),
+  });
+
+  log('resolved', { placements: r.resolved.placements, target: r.resolved.target });
+
+  // Single 15% — the duplication `15%15%` would indicate the atom
+  // misalignment regressed.
+  const matches15 = r.resolved.target.match(/15%/g) || [];
+  assert.equal(matches15.length, 1,
+    'target must contain exactly one 15% (no duplication from misaligned UP-only atom sub)');
+  assert.ok(!r.resolved.target.includes('15%15%'),
+    'target must not contain the duplicated 15%15% artifact');
+});
+
+// =========================================================================
 // Scenario 6 — multiple disjoint placed regions with unverified between
 // them. Ensures runs include the plain head, unverified gap, placed,
 // unverified gap, placed, plain tail (when applicable).
