@@ -89,6 +89,36 @@ var FelixEngine = (() => {
     return t.split(/(\s+|[.,;:!?()"'\[\]{}<>])/).filter(x => x && !/^\s+$/.test(x));
   }
 
+  // The two-mode split used everywhere a function decides char-level
+  // vs word-level alignment. Call sites set useChar themselves (the
+  // heuristic differs by context — see glossaryPlacement vs the rest)
+  // and just defer the actual splitting here.
+  function splitTokens(text, useChar) {
+    return useChar ? Array.from(text) : tokenize(text);
+  }
+
+  // Standard Levenshtein DP table over two indexable sequences (string
+  // or array). Single source of truth for the O(nm) fill — callers
+  // pre-normalize their elements so plain `===` is the right equality
+  // test, which keeps the inner loop free of per-cell function calls.
+  // Backtrace stays in each caller because the tie-break priority
+  // differs by domain (diffHighlight prefers sub, nonNumericDiffs
+  // prefers ins/del to preserve common particles, findDiffRegions
+  // prefers sub then ins then del).
+  function fillEditDp(qSeq, sSeq) {
+    const n = qSeq.length, m = sSeq.length;
+    const dp = [];
+    for (let i = 0; i <= n; i++) { dp[i] = new Array(m + 1); dp[i][0] = i; }
+    for (let j = 0; j <= m; j++) dp[0][j] = j;
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        const cost = qSeq[i-1] === sSeq[j-1] ? 0 : 1;
+        dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost);
+      }
+    }
+    return dp;
+  }
+
   function wordScore(q, s, ms) {
     const qt = tokenize(q), st = tokenize(s);
     if (!qt.length || !st.length) return edScore(q, s, ms);
@@ -332,8 +362,8 @@ var FelixEngine = (() => {
     // Find the differing segment (hole) between query and TM source
     // Use token-level diff to locate substituted words
     const useChar = containsCJK(query);
-    const qTokens = useChar ? Array.from(qCmp) : tokenize(qCmp);
-    const sTokens = useChar ? Array.from(sCmp) : tokenize(sCmp);
+    const qTokens = splitTokens(qCmp, useChar);
+    const sTokens = splitTokens(sCmp, useChar);
 
     // Find common prefix and suffix
     let prefixLen = 0;
@@ -392,36 +422,26 @@ var FelixEngine = (() => {
     if (query === tmSource) return { queryHtml: `<span class="diff-match">${esc(query)}</span>`, sourceHtml: `<span class="diff-match">${esc(tmSource)}</span>` };
 
     const useChar = containsCJK(query) || query.indexOf(' ') === -1;
-    const qTokens = useChar ? Array.from(query) : tokenize(query);
-    const sTokens = useChar ? Array.from(tmSource) : tokenize(tmSource);
+    const qTokens = splitTokens(query, useChar);
+    const sTokens = splitTokens(tmSource, useChar);
     const sep = useChar ? '' : ' ';
 
-    // Build full DP matrix for backtrace
+    // Pre-normalize tokens for ===-based DP comparison: in word mode
+    // this is just a case fold via cmpLen (which also handles width
+    // and kana, so 'ATK' ≡ 'ＡＴＫ' and 'カタ' ≡ 'かた'); in char
+    // mode tokens are already single chars so cmpLen is a no-op for
+    // most CJK but still folds digits and ASCII consistently.
     const n = qTokens.length, m = sTokens.length;
-    const dp = [];
-    for (let i = 0; i <= n; i++) {
-      dp[i] = new Array(m + 1);
-      dp[i][0] = i;
-    }
-    for (let j = 0; j <= m; j++) dp[0][j] = j;
-
-    for (let i = 1; i <= n; i++) {
-      for (let j = 1; j <= m; j++) {
-        const cost = (useChar ? qTokens[i-1] === sTokens[j-1] : qTokens[i-1].toLowerCase() === sTokens[j-1].toLowerCase()) ? 0 : 1;
-        dp[i][j] = Math.min(
-          dp[i-1][j] + 1,     // delete from query
-          dp[i][j-1] + 1,     // insert from source
-          dp[i-1][j-1] + cost  // match/substitute
-        );
-      }
-    }
+    const qNorm = new Array(n); for (let i = 0; i < n; i++) qNorm[i] = cmpLen(qTokens[i]);
+    const sNorm = new Array(m); for (let j = 0; j < m; j++) sNorm[j] = cmpLen(sTokens[j]);
+    const dp = fillEditDp(qNorm, sNorm);
 
     // Backtrace
     const ops = []; // {type: 'match'|'sub'|'del'|'ins', qTok, sTok}
     let i = n, j = m;
     while (i > 0 || j > 0) {
       if (i > 0 && j > 0) {
-        const match = useChar ? qTokens[i-1] === sTokens[j-1] : qTokens[i-1].toLowerCase() === sTokens[j-1].toLowerCase();
+        const match = qNorm[i-1] === sNorm[j-1];
         if (match && dp[i][j] === dp[i-1][j-1]) {
           ops.unshift({ type: 'match', qTok: qTokens[i-1], sTok: sTokens[j-1] });
           i--; j--; continue;
@@ -943,15 +963,7 @@ var FelixEngine = (() => {
     // cell was entered with different widths than the query.
     const qNorm = new Array(n); for (let i = 0; i < n; i++) qNorm[i] = cmpLen(qTokens[i].text);
     const sNorm = new Array(m); for (let j = 0; j < m; j++) sNorm[j] = cmpLen(sTokens[j].text);
-    const dp = [];
-    for (let i = 0; i <= n; i++) { dp[i] = new Array(m + 1); dp[i][0] = i; }
-    for (let j = 0; j <= m; j++) dp[0][j] = j;
-    for (let i = 1; i <= n; i++) {
-      for (let j = 1; j <= m; j++) {
-        const cost = qNorm[i-1] === sNorm[j-1] ? 0 : 1;
-        dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost);
-      }
-    }
+    const dp = fillEditDp(qNorm, sNorm);
 
     // Backtrace — collect substitution runs. When tied we prefer
     // insert/delete over substitution so a stray common token (e.g. a
@@ -1567,15 +1579,7 @@ var FelixEngine = (() => {
     if (!pCore) return [];
 
     const n = oCore.length, m = pCore.length;
-    const dp = [];
-    for (let i = 0; i <= n; i++) { dp[i] = new Array(m + 1); dp[i][0] = i; }
-    for (let j = 0; j <= m; j++) dp[0][j] = j;
-    for (let i = 1; i <= n; i++) {
-      for (let j = 1; j <= m; j++) {
-        const cost = oCore[i-1] === pCore[j-1] ? 0 : 1;
-        dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost);
-      }
-    }
+    const dp = fillEditDp(oCore, pCore);
     const regions = [];
     let i = n, j = m;
     let curStart = null, curEnd = null;
