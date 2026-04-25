@@ -7,25 +7,27 @@ var FelixEngine = (() => {
 
   // === Text Normalization ===
 
-  function makeCmp(text) {
-    let s = String(text).replace(/<[^>]+>/g, '');
-    s = s.replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
-    s = s.replace(/\u3000/g, ' ').toLowerCase();
-    s = s.replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
-    return s.replace(/\s+/g, ' ').trim();
-  }
-
-  // Length-preserving variant of makeCmp — applies only the 1-to-1 char
-  // substitutions (full/half width, hiragana→katakana, lowercase, ideographic
-  // space → ascii space) so char indices map back to the original text.
-  // Used wherever tokenization / DP alignment must treat ％ ≡ %, ３ ≡ 3,
-  // ひらがな ≡ カタカナ, etc. without shifting positions.
+  // Length-preserving 1-to-1 char normalization: full→half width,
+  // ideographic→ascii space, hiragana→katakana, lowercase. Char indices
+  // map back to the original text, so this is the form to use anywhere
+  // a position (indexOf / substring / DP alignment) must remain valid
+  // on the original string. Single source of truth for normalization.
   function cmpLen(text) {
     return String(text)
       .replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
       .replace(/\u3000/g, ' ')
       .replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60))
       .toLowerCase();
+  }
+
+  // Whole-string equality form (match_maker scoring, glossary key dedupe,
+  // etc.). Strips inline tags then collapses whitespace — both length-
+  // changing, so positions on the result do NOT map back to the original.
+  // Use cmpLen if you need positions.
+  function makeCmp(text) {
+    return cmpLen(String(text).replace(/<[^>]+>/g, ''))
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   function containsCJK(text) {
@@ -191,10 +193,10 @@ var FelixEngine = (() => {
   /** Build non-overlapping glossary regions for a text. Single source of truth. */
   function glossRegionsForText(text, glossHits) {
     if (!glossHits.length || !text) return [];
-    const lower = text.toLowerCase();
+    const lower = cmpLen(text);
     const regions = [];
     for (const g of glossHits) {
-      const termLower = g.term.toLowerCase();
+      const termLower = cmpLen(g.term);
       let pos = 0;
       while ((pos = lower.indexOf(termLower, pos)) !== -1) {
         const end = pos + termLower.length;
@@ -363,8 +365,8 @@ var FelixEngine = (() => {
     if (!qGlossTrans || !sGlossTrans) return { placed: false };
 
     // Check that sGlossTrans appears exactly once in tmTarget
-    const tgtLower = tmTarget.toLowerCase();
-    const sTransLower = sGlossTrans.toLowerCase();
+    const tgtLower = cmpLen(tmTarget);
+    const sTransLower = cmpLen(sGlossTrans);
     const idx = tgtLower.indexOf(sTransLower);
     if (idx === -1) return { placed: false };
     // Ensure exactly one occurrence
@@ -1052,12 +1054,12 @@ var FelixEngine = (() => {
   // Results are sorted by start; on overlap the longer / earlier atom wins.
   function findAllAtoms(text, glossaryData) {
     if (!text || !glossaryData) return [];
-    const lower = text.toLowerCase();
+    const lower = cmpLen(text);
     const raw = [];
     for (const g of glossaryData) {
       const term = g && g.term;
       if (!term) continue;
-      const tl = term.toLowerCase();
+      const tl = cmpLen(term);
       let pos = 0;
       while (pos <= text.length - term.length) {
         const idx = lower.indexOf(tl, pos);
@@ -1085,11 +1087,11 @@ var FelixEngine = (() => {
   // 20%UP shares `2 0 %` with ダメージカット20% but nothing with 全体.
   function bestPairForAtom(qAtom, sAtoms) {
     if (!sAtoms.length) return -1;
-    const qChars = new Set(qAtom.entry.term.toLowerCase());
+    const qChars = new Set(cmpLen(qAtom.entry.term));
     let bestIdx = -1, bestScore = -1;
     for (let i = 0; i < sAtoms.length; i++) {
       let score = 0;
-      for (const ch of sAtoms[i].entry.term.toLowerCase()) {
+      for (const ch of cmpLen(sAtoms[i].entry.term)) {
         if (qChars.has(ch)) score++;
       }
       if (score > bestScore) { bestScore = score; bestIdx = i; }
@@ -1294,8 +1296,8 @@ var FelixEngine = (() => {
    * pairs (MIND ↔ 光属性ダメージ, HP ↔ 生命値, etc.) still fire.
    */
   function isSpuriousDiffPair(qEntry, sEntry, query, tmSource) {
-    const q = (qEntry.term || '').toLowerCase();
-    const s = (sEntry.term || '').toLowerCase();
+    const q = cmpLen(qEntry.term || '');
+    const s = cmpLen(sEntry.term || '');
     if (!q || !s) return false;
     const qChars = new Set(q);
     for (const ch of s) {
@@ -1303,8 +1305,8 @@ var FelixEngine = (() => {
     }
     // No shared chars. Spurious only if one term also appears on the
     // other side of the row (so it's not a genuine cross-side diff).
-    if (tmSource.toLowerCase().includes(q)) return true;
-    if (query.toLowerCase().includes(s)) return true;
+    if (cmpLen(tmSource).includes(q)) return true;
+    if (cmpLen(query).includes(s)) return true;
     return false;
   }
 
@@ -1338,8 +1340,8 @@ var FelixEngine = (() => {
         const qEntry = indexByCmp.get(makeCmp(d.qText));
         const sEntry = indexByCmp.get(makeCmp(d.sText));
         if (qEntry && sEntry && !isSpuriousDiffPair(qEntry, sEntry, query, tmSource)) {
-          const tgtLower = target.toLowerCase();
-          const fromLower = sEntry.translation.toLowerCase();
+          const tgtLower = cmpLen(target);
+          const fromLower = cmpLen(sEntry.translation);
           const idx = tgtLower.indexOf(fromLower);
           if (idx !== -1) {
             target = target.substring(0, idx)
