@@ -1669,9 +1669,10 @@ var FelixEngine = (() => {
   }
 
   // === Public API ===
-  return { makeCmp, search, reverseSearch, concordanceSearch, glossarySearch,
+  return { makeCmp, cmpLen, search, reverseSearch, concordanceSearch, glossarySearch,
            glossaryPlacement, numberPlacement, rulePlacement, nonNumericDiffs,
-           markGlossaryInSource, fuzzyScore, edScore, diffHighlight, tokenize,
+           markGlossaryInSource, editDistance, bagDistance,
+           fuzzyScore, edScore, diffHighlight, tokenize,
            containsCJK, addEntry, addGlossaryEntry, parseA1, esc,
            markUncoveredHtml, renderQueryCellWithUncovered,
            uncoveredRegionsForText,
