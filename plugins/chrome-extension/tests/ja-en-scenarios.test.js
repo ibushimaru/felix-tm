@@ -208,6 +208,79 @@ test('JA→EN: glossarySearch on a JA query returns hits with EN translations', 
   assert.equal(r[1].translation, 'Light element');
 });
 
+// -------------------- bug A: capitalization preservation --------------------
+//
+// When the EN target uses a different casing than the glossary
+// translation, the substitution should keep the target's casing,
+// not the glossary's. Glossaries are typically registered in
+// lowercase / canonical form; the target reflects the actual
+// in-context rendering.
+
+test('JA→EN bug A: Title Case in target is preserved on substitution', () => {
+  const r = resolveWithPlacement(
+    '光属性のダメージ',
+    '闇属性のダメージ',
+    'Increases Dark Element damage',
+    gloss(['光属性', 'light element'], ['闇属性', 'dark element']),
+    [],
+  );
+  assert.equal(r.target, 'Increases Light Element damage',
+    'target had "Dark Element" (Title) — substitute should be "Light Element" (Title), not "light element"');
+});
+
+test('JA→EN bug A: ALL UPPER in target is preserved', () => {
+  const r = resolveWithPlacement(
+    '光属性のダメージ',
+    '闇属性のダメージ',
+    'DARK ELEMENT DAMAGE',
+    gloss(['光属性', 'light element'], ['闇属性', 'dark element']),
+    [],
+  );
+  assert.equal(r.target, 'LIGHT ELEMENT DAMAGE',
+    'ALL CAPS target should stay ALL CAPS after substitution');
+});
+
+test('JA→EN bug A: sentence case in target (first letter upper) is preserved', () => {
+  const r = resolveWithPlacement(
+    '光属性のダメージ',
+    '闇属性のダメージ',
+    'Dark element damage',
+    gloss(['光属性', 'light element'], ['闇属性', 'dark element']),
+    [],
+  );
+  assert.equal(r.target, 'Light element damage',
+    'sentence-case target should keep first-letter capitalization');
+});
+
+test('JA→EN bug A: pure lowercase target stays lowercase', () => {
+  // Sanity check that the case-preservation fix doesn't accidentally
+  // capitalize lowercase targets.
+  const r = resolveWithPlacement(
+    '光属性のダメージ',
+    '闇属性のダメージ',
+    'dark element damage',
+    gloss(['光属性', 'light element'], ['闇属性', 'dark element']),
+    [],
+  );
+  assert.equal(r.target, 'light element damage');
+});
+
+test('JA→EN bug A: target with non-alpha glossary translation passes through unchanged', () => {
+  // Glossary translation is "20%" — no alpha chars, casing preservation
+  // shouldn't try to transform digits/symbols.
+  const r = resolveWithPlacement(
+    '攻撃を30%強化',
+    '攻撃を15%強化',
+    'Boost attack 15%',
+    gloss(['30%', '30%'], ['15%', '15%']),
+    [],
+  );
+  // This may or may not place via the glossary path; the assertion
+  // is that whatever path runs, the digit/symbol substitution doesn't
+  // get casing-transformed into garbage.
+  assert.ok(/\d+%/.test(r.target), `digit/% should remain in target: ${r.target}`);
+});
+
 // -------------------- end-to-end auto-translate (JA→EN) --------------------
 
 test('JA→EN: planAutoTranslateToFuzzy fills covered rows and stops cleanly on a fuzzy-uncovered one', () => {

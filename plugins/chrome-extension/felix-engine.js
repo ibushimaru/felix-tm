@@ -30,6 +30,41 @@ var FelixEngine = (() => {
       .trim();
   }
 
+  // Transfer the casing pattern of `srcSlice` onto `newText`. Used when
+  // a per-diff substitution rewrites a chunk of the EN target with a
+  // glossary translation — the glossary is typically registered in
+  // canonical (often lowercase) form, but the actual cell rendering
+  // may use ALL CAPS, Title Case, or sentence case. Without this the
+  // substitution silently lowercases context that came in as Title.
+  //
+  // No-op when srcSlice has no Latin letters (CJK / digits / symbols),
+  // so JA/ZH targets pass through unchanged.
+  function applyCasing(srcSlice, newText) {
+    if (!/[A-Za-z]/.test(srcSlice)) return newText;
+    const isUpper = srcSlice.toUpperCase() === srcSlice && /[A-Z]/.test(srcSlice);
+    const isLower = srcSlice.toLowerCase() === srcSlice && /[a-z]/.test(srcSlice);
+    if (isUpper) return newText.toUpperCase();
+    if (isLower) return newText.toLowerCase();
+    // Mixed. Title Case if every space-separated word starts with an
+    // uppercase letter; sentence case if only the first letter is upper.
+    const words = srcSlice.split(/\s+/).filter(Boolean);
+    const everyWordTitle = words.length > 1 && words.every(w => {
+      const m = w.match(/[A-Za-z]/);
+      return !m || m[0] === m[0].toUpperCase();
+    });
+    if (everyWordTitle) {
+      return newText.replace(/(^|\s)([a-z])/g, (_, sp, c) => sp + c.toUpperCase());
+    }
+    const firstAlpha = srcSlice.match(/[A-Za-z]/);
+    if (firstAlpha && firstAlpha[0] === firstAlpha[0].toUpperCase()) {
+      const m = newText.match(/[a-zA-Z]/);
+      if (!m) return newText;
+      const i = m.index;
+      return newText.substring(0, i) + newText.charAt(i).toUpperCase() + newText.substring(i + 1);
+    }
+    return newText;
+  }
+
   function containsCJK(text) {
     return /[\u3000-\u9FFF\uF900-\uFAFF]/.test(text);
   }
@@ -402,8 +437,9 @@ var FelixEngine = (() => {
     // Ensure exactly one occurrence
     if (tgtLower.indexOf(sTransLower, idx + 1) !== -1) return { placed: false };
 
-    // Replace
-    const newTarget = tmTarget.substring(0, idx) + qGlossTrans + tmTarget.substring(idx + sGlossTrans.length);
+    // Replace, preserving the target's existing casing pattern.
+    const slice = tmTarget.substring(idx, idx + sGlossTrans.length);
+    const newTarget = tmTarget.substring(0, idx) + applyCasing(slice, qGlossTrans) + tmTarget.substring(idx + sGlossTrans.length);
     return { placed: true, target: newTarget, from: sHole, to: qHole };
   }
 
@@ -1356,8 +1392,9 @@ var FelixEngine = (() => {
           const fromLower = cmpLen(sEntry.translation);
           const idx = tgtLower.indexOf(fromLower);
           if (idx !== -1) {
+            const slice = target.substring(idx, idx + sEntry.translation.length);
             target = target.substring(0, idx)
-                   + qEntry.translation
+                   + applyCasing(slice, qEntry.translation)
                    + target.substring(idx + sEntry.translation.length);
             glossaryApplied = true;
             continue;
