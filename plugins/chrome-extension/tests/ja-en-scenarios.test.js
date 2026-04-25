@@ -281,7 +281,77 @@ test('JA→EN bug A: target with non-alpha glossary translation passes through u
   assert.ok(/\d+%/.test(r.target), `digit/% should remain in target: ${r.target}`);
 });
 
-// -------------------- end-to-end auto-translate (JA→EN) --------------------
+// -------------------- bug B: word-boundary check --------------------
+//
+// Substring substitution in EN target should not eat letters that
+// belong to a larger word. Without a boundary check, glossary
+// "闇 → Dark" applied against target "Darkens the area" finds "Dark"
+// inside "Darkens" and produces "Sunens" / "Lightens" / etc. CJK
+// targets have no word concept so the check stays scoped to spans
+// whose start/end is a Latin letter.
+
+test('JA→EN bug B: glossary translation inside a larger Latin word is rejected', () => {
+  // 闇→Dark would otherwise eat "Dark" out of "Darkens" → "Lightens".
+  // Even when the result happens to be a real word, the engine got
+  // there by accident; for 光→Sun the same path produces "Sunning".
+  const r = resolveWithPlacement(
+    '光のダメージ',
+    '闇のダメージ',
+    'Darkens the area by 50',
+    gloss(['光', 'Light'], ['闇', 'Dark']),
+    [],
+  );
+  assert.equal(r.target, 'Darkens the area by 50',
+    'no substitution should happen — "Dark" is part of "Darkens"');
+  assert.equal(r.uncovered.length, 1, 'the diff should surface as uncovered');
+});
+
+test('JA→EN bug B: glossary translation followed by space substitutes correctly', () => {
+  // "Dark area" — "Dark" stands alone, substitution must still work.
+  const r = resolveWithPlacement(
+    '光のダメージ',
+    '闇のダメージ',
+    'Dark area damage',
+    gloss(['光', 'Light'], ['闇', 'Dark']),
+    [],
+  );
+  assert.equal(r.target, 'Light area damage');
+});
+
+test('JA→EN bug B: glossary translation at end of target substitutes correctly', () => {
+  const r = resolveWithPlacement(
+    '光のダメージ',
+    '闇のダメージ',
+    'Element type: Dark',
+    gloss(['光', 'Light'], ['闇', 'Dark']),
+    [],
+  );
+  assert.equal(r.target, 'Element type: Light');
+});
+
+test('JA→EN bug B: glossary translation followed by punctuation substitutes correctly', () => {
+  const r = resolveWithPlacement(
+    '光のダメージ',
+    '闇のダメージ',
+    'Dark, and friends',
+    gloss(['光', 'Light'], ['闇', 'Dark']),
+    [],
+  );
+  assert.equal(r.target, 'Light, and friends');
+});
+
+test('JA→EN bug B: CJK-only translation skips the boundary check (no word concept)', () => {
+  // ZH target with adjacent CJK characters should still substitute,
+  // because the boundary check only kicks in for Latin-letter spans.
+  const r = resolveWithPlacement(
+    '光のダメージ',
+    '闇のダメージ',
+    '闇傷害效果',
+    gloss(['光', '光'], ['闇', '闇']),
+    [],
+  );
+  assert.equal(r.target, '光傷害效果');
+});
 
 test('JA→EN: planAutoTranslateToFuzzy fills covered rows and stops cleanly on a fuzzy-uncovered one', () => {
   const tmData = [];

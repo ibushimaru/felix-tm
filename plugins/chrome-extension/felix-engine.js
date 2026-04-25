@@ -65,6 +65,32 @@ var FelixEngine = (() => {
     return newText;
   }
 
+  // Find `fromText` (already cmpLen-folded) in `target` such that the
+  // match doesn't sit inside a larger Latin word. Length-preserving
+  // cmpLen means the index returned is also a valid index in `target`.
+  // Boundary enforcement only kicks in when the match starts/ends with
+  // a Latin letter — CJK-only or symbol-bordered spans pass through
+  // like a plain indexOf, since those scripts have no word concept.
+  function findWordBoundaryIndex(target, fromText, startPos) {
+    if (startPos == null) startPos = 0;
+    const tgtLower = cmpLen(target);
+    const startsAlpha = /^[a-z]/.test(fromText);
+    const endsAlpha = /[a-z]$/.test(fromText);
+    if (!startsAlpha && !endsAlpha) return tgtLower.indexOf(fromText, startPos);
+    let pos = startPos;
+    for (;;) {
+      const idx = tgtLower.indexOf(fromText, pos);
+      if (idx === -1) return -1;
+      const beforeOk = !startsAlpha || idx === 0
+        || !/[A-Za-z]/.test(target[idx - 1]);
+      const afterIdx = idx + fromText.length;
+      const afterOk = !endsAlpha || afterIdx === target.length
+        || !/[A-Za-z]/.test(target[afterIdx]);
+      if (beforeOk && afterOk) return idx;
+      pos = idx + 1;
+    }
+  }
+
   function containsCJK(text) {
     return /[\u3000-\u9FFF\uF900-\uFAFF]/.test(text);
   }
@@ -429,13 +455,13 @@ var FelixEngine = (() => {
 
     if (!qGlossTrans || !sGlossTrans) return { placed: false };
 
-    // Check that sGlossTrans appears exactly once in tmTarget
-    const tgtLower = cmpLen(tmTarget);
+    // Check that sGlossTrans appears exactly once in tmTarget,
+    // respecting word boundaries when the translation is Latin-letter
+    // bordered.
     const sTransLower = cmpLen(sGlossTrans);
-    const idx = tgtLower.indexOf(sTransLower);
+    const idx = findWordBoundaryIndex(tmTarget, sTransLower);
     if (idx === -1) return { placed: false };
-    // Ensure exactly one occurrence
-    if (tgtLower.indexOf(sTransLower, idx + 1) !== -1) return { placed: false };
+    if (findWordBoundaryIndex(tmTarget, sTransLower, idx + 1) !== -1) return { placed: false };
 
     // Replace, preserving the target's existing casing pattern.
     const slice = tmTarget.substring(idx, idx + sGlossTrans.length);
@@ -1388,9 +1414,8 @@ var FelixEngine = (() => {
         const qEntry = indexByCmp.get(makeCmp(d.qText));
         const sEntry = indexByCmp.get(makeCmp(d.sText));
         if (qEntry && sEntry && !isSpuriousDiffPair(qEntry, sEntry, query, tmSource)) {
-          const tgtLower = cmpLen(target);
           const fromLower = cmpLen(sEntry.translation);
-          const idx = tgtLower.indexOf(fromLower);
+          const idx = findWordBoundaryIndex(target, fromLower);
           if (idx !== -1) {
             const slice = target.substring(idx, idx + sEntry.translation.length);
             target = target.substring(0, idx)
