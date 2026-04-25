@@ -1734,6 +1734,204 @@ var FelixEngine = (() => {
     return runs;
   }
 
+  // === TMX 1.4 import / export ===
+  //
+  // Pure-string parser/serializer — no DOMParser dependency, so the
+  // same code runs in the extension (sidepanel) and in the Node test
+  // harness without polyfills. TMX is a flat-enough XML subset that
+  // a regex pass is sufficient; we do NOT try to handle arbitrary XML.
+  // Inline tags (<bpt>/<ept>/<ph>/<it>/<hi>) inside a <seg> are
+  // stripped down to their text content, matching the Python port and
+  // Felix CAT's own behavior.
+
+  const _XML_DECODE = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&amp;': '&' };
+  function decodeXml(s) {
+    return String(s).replace(/&(?:lt|gt|quot|apos|amp);/g, m => _XML_DECODE[m]);
+  }
+  function encodeXml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  function _parseAttrs(s) {
+    const out = {};
+    if (!s) return out;
+    const re = /([a-zA-Z_][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+    let m;
+    while ((m = re.exec(s)) !== null) out[m[1]] = m[2] != null ? m[2] : m[3];
+    return out;
+  }
+
+  // Format / parse Felix-flavored TMX dates (YYYYMMDDTHHmmssZ, UTC).
+  function _formatTmxDate(d) {
+    const pad = n => String(n).padStart(2, '0');
+    return d.getUTCFullYear()
+      + pad(d.getUTCMonth() + 1) + pad(d.getUTCDate())
+      + 'T' + pad(d.getUTCHours()) + pad(d.getUTCMinutes()) + pad(d.getUTCSeconds()) + 'Z';
+  }
+  function _parseTmxDate(s) {
+    if (!s) return null;
+    const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(s);
+    if (!m) return null;
+    return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+  }
+
+  // Best-match for a TUV language code, allowing 'en' to match 'en-US' etc.
+  function _findLangKey(tuvs, lang) {
+    if (!lang) return null;
+    const l = lang.toLowerCase();
+    if (l in tuvs) return l;
+    for (const k of Object.keys(tuvs)) {
+      if (k.startsWith(l + '-') || l.startsWith(k + '-')) return k;
+    }
+    return null;
+  }
+
+  // Strip inline TMX/XML tags inside a <seg> body and decode entities.
+  // Felix preserves seg.text + each child.text + child.tail; we collapse
+  // that to plain text since the engine downstream is text-only anyway.
+  function _segText(body) {
+    return decodeXml(String(body || '').replace(/<[^>]+>/g, ''));
+  }
+
+  /**
+   * Parse a TMX 1.4 document (string) into a list of records.
+   *   parseTmx(xml, { sourceLang?, targetLang? }) →
+   *     { records, sourceLang, targetLang }
+   *
+   * When sourceLang/targetLang are omitted they fall back to the
+   * <header srclang> attribute and then to the first two distinct
+   * language codes seen on each <tu>'s <tuv> children.
+   */
+  function parseTmx(xml, opts) {
+    opts = opts || {};
+    let sourceLang = (opts.sourceLang || '').toLowerCase() || null;
+    let targetLang = (opts.targetLang || '').toLowerCase() || null;
+
+    // Header srclang fills in the source default.
+    const headerMatch = /<header\b([^>]*?)\/?>/i.exec(xml);
+    if (headerMatch && !sourceLang) {
+      const ha = _parseAttrs(headerMatch[1]);
+      if (ha.srclang) sourceLang = ha.srclang.toLowerCase();
+    }
+
+    const records = [];
+    const tuRe = /<tu\b([^>]*?)>([\s\S]*?)<\/tu>/g;
+    let tuM;
+    while ((tuM = tuRe.exec(xml)) !== null) {
+      const tuAttrs = _parseAttrs(tuM[1]);
+      const tuBody = tuM[2];
+
+      // Per-TU context (Felix convention: <prop type="x-context">...).
+      let context = '';
+      const propRe = /<prop\b([^>]*?)>([\s\S]*?)<\/prop>/g;
+      let propM;
+      while ((propM = propRe.exec(tuBody)) !== null) {
+        const pa = _parseAttrs(propM[1]);
+        if ((pa.type || '').toLowerCase() === 'x-context') {
+          context = decodeXml(propM[2]);
+          break;
+        }
+      }
+
+      // Collect all <tuv lang=...><seg>...</seg></tuv>.
+      const tuvs = {};
+      const tuvRe = /<tuv\b([^>]*?)>([\s\S]*?)<\/tuv>/g;
+      let tuvM;
+      while ((tuvM = tuvRe.exec(tuBody)) !== null) {
+        const ta = _parseAttrs(tuvM[1]);
+        const lang = (ta['xml:lang'] || ta.lang || '').toLowerCase();
+        if (!lang) continue;
+        const segMatch = /<seg\b[^>]*?(?:\/>|>([\s\S]*?)<\/seg>)/i.exec(tuvM[2]);
+        const text = segMatch ? _segText(segMatch[1] || '') : '';
+        tuvs[lang] = text;
+      }
+
+      const langs = Object.keys(tuvs);
+      if (langs.length < 2) continue;
+
+      // Pick source/target by lang code; fall back to first two distinct.
+      let srcKey = _findLangKey(tuvs, sourceLang);
+      let tgtKey = _findLangKey(tuvs, targetLang);
+      if (!srcKey) srcKey = langs[0];
+      if (!tgtKey) tgtKey = langs.find(k => k !== srcKey) || null;
+      if (!tgtKey) continue;
+
+      // Lock in the auto-detected langs so all subsequent TUs match
+      // the same orientation, even if the source was unspecified.
+      if (!sourceLang) sourceLang = srcKey;
+      if (!targetLang) targetLang = tgtKey;
+
+      const rec = {
+        source: tuvs[srcKey],
+        target: tuvs[tgtKey],
+        context,
+        createdBy: tuAttrs.creationid || '',
+        modifiedBy: tuAttrs.changeid || '',
+        created: _parseTmxDate(tuAttrs.creationdate),
+        modified: _parseTmxDate(tuAttrs.changedate),
+      };
+      const usage = tuAttrs.usagecount;
+      if (usage && /^\d+$/.test(usage)) rec.refcount = parseInt(usage, 10);
+      records.push(rec);
+    }
+
+    return { records, sourceLang, targetLang };
+  }
+
+  /**
+   * Serialize records to a TMX 1.4 document string.
+   *   serializeTmx(records, { sourceLang, targetLang, creationTool?,
+   *                           creationToolVersion? }) → xml
+   *
+   * Records may carry the same fields parseTmx emits; missing optional
+   * fields drop their corresponding attribute (no creationid="" noise).
+   */
+  function serializeTmx(records, opts) {
+    opts = opts || {};
+    const sourceLang = opts.sourceLang || 'en';
+    const targetLang = opts.targetLang || 'ja';
+    const tool = opts.creationTool || 'felix-tm';
+    const toolVer = opts.creationToolVersion || '0.1.0';
+
+    const out = [];
+    out.push('<?xml version="1.0" encoding="UTF-8"?>');
+    out.push('<tmx version="1.4">');
+    out.push('  <header'
+      + ' creationtool="' + encodeXml(tool) + '"'
+      + ' creationtoolversion="' + encodeXml(toolVer) + '"'
+      + ' datatype="plaintext"'
+      + ' segtype="sentence"'
+      + ' adminlang="' + encodeXml(sourceLang.toUpperCase()) + '"'
+      + ' srclang="' + encodeXml(sourceLang.toUpperCase()) + '"'
+      + ' o-tmf="' + encodeXml(tool) + '"/>');
+    out.push('  <body>');
+
+    for (const rec of (records || [])) {
+      const attrs = [];
+      if (rec.created instanceof Date) attrs.push('creationdate="' + _formatTmxDate(rec.created) + '"');
+      if (rec.modified instanceof Date) attrs.push('changedate="' + _formatTmxDate(rec.modified) + '"');
+      if (rec.createdBy) attrs.push('creationid="' + encodeXml(rec.createdBy) + '"');
+      if (rec.modifiedBy) attrs.push('changeid="' + encodeXml(rec.modifiedBy) + '"');
+      if (rec.refcount) attrs.push('usagecount="' + rec.refcount + '"');
+      out.push('    <tu' + (attrs.length ? ' ' + attrs.join(' ') : '') + '>');
+      if (rec.context) {
+        out.push('      <prop type="x-context">' + encodeXml(rec.context) + '</prop>');
+      }
+      out.push('      <tuv xml:lang="' + encodeXml(sourceLang) + '"><seg>' + encodeXml(rec.source || '') + '</seg></tuv>');
+      out.push('      <tuv xml:lang="' + encodeXml(targetLang) + '"><seg>' + encodeXml(rec.target || '') + '</seg></tuv>');
+      out.push('    </tu>');
+    }
+
+    out.push('  </body>');
+    out.push('</tmx>');
+    return out.join('\n') + '\n';
+  }
+
   // === Public API ===
   return { makeCmp, cmpLen, search, reverseSearch, concordanceSearch, glossarySearch,
            glossaryPlacement, numberPlacement, rulePlacement, nonNumericDiffs,
@@ -1746,7 +1944,8 @@ var FelixEngine = (() => {
            CELL_FMT_PLACED, CELL_FMT_UNVERIFIED,
            resolveWithPlacement,
            planAutoTranslateSelection, planAutoTranslateToFuzzy,
-           buildPlanActions, describePlan };
+           buildPlanActions, describePlan,
+           parseTmx, serializeTmx };
 })();
 
 // Make available in different contexts
