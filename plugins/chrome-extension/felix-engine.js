@@ -1734,6 +1734,126 @@ var FelixEngine = (() => {
     return runs;
   }
 
+  // === Quality Control (Felix Manual Ch.4.6.4) ===
+  //
+  // Three independent checks that flag suspicious source/target pairs:
+  //   • Numbers: every digit run on one side should appear on the other
+  //   • ALL CAPS: ≥2-letter all-uppercase words in source should appear
+  //     verbatim in target (English convention for product/code names)
+  //   • Glossary: terms registered in the glossary that show up in the
+  //     source should have their registered translation in the target
+  //
+  // Each helper returns an issue list independently so the UI can decide
+  // which classes of issue to surface; qcCheck is the convenience
+  // umbrella that runs all enabled checks in one pass.
+
+  // Extract digit runs (with optional decimal/thousands separators) from
+  // a cmpLen-folded copy of the input. Width-folding via cmpLen means
+  // ３１４ and 314 produce the same set, so width differences in the
+  // source/target don't trigger spurious mismatches.
+  function _extractNumbers(text) {
+    if (!text) return [];
+    const folded = cmpLen(text);
+    const re = /\d+(?:[.,]\d+)*/g;
+    const out = [];
+    let m;
+    while ((m = re.exec(folded)) !== null) out.push(m[0]);
+    return out;
+  }
+
+  // Multiset diff: which numbers appear on src side missing on tgt side
+  // (and vice versa). Multiset because "5 of 5" should preserve both.
+  function qcNumbers(source, target) {
+    const s = _extractNumbers(source);
+    const t = _extractNumbers(target);
+    const tCounts = new Map();
+    for (const n of t) tCounts.set(n, (tCounts.get(n) || 0) + 1);
+    const missing = [];
+    for (const n of s) {
+      const c = tCounts.get(n) || 0;
+      if (c <= 0) missing.push({ value: n, side: 'target' });
+      else tCounts.set(n, c - 1);
+    }
+    const extra = [];
+    for (const [n, c] of tCounts) {
+      for (let i = 0; i < c; i++) extra.push({ value: n, side: 'source' });
+    }
+    return missing.concat(extra);
+  }
+
+  // ≥2-letter all-uppercase word runs in source that are absent from
+  // target. Case-sensitive on purpose — the typical case is ENG product
+  // codes ("HP", "MATK", "GG") that should pass through verbatim.
+  function _extractAllCapsWords(text) {
+    if (!text) return [];
+    const out = [];
+    const re = /[A-Z][A-Z0-9]{1,}/g;
+    let m;
+    while ((m = re.exec(text)) !== null) out.push(m[0]);
+    return out;
+  }
+  function qcAllCaps(source, target) {
+    const words = _extractAllCapsWords(source);
+    if (!words.length) return [];
+    const issues = [];
+    for (const w of words) {
+      if (target.indexOf(w) === -1) issues.push({ word: w });
+    }
+    return issues;
+  }
+
+  // For each glossary term that appears in the source, the registered
+  // translation should appear in the target. Word-boundary aware on
+  // both sides via findWordBoundaryIndex, so "dark" inside "darkens"
+  // doesn't masquerade as a missing translation.
+  function qcGlossary(source, target, glossaryData) {
+    if (!glossaryData || !glossaryData.length || !source) return [];
+    const issues = [];
+    for (const g of glossaryData) {
+      const term = g && g.term;
+      const trans = g && g.translation;
+      if (!term || !trans) continue;
+      const termFolded = cmpLen(term);
+      // Term must be present on the source side (word-boundary aware).
+      if (findWordBoundaryIndex(source, termFolded) === -1) continue;
+      // Translation must be present on the target side.
+      const transFolded = cmpLen(trans);
+      if (findWordBoundaryIndex(target, transFolded) === -1) {
+        issues.push({ term, translation: trans });
+      }
+    }
+    return issues;
+  }
+
+  /**
+   * Run the enabled QC checks against a single record. Returns a flat
+   * issue list with a `type` discriminator so the UI can group/colour.
+   *   qcCheck({source, target}, glossaryData?, {numbers?, allCaps?, glossary?})
+   */
+  function qcCheck(record, glossaryData, opts) {
+    if (!record) return [];
+    opts = opts || { numbers: true, allCaps: true, glossary: true };
+    const src = record.source || '';
+    const tgt = record.target || '';
+    const out = [];
+    if (opts.numbers !== false) {
+      for (const issue of qcNumbers(src, tgt)) {
+        out.push({ type: 'number', ...issue });
+      }
+    }
+    if (opts.allCaps !== false) {
+      for (const issue of qcAllCaps(src, tgt)) {
+        out.push({ type: 'allcaps', ...issue });
+      }
+    }
+    if (opts.glossary !== false && glossaryData && glossaryData.length) {
+      for (const issue of qcGlossary(src, tgt, glossaryData)) {
+        out.push({ type: 'glossary', ...issue });
+      }
+    }
+    return out;
+  }
+
   // === TMX 1.4 import / export ===
   //
   // Pure-string parser/serializer — no DOMParser dependency, so the
@@ -1945,7 +2065,8 @@ var FelixEngine = (() => {
            resolveWithPlacement,
            planAutoTranslateSelection, planAutoTranslateToFuzzy,
            buildPlanActions, describePlan,
-           parseTmx, serializeTmx };
+           parseTmx, serializeTmx,
+           qcCheck, qcNumbers, qcAllCaps, qcGlossary };
 })();
 
 // Make available in different contexts
