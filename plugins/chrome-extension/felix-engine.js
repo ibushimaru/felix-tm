@@ -1734,6 +1734,208 @@ var FelixEngine = (() => {
     return runs;
   }
 
+  // === Tagged Search / Replace (Felix Manual Ch.4.5) ===
+  //
+  // The query language Felix uses in its Search & Replace dialog:
+  //   foo                  — match "foo" in source/target/context
+  //   source:foo           — only the source field
+  //   trans:foo            — only the target field (Felix's name)
+  //   target:foo           — alias for trans:
+  //   context:foo          — only the context field
+  //   created-by:alice     — only the createdBy field
+  //   modified-by:alice    — only the modifiedBy field
+  //   regex:foo\d+         — JavaScript regex (case-insensitive)
+  //   <field>:*            — only valid in the FROM side of replace,
+  //                          tells the replacer to overwrite the field
+  //                          entirely with the TO expression's text
+  //
+  // Numeric / boolean / date fields (reliability, validated, refcount,
+  // created, modified) are settable on the TO side via the same
+  // <field>:value syntax — Felix handles them as the field replace too.
+
+  const _TEXT_FIELDS = ['source', 'target', 'context', 'createdBy', 'modifiedBy'];
+  const _TAG_TO_FIELD = {
+    source: 'source',
+    trans: 'target',
+    target: 'target',
+    context: 'context',
+    'created-by': 'createdBy',
+    'modified-by': 'modifiedBy',
+    reliability: 'reliability',
+    validated: 'validated',
+    refcount: 'refcount',
+    created: 'created',
+    modified: 'modified',
+  };
+
+  function parseQuery(expr) {
+    const e = String(expr == null ? '' : expr);
+    if (!e) return { tag: null, field: null, value: '', regex: false, fieldStar: false };
+    // regex: is a special tag that doesn't bind to a field; it searches
+    // across all text fields like a tag-less query but with a RegExp.
+    if (/^regex:/i.test(e)) {
+      return { tag: 'regex', field: null, value: e.slice(6), regex: true, fieldStar: false };
+    }
+    const m = /^([a-zA-Z][\w-]*):(.*)$/s.exec(e);
+    if (m && _TAG_TO_FIELD[m[1].toLowerCase()]) {
+      const tag = m[1].toLowerCase();
+      const value = m[2];
+      return {
+        tag,
+        field: _TAG_TO_FIELD[tag],
+        value: value === '*' ? '' : value,
+        regex: false,
+        fieldStar: value === '*',
+      };
+    }
+    return { tag: null, field: null, value: e, regex: false, fieldStar: false };
+  }
+
+  // Substring match (case-insensitive via cmpLen) for one field. Regex
+  // path uses native RegExp with the 'i' flag.
+  function _matchesField(record, field, q) {
+    const fv = record && record[field];
+    if (fv == null) return false;
+    const s = String(fv);
+    if (q.regex) {
+      try { return new RegExp(q.value, 'i').test(s); } catch (_) { return false; }
+    }
+    return cmpLen(s).indexOf(cmpLen(q.value)) !== -1;
+  }
+
+  /**
+   * Find records matching a query string. Returns a shallow copy of
+   * each matching record annotated with `matchField` (which field hit).
+   *   searchAndReplace(tmData, 'source:cat')
+   *   searchAndReplace(tmData, 'regex:c[ao]t')
+   *   searchAndReplace(tmData, 'cat')   ← any text field
+   */
+  function searchAndReplace(tmData, expr) {
+    if (!tmData || !tmData.length) return [];
+    const q = parseQuery(expr);
+    const out = [];
+    const fields = q.field ? [q.field] : _TEXT_FIELDS;
+    for (let i = 0; i < tmData.length; i++) {
+      const rec = tmData[i];
+      let hitField = null;
+      for (const f of fields) {
+        if (_matchesField(rec, f, q)) { hitField = f; break; }
+      }
+      if (hitField) out.push({ ...rec, matchField: hitField, tmIdx: i });
+    }
+    return out;
+  }
+
+  // Coerce a TO-side value into the right type for non-text fields.
+  function _coerceFieldValue(field, raw) {
+    if (field === 'refcount' || field === 'reliability') {
+      const n = parseInt(raw, 10);
+      return Number.isFinite(n) ? n : 0;
+    }
+    if (field === 'validated') {
+      return /^(true|1|yes)$/i.test(String(raw).trim());
+    }
+    if (field === 'created' || field === 'modified') {
+      const d = new Date(String(raw).trim());
+      return isNaN(d.getTime()) ? null : d;
+    }
+    return String(raw);
+  }
+
+  /**
+   * Apply a from→to replacement across tmData (mutates in place).
+   * Returns { changed, scannedFields } counts. Behavior table:
+   *   from='cat',           to='dog'        → substring sub in any text field
+   *   from='source:cat',    to='dog'        → substring sub only in source
+   *   from='source:*',      to='Ryan'       → overwrite entire source field
+   *   from='regex:(\d+)円', to='\u00a5$1'    → regex replace in text fields
+   *   from='reliability:5', to='0'          → only matches records whose
+   *                                           reliability is 5; sets it to 0
+   */
+  function applyReplace(tmData, fromExpr, toExpr) {
+    if (!tmData || !tmData.length) return { changed: 0, scannedFields: 0 };
+    const fromQ = parseQuery(fromExpr);
+    const toQ = parseQuery(toExpr);
+    let changed = 0;
+    const targetField = fromQ.field;
+
+    // Field-replace mode: from='field:*', overwrite that field on
+    // every record (or only those that match an additional filter
+    // — Felix's UX is that you first filter via Search, then run
+    // replace on the filtered set; we keep it simple and apply to
+    // every record).
+    if (fromQ.fieldStar && targetField) {
+      const newValue = _coerceFieldValue(targetField, toQ.value);
+      for (const rec of tmData) {
+        rec[targetField] = newValue;
+        changed++;
+      }
+      return { changed, scannedFields: tmData.length };
+    }
+
+    // Numeric / boolean / date fields can't be substring-edited; only
+    // the field-replace path makes sense. If the from-side names such
+    // a field, treat any record matching the equality as a hit and
+    // assign the TO value.
+    if (targetField && !_TEXT_FIELDS.includes(targetField)) {
+      const wanted = _coerceFieldValue(targetField, fromQ.value);
+      const replacement = _coerceFieldValue(targetField, toQ.value);
+      for (const rec of tmData) {
+        const cur = rec[targetField];
+        const same = cur instanceof Date && wanted instanceof Date
+          ? cur.getTime() === wanted.getTime()
+          : cur === wanted;
+        if (same) {
+          rec[targetField] = replacement;
+          changed++;
+        }
+      }
+      return { changed, scannedFields: tmData.length };
+    }
+
+    // Substring / regex replacement on text fields.
+    const fields = targetField ? [targetField] : _TEXT_FIELDS;
+    const re = fromQ.regex
+      ? (() => { try { return new RegExp(fromQ.value, 'gi'); } catch (_) { return null; } })()
+      : null;
+    if (fromQ.regex && !re) return { changed: 0, scannedFields: 0 };
+
+    for (const rec of tmData) {
+      let recChanged = false;
+      for (const f of fields) {
+        const cur = rec[f];
+        if (cur == null) continue;
+        const s = String(cur);
+        let next;
+        if (re) {
+          next = s.replace(re, toQ.value);
+        } else {
+          // Case-insensitive substring replace via cmpLen positions.
+          const folded = cmpLen(s);
+          const needle = cmpLen(fromQ.value);
+          if (!needle) continue;
+          let i = 0, parts = '';
+          let pos = 0;
+          for (;;) {
+            const idx = folded.indexOf(needle, pos);
+            if (idx === -1) { parts += s.substring(pos); break; }
+            parts += s.substring(pos, idx) + toQ.value;
+            pos = idx + needle.length;
+            i++;
+          }
+          if (i === 0) continue;
+          next = parts;
+        }
+        if (next !== s) {
+          rec[f] = next;
+          recChanged = true;
+        }
+      }
+      if (recChanged) changed++;
+    }
+    return { changed, scannedFields: tmData.length * fields.length };
+  }
+
   // === Quality Control (Felix Manual Ch.4.6.4) ===
   //
   // Three independent checks that flag suspicious source/target pairs:
@@ -2066,7 +2268,8 @@ var FelixEngine = (() => {
            planAutoTranslateSelection, planAutoTranslateToFuzzy,
            buildPlanActions, describePlan,
            parseTmx, serializeTmx,
-           qcCheck, qcNumbers, qcAllCaps, qcGlossary };
+           qcCheck, qcNumbers, qcAllCaps, qcGlossary,
+           parseQuery, searchAndReplace, applyReplace };
 })();
 
 // Make available in different contexts
