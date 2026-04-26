@@ -1128,34 +1128,30 @@ function buildIssueCard(rec, recIdx, issues) {
 
 // Single delegated click handler on the QC results container — wired
 // once via a flag so re-runs don't stack listeners. Clicking a .qc-mark
-// hops the user into the TM tab with this row's source/target pre-
-// loaded into the Register form, so they can fix the offending span
-// and re-register in two keystrokes.
+// jumps to the Glossary tab with the highlighted span pre-filled as
+// the new term and the translation field focused — turning a "this
+// CAPS word never makes it across" finding into a one-line glossary
+// entry the next QC pass will respect.
 let _qcClickWired = false;
 function wireQcResultsClick() {
   if (_qcClickWired) return;
   const results = document.getElementById('qc-results');
   results.addEventListener('click', e => {
-    const mark = e.target.closest('.qc-mark[data-tmidx]');
+    const mark = e.target.closest('.qc-mark');
     if (!mark) return;
-    const idx = parseInt(mark.dataset.tmidx, 10);
-    if (!Number.isFinite(idx)) return;
-    const rec = tmData[idx];
-    if (!rec) return;
-    // Switch to TM tab and pre-fill the Register form. Existing
-    // registerTM() / addEntry() handle dedup if the user just hits
-    // Register without changing anything.
-    const tmTab = document.querySelector('.tab[data-panel="tm"]');
-    if (tmTab) tmTab.click();
-    const srcInput = document.getElementById('reg-source');
-    const tgtInput = document.getElementById('reg-target');
-    if (srcInput) srcInput.value = rec.source || '';
-    if (tgtInput) {
-      tgtInput.value = rec.target || '';
-      tgtInput.focus();
-      // Place caret at the end so the user can immediately type the
-      // missing word in.
-      tgtInput.setSelectionRange(tgtInput.value.length, tgtInput.value.length);
+    // Glossary issues are already registered (the tooltip is the
+    // existing translation); a click there shouldn't re-register.
+    if (mark.dataset.type === 'glossary') return;
+    const term = mark.textContent || '';
+    if (!term) return;
+    const glossTab = document.querySelector('.tab[data-panel="glossary"]');
+    if (glossTab) glossTab.click();
+    const termInput = document.getElementById('gloss-term');
+    const transInput = document.getElementById('gloss-trans');
+    if (termInput) termInput.value = term;
+    if (transInput) {
+      transInput.value = '';
+      transInput.focus();
     }
   });
   _qcClickWired = true;
