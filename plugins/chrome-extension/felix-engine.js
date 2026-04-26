@@ -255,14 +255,51 @@ var FelixEngine = (() => {
 
   // === TM Search ===
 
-  function search(query, tmData, minScore) {
+  // Felix-spec format penalty: extract opening tags only (skip
+  // closing tags so <b>x</b> on one side and <b>y</b> on the other
+  // count as one matched tag, not two), lower-case, then take the
+  // multiset symmetric difference and divide by 100. Used optionally
+  // by search() / reverseSearch() to demote matches whose markup
+  // structure diverges from the query.
+  function _extractFormatTags(s) {
+    const out = [];
+    const re = /<([^>]+)>/g;
+    let m;
+    while ((m = re.exec(String(s == null ? '' : s))) !== null) {
+      const tag = m[1];
+      if (tag.length && tag[0] !== '/') out.push(tag.toLowerCase());
+    }
+    return out;
+  }
+
+  function _multisetDiff(a, b) {
+    const f = new Map();
+    for (const x of a) f.set(x, (f.get(x) || 0) + 1);
+    for (const x of b) f.set(x, (f.get(x) || 0) - 1);
+    let d = 0;
+    for (const v of f.values()) d += Math.abs(v);
+    return d;
+  }
+
+  function formatPenalty(rich1, rich2) {
+    const t1 = _extractFormatTags(rich1);
+    const t2 = _extractFormatTags(rich2);
+    if (!t1.length && !t2.length) return 0;
+    return _multisetDiff(t1, t2) / 100;
+  }
+
+  function search(query, tmData, minScore, opts) {
     if (!query || !tmData || !tmData.length) return [];
+    const assessFormat = !!(opts && opts.assessFormatPenalty);
     const qCmp = makeCmp(query);
     const matches = [];
     for (let i = 0; i < tmData.length; i++) {
       const entry = tmData[i];
       const sCmp = entry.cmp || makeCmp(entry.source);
-      const score = fuzzyScore(qCmp, sCmp, minScore);
+      let score = fuzzyScore(qCmp, sCmp, minScore);
+      if (assessFormat && score > 0) {
+        score = Math.max(0, score - formatPenalty(query, entry.source));
+      }
       if (score >= minScore) {
         matches.push({ ...entry, score, tmIdx: i });
       }
@@ -730,14 +767,18 @@ var FelixEngine = (() => {
 
   // === Reverse Search (search by target text) ===
 
-  function reverseSearch(query, tmData, minScore) {
+  function reverseSearch(query, tmData, minScore, opts) {
     if (!query || !tmData || !tmData.length) return [];
+    const assessFormat = !!(opts && opts.assessFormatPenalty);
     const qCmp = makeCmp(query);
     const matches = [];
     for (let i = 0; i < tmData.length; i++) {
       const entry = tmData[i];
       const tCmp = entry.targetCmp || makeCmp(entry.target);
-      const score = fuzzyScore(qCmp, tCmp, minScore);
+      let score = fuzzyScore(qCmp, tCmp, minScore);
+      if (assessFormat && score > 0) {
+        score = Math.max(0, score - formatPenalty(query, entry.target));
+      }
       if (score >= minScore) {
         matches.push({ ...entry, score, tmIdx: i });
       }
@@ -2395,7 +2436,8 @@ var FelixEngine = (() => {
            buildPlanActions, describePlan,
            parseTmx, serializeTmx,
            qcCheck, qcNumbers, qcAllCaps, qcGlossary,
-           parseQuery, searchAndReplace, applyReplace };
+           parseQuery, searchAndReplace, applyReplace,
+           subdist, formatPenalty };
 })();
 
 // Make available in different contexts

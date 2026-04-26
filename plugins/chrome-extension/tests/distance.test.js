@@ -204,3 +204,65 @@ test('fuzzyScore: empty inputs both → length-0 short-circuit returns 1', () =>
   // refuse to fuzzy-search empty queries upstream.
   assert.equal(fuzzyScore('', '', 0.99), 1);
 });
+
+// -------------------- subdist (Felix substring distance) --------------------
+
+const { subdist, formatPenalty } = FelixEngine;
+
+test('subdist: needle inside haystack → 0', () => {
+  assert.equal(subdist('cat', 'the cat sat'), 0);
+  assert.equal(subdist('cat', 'cat'), 0);
+});
+
+test('subdist: needle with one typo inside haystack → 1', () => {
+  assert.equal(subdist('cat', 'the cot sat'), 1);
+});
+
+test('subdist: empty needle → 0; empty haystack → needle length', () => {
+  assert.equal(subdist('', 'anything'), 0);
+  assert.equal(subdist('cat', ''), 3);
+});
+
+test('subdist: needle longer than haystack → still finite, falls back to edit distance', () => {
+  // "cats" vs "cat": insertion to get "cat" → "cats" needs 1 op.
+  assert.equal(subdist('cats', 'cat'), 1);
+});
+
+// -------------------- formatPenalty --------------------
+
+test('formatPenalty: identical tag sets → 0', () => {
+  assert.equal(formatPenalty('<b>hi</b>', '<b>こんにちは</b>'), 0);
+});
+
+test('formatPenalty: closing tags ignored — only opening tags count', () => {
+  // Felix's get_tags skips "/" closers; missing closer should not
+  // add to the diff.
+  assert.equal(formatPenalty('<b>hi</b>', '<b>hi'), 0);
+});
+
+test('formatPenalty: case folded — <B> ≡ <b>', () => {
+  assert.equal(formatPenalty('<B>hi</B>', '<b>hi</b>'), 0);
+});
+
+test('formatPenalty: missing tag on one side → 0.01 per tag', () => {
+  // <i> in source but not in target → diff=1 → 0.01.
+  assert.equal(formatPenalty('<b>hi</b>', '<b><i>hi</i></b>'), 0.01);
+});
+
+test('formatPenalty: empty / null inputs → 0', () => {
+  assert.equal(formatPenalty('', ''), 0);
+  assert.equal(formatPenalty(null, undefined), 0);
+});
+
+test('search: opts.assessFormatPenalty subtracts from score', () => {
+  const tm = [{
+    source: '<b>hello</b>', target: '<b>こんにちは</b>',
+    cmp: FelixEngine.makeCmp('<b>hello</b>'),
+  }];
+  // Same text, same tag count → no penalty, exact score 1.0.
+  const r1 = FelixEngine.search('<b>hello</b>', tm, 0.5, { assessFormatPenalty: true });
+  assert.equal(r1[0].score, 1);
+  // Query has an extra <i> → penalty 0.01 → score 0.99.
+  const r2 = FelixEngine.search('<b><i>hello</i></b>', tm, 0.5, { assessFormatPenalty: true });
+  assert.ok(Math.abs(r2[0].score - 0.99) < 1e-9, `expected 0.99, got ${r2[0].score}`);
+});

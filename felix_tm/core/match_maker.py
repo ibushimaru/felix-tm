@@ -82,23 +82,34 @@ def _pass_bag_check(query: str, source: str, min_score: float) -> bool:
     return mindiff <= max_diff
 
 
-_FORMAT_TAG_RE = re.compile(r"<[^>]+>")
+# Felix get_tags: opening tags only (skip "/" closers), lowercased.
+# Closing tags are skipped because <b>x</b> on each side should count
+# as one paired tag, not two — the closer is implied.
+_FORMAT_TAG_RE = re.compile(r"<([^>]+)>")
+
+
+def _extract_format_tags(rich: str) -> list[str]:
+    out: list[str] = []
+    for m in _FORMAT_TAG_RE.finditer(rich):
+        tag = m.group(1)
+        if tag and tag[0] != "/":
+            out.append(tag.lower())
+    return out
 
 
 def _format_penalty(query_rich: str, source_rich: str) -> float:
-    """Calculate penalty for mismatched formatting tags."""
-    q_tags = sorted(_FORMAT_TAG_RE.findall(query_rich))
-    s_tags = sorted(_FORMAT_TAG_RE.findall(source_rich))
-
+    """Felix get_format_penalty: multiset symmetric diff of opening
+    tags / 100. Subtracted from the match score when assess_format_
+    penalty is enabled.
+    """
+    q_tags = _extract_format_tags(query_rich)
+    s_tags = _extract_format_tags(source_rich)
     if not q_tags and not s_tags:
         return 0.0
-
-    # Count mismatched tags
     all_tags = set(q_tags) | set(s_tags)
     diff = 0
     for tag in all_tags:
         diff += abs(q_tags.count(tag) - s_tags.count(tag))
-
     return diff / 100.0
 
 
