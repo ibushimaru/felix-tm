@@ -1842,15 +1842,14 @@ var FelixEngine = (() => {
 
     if (reason === 'fuzzy_uncovered') {
       const pct = at.matchScore != null ? Math.round(at.matchScore * 100) : '?';
-      const lines = [head, `${pct}% マッチあり、未対応の差分:`];
+      const lines = [head, `${pct}% マッチ — 自動置換では対応できない差分:`];
       const terms = at.missingTerms || [];
       const SHOW = 4;
       for (const t of terms.slice(0, SHOW)) {
         lines.push(`  ・「${t.query}」⇔「${t.source}」`);
       }
       if (terms.length > SHOW) lines.push(`  ・他 ${terms.length - SHOW} 件`);
-      lines.push('用語集に登録して再実行してください');
-      return { text: lines.join('\n'), ms: 8000 };
+      return { text: lines.join('\n'), ms: 6000 };
     }
 
     return { text: `${head}\n(${reason})`, ms: 4000 };

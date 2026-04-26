@@ -144,7 +144,10 @@ test('describePlan: fuzzy_uncovered lists match score and missing term pairs', (
   assert.match(text, /光属性傷害/);
   assert.match(text, /CRT/);
   assert.match(text, /神速/);
-  assert.match(text, /用語集/);    // action hint
+  // No glossary nag — translators know when a diff is glossary-shaped
+  // and when it isn't. Pushing them at glossary indiscriminately is
+  // misleading because most diffs aren't glossary candidates.
+  assert.doesNotMatch(text, /用語集/);
   assert.ok(ms >= 5000);
 });
 
