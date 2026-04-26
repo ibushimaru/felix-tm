@@ -40,20 +40,27 @@ input:focus { outline: none; border-color: #1a73e8; }
 .qc-toggle[data-on="false"] { color: #9aa0a6; border-color: #dadce0; }
 .qc-toggle[data-on="false"]:hover { background: #f8f9fa; color: #5f6368; }
 
-/* QC issue spans — same tooltip presentation as content.js .gloss_match
-   (white background, light border, dark text, subtle shadow) so the
-   sidepanel and the in-Sheet panel feel like one app. Per-type styling
-   (color / underline) stays specific to each check.                   */
-.qc-mark { cursor: help; position: relative; }
+/* QC issue spans — colored marker per issue type. Tooltip uses the
+   same CSS Anchor Positioning pattern as content.js .has-tip so it
+   floats above the panel via position:fixed and can't get clipped by
+   .qc-results' overflow:auto. position-try-fallbacks flips sides if
+   the preferred placement overflows the viewport.                    */
+.qc-mark { cursor: pointer; anchor-name: --qc-tip; anchor-scope: --qc-tip; }
 .qc-mark[data-type="number"] { background: #fce8e6; color: #d93025; font-weight: 600; padding: 0 2px; border-radius: 2px; }
 .qc-mark[data-type="allcaps"] { background: #fef7e0; color: #e8710a; font-weight: 600; padding: 0 2px; border-radius: 2px; }
 .qc-mark[data-type="glossary"] { text-decoration: underline; text-decoration-color: #1a73e8; text-underline-offset: 2px; color: #1a73e8; }
 .qc-mark::after {
-  content: attr(data-tip); display: none; position: absolute;
-  bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0;
-  border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124;
-  white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-  z-index: 10; pointer-events: none;
+  content: attr(data-tip); display: none; position: fixed;
+  position-anchor: --qc-tip;
+  position-area: block-start span-inline-end;
+  margin-bottom: 4px;
+  background: #fff; border: 1px solid #dadce0; border-radius: 4px;
+  padding: 4px 8px; font-size: 11px; color: #202124;
+  white-space: normal; width: max-content; max-width: 240px;
+  text-align: left; line-height: 1.45;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000000;
+  pointer-events: none;
+  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
 }
 .qc-mark:hover::after { display: block; }
 

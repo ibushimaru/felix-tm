@@ -1102,13 +1102,13 @@ function _collectRanges(text, issues, side) {
   return kept;
 }
 
-function _renderWithRanges(text, ranges) {
+function _renderWithRanges(text, ranges, recIdx) {
   if (!text) return '';
   if (!ranges.length) return escHtml(text);
   let out = '', cursor = 0;
   for (const r of ranges) {
     if (r.start > cursor) out += escHtml(text.slice(cursor, r.start));
-    out += '<span class="qc-mark" data-type="' + r.type + '" data-tip="' + escHtml(r.tip) + '">' + escHtml(text.slice(r.start, r.end)) + '</span>';
+    out += '<span class="qc-mark" data-type="' + r.type + '" data-tip="' + escHtml(r.tip) + '" data-tmidx="' + recIdx + '">' + escHtml(text.slice(r.start, r.end)) + '</span>';
     cursor = r.end;
   }
   if (cursor < text.length) out += escHtml(text.slice(cursor));
@@ -1120,11 +1120,45 @@ function buildIssueCard(rec, recIdx, issues) {
   const tgtRanges = _collectRanges(rec.target || '', issues, 'target');
   const div = document.createElement('div');
   div.className = 'match';
-  div.dataset.tmidx = String(recIdx);
   div.innerHTML =
-    '<div class="match-source" style="line-height:1.6">' + _renderWithRanges(rec.source || '', srcRanges) + '</div>' +
-    '<div class="match-target" style="line-height:1.6">' + _renderWithRanges(rec.target || '', tgtRanges) + '</div>';
+    '<div class="match-source" style="line-height:1.6">' + _renderWithRanges(rec.source || '', srcRanges, recIdx) + '</div>' +
+    '<div class="match-target" style="line-height:1.6">' + _renderWithRanges(rec.target || '', tgtRanges, recIdx) + '</div>';
   return div;
+}
+
+// Single delegated click handler on the QC results container — wired
+// once via a flag so re-runs don't stack listeners. Clicking a .qc-mark
+// hops the user into the TM tab with this row's source/target pre-
+// loaded into the Register form, so they can fix the offending span
+// and re-register in two keystrokes.
+let _qcClickWired = false;
+function wireQcResultsClick() {
+  if (_qcClickWired) return;
+  const results = document.getElementById('qc-results');
+  results.addEventListener('click', e => {
+    const mark = e.target.closest('.qc-mark[data-tmidx]');
+    if (!mark) return;
+    const idx = parseInt(mark.dataset.tmidx, 10);
+    if (!Number.isFinite(idx)) return;
+    const rec = tmData[idx];
+    if (!rec) return;
+    // Switch to TM tab and pre-fill the Register form. Existing
+    // registerTM() / addEntry() handle dedup if the user just hits
+    // Register without changing anything.
+    const tmTab = document.querySelector('.tab[data-panel="tm"]');
+    if (tmTab) tmTab.click();
+    const srcInput = document.getElementById('reg-source');
+    const tgtInput = document.getElementById('reg-target');
+    if (srcInput) srcInput.value = rec.source || '';
+    if (tgtInput) {
+      tgtInput.value = rec.target || '';
+      tgtInput.focus();
+      // Place caret at the end so the user can immediately type the
+      // missing word in.
+      tgtInput.setSelectionRange(tgtInput.value.length, tgtInput.value.length);
+    }
+  });
+  _qcClickWired = true;
 }
 
 // Yield to the event loop so the browser can repaint between chunks.
@@ -1207,6 +1241,7 @@ async function runQC() {
       frag.appendChild(more);
     }
     results.appendChild(frag);
+    wireQcResultsClick();
 
     summary.textContent = t('qcCount')
         .replace('{rows}', flagged.length)
