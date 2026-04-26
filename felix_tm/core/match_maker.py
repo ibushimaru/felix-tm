@@ -54,18 +54,32 @@ def _pass_length_check(query_len: int, source_len: int, min_score: float) -> boo
 
 
 def _pass_bag_check(query: str, source: str, min_score: float) -> bool:
-    """Pass 2: Bag-of-characters pre-filter.
+    """Pass 2: edit-distance lower bound pre-filter.
 
-    Bag distance is a LOWER BOUND on edit distance, so it can over-reject.
-    We apply a 0.8x margin to avoid false negatives: a candidate is only
-    rejected if even the bag estimate says it can't possibly reach the threshold.
+    Uses the Felix Distance::edist_score formula:
+      mindiff = max(|query|, |source|) - common
+    where ``common`` is the multiset intersection size. This is the
+    universally tightest lower bound for Levenshtein and is strictly
+    ≤ ``bag_distance`` (which is the symmetric difference). Using
+    bag_distance here would false-reject pairs that Felix would
+    accept (e.g. "hello"/"jello" at min_score=0.7).
     """
     high_len = max(len(query), len(source))
     if high_len == 0:
         return True
-    bag_dist = bag_distance(query, source)
-    bag_score = (high_len - bag_dist) / high_len
-    return bag_score >= min_score
+    # Multiset intersection size — the count of characters from
+    # ``source`` that have a still-unconsumed match in ``query``.
+    freq: dict[str, int] = {}
+    for ch in query:
+        freq[ch] = freq.get(ch, 0) + 1
+    common = 0
+    for ch in source:
+        if freq.get(ch, 0) > 0:
+            common += 1
+            freq[ch] -= 1
+    mindiff = high_len - common
+    max_diff = high_len - int(high_len * min_score)
+    return mindiff <= max_diff
 
 
 _FORMAT_TAG_RE = re.compile(r"<[^>]+>")

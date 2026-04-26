@@ -146,7 +146,12 @@ var FelixEngine = (() => {
     if (!s && !t) return 1;
     const h = Math.max(s.length, t.length);
     if (!h) return 1;
-    const md = Math.floor(h * (1 - (ms || 0)));
+    // Match Felix's calculation pattern: max_distance = b_len -
+    // (size_t)(b_len * minscore). The naive (h * (1 - ms)) form
+    // suffers FP cancellation — at ms=0.8 the JS expression
+    // 5 * (1 - 0.8) evaluates to 0.9999999999999998 instead of 1.0,
+    // which then floors to 0 and rejects every match.
+    const md = h - Math.floor(h * (ms || 0));
     const d = editDistance(s, t, md);
     return d > md ? 0 : (h - d) / h;
   }
@@ -157,6 +162,23 @@ var FelixEngine = (() => {
     for (const c of t) f[c] = (f[c] || 0) - 1;
     let d = 0; for (const k in f) d += Math.abs(f[k]);
     return d;
+  }
+
+  // Felix-style edit-distance lower bound: max(|s|,|t|) - multiset
+  // intersection size. This is the universally tightest lower bound
+  // for Levenshtein and matches the maxalike / mindiff calculation in
+  // Felix Distance::edist_score. Strictly ≤ bagDistance — using this
+  // for the fuzzyScore pre-filter avoids the false-negative cases the
+  // symmetric-difference bag distance produces ("hello"/"jello" with
+  // minScore=0.7 used to reject incorrectly).
+  function _editLowerBound(s, t) {
+    const f = {};
+    for (const c of s) f[c] = (f[c] || 0) + 1;
+    let common = 0;
+    for (const c of t) {
+      if (f[c] > 0) { common++; f[c]--; }
+    }
+    return Math.max(s.length, t.length) - common;
   }
 
   // === Word-level matching ===
@@ -220,7 +242,11 @@ var FelixEngine = (() => {
     const ql = qCmp.length, sl = sCmp.length, h = Math.max(ql, sl);
     if (!h) return 1;
     if (Math.min(ql, sl) / h < minScore) return 0;
-    if ((h - bagDistance(qCmp, sCmp)) / h < minScore) return 0;
+    // Felix-style lower bound on edit distance (max - common). The
+    // older symmetric-difference bag distance was too aggressive and
+    // false-rejected pairs Felix would have scored.
+    const maxDiff = h - Math.floor(h * minScore);
+    if (_editLowerBound(qCmp, sCmp) > maxDiff) return 0;
     const score = (containsCJK(qCmp) || qCmp.indexOf(' ') === -1)
       ? edScore(qCmp, sCmp, minScore)
       : wordScore(qCmp, sCmp, minScore);

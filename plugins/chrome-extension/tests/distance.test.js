@@ -181,14 +181,22 @@ test('fuzzyScore: spaced western input routes through wordScore', () => {
   assert.ok(Math.abs(s - (2 / 3)) < 1e-9, `expected 2/3, got ${s}`);
 });
 
-test('fuzzyScore: bag pre-filter is the first hard cutoff (not the post-score check)', () => {
-  // "hello" vs "jello" — bag distance 2 over h=5, so bag-pass score
-  // is (5-2)/5 = 0.6. edScore would be 0.8, but at minScore > 0.6 the
-  // bag pre-filter rejects before edScore is ever called.
-  assert.equal(fuzzyScore('hello', 'jello', 0.6), 0.8,
-    'bag passes (0.6 == 0.6), edScore returns 0.8');
-  assert.equal(fuzzyScore('hello', 'jello', 0.61), 0,
-    'bag pre-filter cuts at 0.6, score not even computed');
+test('fuzzyScore: post-edScore minScore check is the actual boundary (Felix lower bound)', () => {
+  // "hello" vs "jello" — common=4, h=5, edit-distance lower bound
+  // (Felix maxalike formula) = max(5,5) - 4 = 1. The pre-filter
+  // therefore allows minScore up to 0.8, where edScore returns 0.8.
+  // Above 0.8 the post-edScore check rejects.
+  assert.equal(fuzzyScore('hello', 'jello', 0.6), 0.8);
+  assert.equal(fuzzyScore('hello', 'jello', 0.8), 0.8);
+  assert.equal(fuzzyScore('hello', 'jello', 0.81), 0,
+    'edScore returns 0.8, then 0.8 < 0.81 → reject (post-check)');
+});
+
+test('fuzzyScore: pre-filter rejects truly disjoint pairs without scoring', () => {
+  // "abcdef" vs "ghijkl" — common=0, h=6, lower bound = 6.
+  // maxDiff at minScore=0.5 = 6 - floor(3) = 3. 6 > 3 → reject by
+  // pre-filter, edScore never called.
+  assert.equal(fuzzyScore('abcdef', 'ghijkl', 0.5), 0);
 });
 
 test('fuzzyScore: empty inputs both → length-0 short-circuit returns 1', () => {

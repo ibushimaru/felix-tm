@@ -113,8 +113,12 @@ def edit_distance_score(source: str, target: str, min_score: float = 0.0) -> flo
     if high_len == 0:
         return 1.0
 
-    # Calculate max allowable distance from min_score
-    max_dist = int(high_len * (1.0 - min_score))
+    # Match Felix's calculation pattern: max_distance = b_len -
+    # (size_t)(b_len * minscore). The naive ``high_len * (1 - min_score)``
+    # form suffers FP cancellation — at min_score=0.8 the expression
+    # 5 * (1 - 0.8) evaluates to 0.9999999999999998 instead of 1.0,
+    # which then int-truncates to 0 and rejects every match.
+    max_dist = high_len - int(high_len * min_score)
 
     dist = edit_distance(source, target, max_distance=max_dist)
 
