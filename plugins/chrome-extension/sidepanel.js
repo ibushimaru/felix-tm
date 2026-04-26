@@ -1121,7 +1121,16 @@ function buildIssueCard(rec, recIdx, issues) {
   return div;
 }
 
-function runQC() {
+// Yield to the event loop so the browser can repaint between chunks.
+// setTimeout(0) is the lowest-overhead way to do this; rAF would
+// couple our cadence to the display refresh, which we don't need.
+function _yield() { return new Promise(r => setTimeout(r, 0)); }
+
+let _qcRunning = false;
+async function runQC() {
+  if (_qcRunning) return;
+  _qcRunning = true;
+
   const opts = {
     numbers: toggleOn('qc-numbers'),
     allCaps: toggleOn('qc-allcaps'),
@@ -1129,46 +1138,77 @@ function runQC() {
   };
   const results = document.getElementById('qc-results');
   const summary = document.getElementById('qc-summary');
+  const progress = document.getElementById('qc-progress');
+  const progressText = document.getElementById('qc-progress-text');
+  const progressBar = document.getElementById('qc-progress-bar');
+  const btn = document.getElementById('btn-run-qc');
+
   results.innerHTML = '';
   summary.textContent = '';
+  progress.style.display = 'block';
+  progressBar.style.width = '0%';
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
 
-  // First pass: collect, so we can cap render and report accurate totals.
-  const flagged = [];
-  let totalIssues = 0;
-  for (let i = 0; i < tmData.length; i++) {
-    const rec = tmData[i];
-    const issues = FelixEngine.qcCheck(rec, glossaryData, opts);
-    if (!issues.length) continue;
-    flagged.push({ recIdx: i, rec, issues });
-    totalIssues += issues.length;
-  }
+  try {
+    const total = tmData.length;
+    // 500-row chunks: small enough to keep the panel responsive on
+    // mid-sized TMs, large enough that scheduler overhead stays under
+    // ~5% of total runtime.
+    const CHUNK = 500;
+    const flagged = [];
+    let totalIssues = 0;
 
-  if (!flagged.length) {
-    summary.textContent = t('qcClean');
-    return;
-  }
+    for (let start = 0; start < total; start += CHUNK) {
+      const end = Math.min(start + CHUNK, total);
+      for (let i = start; i < end; i++) {
+        const rec = tmData[i];
+        const issues = FelixEngine.qcCheck(rec, glossaryData, opts);
+        if (!issues.length) continue;
+        flagged.push({ recIdx: i, rec, issues });
+        totalIssues += issues.length;
+      }
+      // Update progress and yield. The text shows the running issue
+      // count too so the user gets two signals at once.
+      const pct = Math.round((end / total) * 100);
+      progressBar.style.width = pct + '%';
+      progressText.textContent = `スキャン中… ${end} / ${total}` + (flagged.length ? `  (${flagged.length}行 問題あり)` : '');
+      await _yield();
+    }
 
-  // Cap visible rows. 9000+ DOM nodes makes the panel unusable and the
-  // user can't scan that many anyway — they'll narrow with toggles or
-  // by re-importing a smaller TM subset.
-  const frag = document.createDocumentFragment();
-  const visible = Math.min(flagged.length, QC_RENDER_CAP);
-  for (let k = 0; k < visible; k++) {
-    const f = flagged[k];
-    frag.appendChild(buildIssueCard(f.rec, f.recIdx, f.issues));
-  }
-  if (flagged.length > visible) {
-    const more = document.createElement('div');
-    more.style.cssText = 'text-align:center;color:#9aa0a6;padding:8px;font-size:12px';
-    more.textContent = '… +' + (flagged.length - visible) + ' more rows hidden';
-    frag.appendChild(more);
-  }
-  results.appendChild(frag);
+    if (!flagged.length) {
+      summary.textContent = t('qcClean');
+      return;
+    }
 
-  summary.textContent = t('qcCount')
-    .replace('{n}', totalIssues)
-    .replace('{rows}', flagged.length)
-    + (flagged.length > visible ? '  ·  rendered ' + visible : '');
+    // Cap visible rows — 9000+ DOM nodes makes the panel unusable.
+    progressText.textContent = '結果を描画中…';
+    await _yield();
+
+    const frag = document.createDocumentFragment();
+    const visible = Math.min(flagged.length, QC_RENDER_CAP);
+    for (let k = 0; k < visible; k++) {
+      const f = flagged[k];
+      frag.appendChild(buildIssueCard(f.rec, f.recIdx, f.issues));
+    }
+    if (flagged.length > visible) {
+      const more = document.createElement('div');
+      more.style.cssText = 'text-align:center;color:#9aa0a6;padding:8px;font-size:12px';
+      more.textContent = '… +' + (flagged.length - visible) + ' more rows hidden';
+      frag.appendChild(more);
+    }
+    results.appendChild(frag);
+
+    summary.textContent = t('qcCount')
+      .replace('{n}', totalIssues)
+      .replace('{rows}', flagged.length)
+      + (flagged.length > visible ? '  ·  rendered ' + visible : '');
+  } finally {
+    progress.style.display = 'none';
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    _qcRunning = false;
+  }
 }
 
 function srFind() {

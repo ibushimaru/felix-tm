@@ -52,8 +52,7 @@ input:focus { outline: none; border-color: #1a73e8; }
   content: attr(data-tip); display: none; position: absolute;
   bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0;
   border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124;
-  max-width: 240px; white-space: normal; word-break: break-word;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
   z-index: 10; pointer-events: none;
 }
 .qc-mark:hover::after { display: block; }
@@ -185,6 +184,12 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
     <button class="btn qc-toggle" id="qc-glossary" data-on="true" style="flex:1"><span id="lbl-qc-glossary">Glossary</span></button>
   </div>
   <button class="btn btn-primary btn-block" style="margin-bottom:6px" id="btn-run-qc">Run QC</button>
+  <div id="qc-progress" style="display:none;margin-bottom:6px">
+    <div style="font-size:12px;color:#5f6368;margin-bottom:2px" id="qc-progress-text"></div>
+    <div style="height:4px;background:#e8eaed;border-radius:2px;overflow:hidden">
+      <div id="qc-progress-bar" style="height:100%;width:0%;background:#1a73e8;transition:width 0.1s linear"></div>
+    </div>
+  </div>
   <div id="qc-results" style="max-height:65vh;overflow:auto;font-size:13px;border:1px solid #e8eaed;border-radius:4px;padding:4px"></div>
   <div style="font-size:13px;color:#9aa0a6;margin-top:4px" id="qc-summary"></div>
 
