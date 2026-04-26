@@ -674,96 +674,53 @@
   // read the row's source from the spreadsheet and re-run search. Without
   // this, the panel sits blank on a fresh target cell until the user has
   // navigated through the source column at least once.
-  // Always log from the source-fetch path. content-script logs land in
-  // the page's DevTools console (the default "top" context), so the
-  // user just opens DevTools and filters by `[Felix TM:fetch]` — no
-  // need to find the right isolated world to flip a debug flag in.
-  // The volume is ~2 lines per target-cell selection, low enough to
-  // tolerate in production until shipping.
-  function dbg(...args) {
-    console.log('[Felix TM:fetch]', ...args);
-  }
-
   async function fetchSourceForRow(rowNum) {
-    if (!rowNum) { dbg('skip: no rowNum'); return; }
-    if (_pendingSourceFetch.has(rowNum)) {
-      dbg('skip: already pending', rowNum, '(will resolve when first fetch completes — if this is stuck, the previous fetch hung)');
-      return;
-    }
+    if (!rowNum || _pendingSourceFetch.has(rowNum)) return;
     _pendingSourceFetch.add(rowNum);
-    dbg('start', rowNum);
     try {
       const ssId = getSpreadsheetId();
-      if (!ssId) {
-        dbg('abort: no spreadsheetId — caching empty so we do not loop', rowNum);
-        _sourceCache[rowNum] = '';
-        return;
-      }
+      if (!ssId) { _sourceCache[rowNum] = ''; return; }
       const srcCol = settings.sourceCol || 'A';
       const range = sheetRef(`${srcCol}${rowNum}`);
       let val = '';
       // Race the fetch against an 8s timeout so a hung background or a
       // dropped sendResponse doesn't leave the row pinned in the dedupe
       // set forever.
-      const FETCH_TIMEOUT_MS = 8000;
       try {
         const resp = await Promise.race([
           msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('timeout')), FETCH_TIMEOUT_MS)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
         ]);
         val = (resp && resp.value) ? resp.value : '';
-        dbg('result', rowNum, range, JSON.stringify(resp));
-      } catch (e) {
-        dbg('fetch failed', rowNum, range, e && e.message);
-        val = '';
-      }
+      } catch (_) { val = ''; }
       // Always cache, even when empty, so a fresh selection on the same
       // row goes straight to the "empty source row" message instead of
-      // re-fetching forever. Use `in _sourceCache` to distinguish "we
-      // tried and got nothing" from "we never tried".
+      // re-fetching forever. `in _sourceCache` distinguishes "we tried
+      // and got nothing" from "we never tried".
       _sourceCache[rowNum] = val;
       // Re-run only if the user is still on the row that triggered this
       // fetch (otherwise the result would clobber a more recent cell).
       const curRef = getCellRef();
-      if (curRef && new RegExp(`(?:^|[^0-9])${rowNum}$`).test(curRef)) {
-        if (val) {
-          // Pass the cached value explicitly. doSearch() with no args
-          // falls back to lastCellValue, which is '' when the active
-          // cell is a blank target — and doSearch early-returns on
-          // empty query before ever consulting the cache. That would
-          // leave the "Reading source row…" placeholder pinned forever.
-          dbg('rerun doSearch', rowNum, curRef);
-          doSearch(val);
-        } else {
-          // Source row is genuinely empty — paint the message directly
-          // for the same reason: no truthy query means doSearch would
-          // early-return.
-          dbg('paint empty-source message', rowNum, curRef);
-          const sh = getShadow();
-          const rs = sh && sh.getElementById('results');
-          if (rs) rs.innerHTML = `<div class="empty">${t('emptySourceRow')}</div>`;
-        }
+      if (!curRef || !new RegExp(`(?:^|[^0-9])${rowNum}$`).test(curRef)) return;
+      if (val) {
+        // Pass the cached value explicitly. doSearch() with no args
+        // falls back to lastCellValue, which is '' when the active
+        // cell is a blank target — and doSearch early-returns on empty
+        // query before ever consulting the cache, leaving the "Reading
+        // source row…" placeholder pinned forever.
+        doSearch(val);
       } else {
-        dbg('skip rerun: user moved off row', rowNum, '→', curRef);
+        // Source row is genuinely empty — paint the message directly
+        // for the same reason: no truthy query means doSearch would
+        // early-return.
+        const sh = getShadow();
+        const rs = sh && sh.getElementById('results');
+        if (rs) rs.innerHTML = `<div class="empty">${t('emptySourceRow')}</div>`;
       }
     } finally {
       _pendingSourceFetch.delete(rowNum);
-      dbg('done', rowNum);
     }
   }
-
-  // Debug inspector: from DevTools, run `__felixDebugCache()` to see what
-  // the cache and the pending set look like right now. Helpful when the
-  // panel is stuck on "Reading source row…" — the row in question should
-  // either be missing from the cache (fetch never ran) or in the pending
-  // set (fetch is in flight or hung).
-  window.__felixDebugCache = () => ({
-    sourceCache: { ..._sourceCache },
-    pending: Array.from(_pendingSourceFetch),
-    lastCellRef,
-    lastCellValue,
-  });
 
   function markRegions(text, regions, cls) {
     if (!regions.length) return esc(text);
@@ -1760,18 +1717,6 @@
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data) return;
     if (e.data.type === 'FELIX_TM_DEV_RELOAD') msg('DEV_RELOAD');
-    if (e.data.type === 'FELIX_TM_INSPECT') {
-      // Page-world inspector hook: from the default DevTools console
-      // (no context switch needed) run
-      //   window.postMessage({ type: 'FELIX_TM_INSPECT' }, '*');
-      // and the live content script will dump its cache + pending set.
-      console.log('[Felix TM:inspect]', {
-        sourceCache: { ..._sourceCache },
-        pending: Array.from(_pendingSourceFetch),
-        lastCellRef,
-        lastCellValue,
-      });
-    }
   }, { signal });
 
   // === Show panel on load ===
