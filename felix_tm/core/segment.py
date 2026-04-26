@@ -136,20 +136,30 @@ def apply_casing(src_slice: str, new_text: str) -> str:
     return new_text
 
 
+def _char_class(c: str) -> str:
+    """L = ASCII letter, D = digit, O = other (CJK / punctuation)."""
+    if "a" <= c <= "z" or "A" <= c <= "Z":
+        return "L"
+    if "0" <= c <= "9":
+        return "D"
+    return "O"
+
+
 # Find `from_text` (already cmp_len-folded) in `target` such that the
-# match doesn't sit inside a larger Latin word. Length-preserving
-# cmp_len means the index returned is also a valid index in `target`.
-# Boundary enforcement only kicks in when the match starts/ends with a
-# Latin letter — CJK-only or symbol-bordered spans pass through like a
-# plain str.find, since those scripts have no word concept.
-_ALPHA_RE = re.compile(r"[A-Za-z]")
-
-
+# match doesn't sit inside a larger token of the same character class.
+# A match is rejected when its leading or trailing edge sits flush
+# against a same-class neighbour: letter-flush-letter ("dark" inside
+# "darken") or digit-flush-digit ("5%UP" inside "15%UP" — the leading
+# 1 is digit-class, same as the term's leading 5). Class transitions
+# are fine: ATK followed by 200 stays a valid match for the ATK
+# glossary term, since L→D is a real boundary.
 def find_word_boundary_index(target: str, from_text: str, start_pos: int = 0) -> int:
     tgt_lower = cmp_len(target)
-    starts_alpha = bool(re.match(r"[a-z]", from_text))
-    ends_alpha = bool(from_text and re.match(r"[a-z]", from_text[-1]))
-    if not starts_alpha and not ends_alpha:
+    if not from_text:
+        return tgt_lower.find(from_text, start_pos)
+    start_cls = _char_class(from_text[0])
+    end_cls = _char_class(from_text[-1])
+    if start_cls == "O" and end_cls == "O":
         return tgt_lower.find(from_text, start_pos)
     pos = start_pos
     n = len(from_text)
@@ -158,15 +168,15 @@ def find_word_boundary_index(target: str, from_text: str, start_pos: int = 0) ->
         if idx == -1:
             return -1
         before_ok = (
-            not starts_alpha
+            start_cls == "O"
             or idx == 0
-            or not _ALPHA_RE.match(target[idx - 1])
+            or _char_class(target[idx - 1]) != start_cls
         )
         after_idx = idx + n
         after_ok = (
-            not ends_alpha
+            end_cls == "O"
             or after_idx == len(target)
-            or not _ALPHA_RE.match(target[after_idx])
+            or _char_class(target[after_idx]) != end_cls
         )
         if before_ok and after_ok:
             return idx

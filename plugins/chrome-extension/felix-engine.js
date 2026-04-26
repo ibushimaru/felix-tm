@@ -65,27 +65,42 @@ var FelixEngine = (() => {
     return newText;
   }
 
+  // Character class for the boundary test: 'L' = ASCII letter,
+  // 'D' = digit, 'O' = anything else (CJK / punctuation / symbol).
+  function _charClass(c) {
+    if (c >= 'a' && c <= 'z') return 'L';
+    if (c >= 'A' && c <= 'Z') return 'L';
+    if (c >= '0' && c <= '9') return 'D';
+    return 'O';
+  }
+
   // Find `fromText` (already cmpLen-folded) in `target` such that the
-  // match doesn't sit inside a larger Latin word. Length-preserving
-  // cmpLen means the index returned is also a valid index in `target`.
-  // Boundary enforcement only kicks in when the match starts/ends with
-  // a Latin letter — CJK-only or symbol-bordered spans pass through
-  // like a plain indexOf, since those scripts have no word concept.
+  // match doesn't sit inside a larger token of the same character class.
+  // Length-preserving cmpLen means the index returned is also a valid
+  // index in `target`.
+  //
+  // A match is rejected when its leading or trailing edge sits flush
+  // against a same-class neighbour: letter-flush-letter ("dark" inside
+  // "darken") or digit-flush-digit ("5%UP" inside "15%UP" — the leading
+  // 1 is digit-class, same as the term's leading 5). Class transitions
+  // are fine: ATK followed by 200 stays a valid match for the ATK
+  // glossary term, since L→D is a real boundary.
   function findWordBoundaryIndex(target, fromText, startPos) {
     if (startPos == null) startPos = 0;
     const tgtLower = cmpLen(target);
-    const startsAlpha = /^[a-z]/.test(fromText);
-    const endsAlpha = /[a-z]$/.test(fromText);
-    if (!startsAlpha && !endsAlpha) return tgtLower.indexOf(fromText, startPos);
+    if (!fromText) return tgtLower.indexOf(fromText, startPos);
+    const startCls = _charClass(fromText[0]);
+    const endCls = _charClass(fromText[fromText.length - 1]);
+    if (startCls === 'O' && endCls === 'O') return tgtLower.indexOf(fromText, startPos);
     let pos = startPos;
     for (;;) {
       const idx = tgtLower.indexOf(fromText, pos);
       if (idx === -1) return -1;
-      const beforeOk = !startsAlpha || idx === 0
-        || !/[A-Za-z]/.test(target[idx - 1]);
+      const beforeOk = startCls === 'O' || idx === 0
+        || _charClass(target[idx - 1]) !== startCls;
       const afterIdx = idx + fromText.length;
-      const afterOk = !endsAlpha || afterIdx === target.length
-        || !/[A-Za-z]/.test(target[afterIdx]);
+      const afterOk = endCls === 'O' || afterIdx === target.length
+        || _charClass(target[afterIdx]) !== endCls;
       if (beforeOk && afterOk) return idx;
       pos = idx + 1;
     }

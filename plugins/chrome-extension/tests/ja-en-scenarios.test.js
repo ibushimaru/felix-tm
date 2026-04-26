@@ -340,6 +340,40 @@ test('JA→EN bug B: glossary translation followed by punctuation substitutes co
   assert.equal(r.target, 'Light, and friends');
 });
 
+test('JA→EN bug B (digit class): "5%UP" must not match inside "15%UP"', () => {
+  // The boundary check classifies neighbours: digit-flush-digit is a
+  // same-class boundary failure. Without this, the source-side QC /
+  // glossary lookup for term "5%UP" fired inside "15%UP" and reported
+  // the (correctly-translated) "提升15%" target as "missing 提升5%".
+  const r = resolveWithPlacement(
+    'ダメージ上限15%UPする',
+    'ダメージ上限10%UPする',
+    'ダメージ上限提升10%',
+    gloss(['5%UP', '提升5%']),
+    [],
+  );
+  // The 5%UP term must not be matched inside 15%UP, so per-diff
+  // glossary should NOT do anything weird with the target. Number
+  // placement still handles 10→15 if it fires.
+  assert.ok(!r.target.includes('提升5%') || r.target.includes('提升15%'),
+    `target should not have a stray 提升5% from 5%UP false-match: ${r.target}`);
+});
+
+test('JA→EN bug B: letter→digit boundary still allows ATK in ATK200', () => {
+  // ATK ends in 'K' (letter), the next char is '2' (digit) — class
+  // transition L→D, that's a real boundary. The glossary lookup must
+  // still find ATK inside ATK200 to power per-diff substitution.
+  const r = resolveWithPlacement(
+    '光属性のMATK200%ダメージ',
+    '闇属性のATK200%ダメージ',
+    'Dark ATK200% damage',
+    gloss(['光属性', 'Light'], ['闇属性', 'Dark'], ['MATK', 'MATK'], ['ATK', 'ATK']),
+    [],
+  );
+  // MATK / ATK substitution path requires ATK to match inside ATK200.
+  assert.ok(r.target.includes('Light'), `Light substitution must succeed: ${r.target}`);
+});
+
 test('JA→EN bug B: CJK-only translation skips the boundary check (no word concept)', () => {
   // ZH target with adjacent CJK characters should still substitute,
   // because the boundary check only kicks in for Latin-letter spans.

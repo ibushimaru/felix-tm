@@ -1079,7 +1079,7 @@ function _collectRanges(text, issues, side) {
       // hover is "what should appear in target."
       if (side !== 'source') continue;
       for (const o of _findAllOccurrences(text, x.term)) {
-        ranges.push({ ...o, type: 'glossary', tip: `→ ${x.translation}` });
+        ranges.push({ ...o, type: 'glossary', tip: x.translation });
       }
     }
   }
