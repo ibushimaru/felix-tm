@@ -85,7 +85,9 @@
       selectRangeFirst: 'Select a range first',
       emptyRange: 'Empty range',
       readingSheet: 'Reading sheet…',
+      loadingSource: 'Reading source row…',
       copiedPrefix: 'Copied: ',
+      readSourceFailed: 'Could not read source row',
       undoCellsTpl: 'Undo: {n} cells',
       undoRangePrefix: 'Undo: ',
       unsupportedSelection: 'Unsupported selection: {ref}',
@@ -127,7 +129,9 @@
       selectRangeFirst: '範囲を選択してください',
       emptyRange: '範囲が空です',
       readingSheet: 'シートを読み込み中…',
+      loadingSource: '原文行を読み込み中…',
       copiedPrefix: 'コピー: ',
+      readSourceFailed: '原文行を読み込めませんでした',
       undoCellsTpl: '元に戻す: {n} セル',
       undoRangePrefix: '元に戻す: ',
       unsupportedSelection: '未対応の選択: {ref}',
@@ -660,7 +664,35 @@
 
   // Cache: source value per row (populated when user is on source column)
   let _sourceCache = {}; // { rowNum: value }
+  // Dedupe in-flight Sheets fetches by row, so a quick selection bounce
+  // doesn't fire multiple reads for the same cell.
+  const _pendingSourceFetch = new Set();
 
+  // Translate mode + cursor on target cell + no cache hit for this row →
+  // read the row's source from the spreadsheet and re-run search. Without
+  // this, the panel sits blank on a fresh target cell until the user has
+  // navigated through the source column at least once.
+  async function fetchSourceForRow(rowNum) {
+    if (!rowNum || _pendingSourceFetch.has(rowNum)) return;
+    _pendingSourceFetch.add(rowNum);
+    try {
+      const ssId = getSpreadsheetId();
+      if (!ssId) return;
+      const srcCol = settings.sourceCol || 'A';
+      const range = sheetRef(`${srcCol}${rowNum}`);
+      const resp = await msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range });
+      const val = resp && resp.value ? resp.value : '';
+      if (val) _sourceCache[rowNum] = val;
+      // Re-run only if the user is still on the row that triggered this
+      // fetch (otherwise the result would clobber a more recent cell).
+      const curRef = getCellRef();
+      if (curRef && new RegExp(`(?:^|[^0-9])${rowNum}$`).test(curRef)) {
+        doSearch();
+      }
+    } finally {
+      _pendingSourceFetch.delete(rowNum);
+    }
+  }
 
   function markRegions(text, regions, cls) {
     if (!regions.length) return esc(text);
@@ -743,18 +775,25 @@
       isReverse = true;
     } else {
       // Translate mode: forward search. When the cursor lands on a target
-      // cell, look up the same row's source from the cache so the panel
-      // keeps showing source-side matches as the translator navigates
-      // back and forth between source and target columns. With no cache,
-      // we just run forward search on the target cell value (the user
-      // sees "no match" — explicit signal to switch to Review mode rather
-      // than the old auto-flip-to-reverse, which confused the UX).
+      // cell, use the same row's source as the query so the panel keeps
+      // showing source-side matches as the translator navigates between
+      // source and target columns. Cache first; on miss, fall back to a
+      // direct Sheets API read for that one cell and re-run when it
+      // arrives — without this fallback the panel is blank on the very
+      // first target cell the user touches in a session.
       if (onTarget) {
         const ref = getCellRef();
         const rowMatch = ref ? ref.match(/(\d+)/i) : null;
         const rowNum = rowMatch ? rowMatch[1] : null;
         const cachedSource = rowNum ? _sourceCache[rowNum] : null;
-        if (cachedSource) searchQuery = cachedSource;
+        if (cachedSource) {
+          searchQuery = cachedSource;
+        } else if (rowNum) {
+          fetchSourceForRow(rowNum);
+          const rs = s.getElementById('results');
+          if (rs) rs.innerHTML = `<div class="empty">${t('loadingSource')}</div>`;
+          return;
+        }
       }
     }
 
@@ -1486,13 +1525,20 @@
       if (value) {
         doSearch(value);
       } else if (isTargetColumn()) {
-        // Empty target cell: search using cached source for this row
+        // Empty target cell: search using the row's source. Cache first,
+        // then fall back to a Sheets read for the row (same fallback as
+        // doSearch's onTarget branch).
         const refMatch2 = ref ? ref.match(/(\d+)/i) : null;
-        const cached = refMatch2 ? _sourceCache[refMatch2[1]] : null;
+        const rowNum2 = refMatch2 ? refMatch2[1] : null;
+        const cached = rowNum2 ? _sourceCache[rowNum2] : null;
         if (cached) {
           doSearch(cached);
+        } else if (rowNum2) {
+          fetchSourceForRow(rowNum2);
+          const rs = s.getElementById('results');
+          if (rs) rs.innerHTML = `<div class="empty">${t('loadingSource')}</div>`;
         } else {
-          // No cache, clear results
+          // No row info, clear results
           const rs = s.getElementById('results');
           if (rs) rs.innerHTML = `<div class="empty">${t('selectCell')}</div>`;
         }
