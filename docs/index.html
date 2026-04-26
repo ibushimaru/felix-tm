@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Felix TM — Translation Memory for Google Sheets</title>
+<meta name="description" content="Felix TM is a Chrome extension that brings real-time translation memory and glossary lookup to Google Sheets. Free, local-first, open source.">
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "Hiragino Sans", "Yu Gothic UI", sans-serif; margin: 0; color: #202124; line-height: 1.6; background: #fff; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 24px; }
+  header { padding: 56px 24px 32px; text-align: center; }
+  header h1 { font-size: 40px; margin: 0 0 8px; letter-spacing: -0.5px; }
+  header .tagline { font-size: 18px; color: #5f6368; margin: 0 0 20px; }
+  .lang { font-size: 13px; color: #5f6368; }
+  .lang a { color: #1a73e8; text-decoration: none; }
+  section { padding: 32px 0; border-top: 1px solid #e8eaed; }
+  section:first-of-type { border-top: none; }
+  h2 { font-size: 24px; margin: 0 0 12px; }
+  h3 { font-size: 16px; margin: 16px 0 4px; color: #202124; }
+  p { margin: 8px 0 12px; }
+  ul { padding-left: 22px; }
+  li { margin: 4px 0; }
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
+  .feature { padding: 16px; background: #f8f9fa; border-radius: 8px; }
+  .feature h3 { margin-top: 0; }
+  .feature p { font-size: 14px; color: #3c4043; margin-bottom: 0; }
+  .cta { display: inline-block; padding: 10px 22px; background: #1a73e8; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 8px 8px 8px 0; }
+  .cta.secondary { background: #fff; color: #1a73e8; border: 1px solid #1a73e8; }
+  .cta.disabled { background: #dadce0; color: #5f6368; cursor: not-allowed; pointer-events: none; }
+  code { background: #f1f3f4; padding: 1px 6px; border-radius: 3px; font-size: 0.9em; }
+  footer { padding: 32px 24px 64px; text-align: center; font-size: 13px; color: #5f6368; border-top: 1px solid #e8eaed; }
+  footer a { color: #1a73e8; text-decoration: none; margin: 0 8px; }
+  .lineage { background: #fefae0; border-left: 4px solid #f9ab00; padding: 12px 16px; border-radius: 4px; font-size: 14px; }
+  .lineage strong { color: #1f1f1f; }
+  hr.sep { border: none; border-top: 2px solid #dadce0; margin: 64px auto; max-width: 200px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Felix TM</h1>
+  <p class="tagline">Translation Memory for Google Sheets — local-first, free, open source.</p>
+  <p class="lang"><a href="#ja">日本語</a></p>
+</header>
+
+<div class="wrap">
+
+<section>
+  <h2>What it is</h2>
+  <p>
+    Felix TM is a Chrome extension that brings translation memory (TM) and
+    glossary lookup directly into Google Sheets. As you move between cells,
+    Felix TM matches the source text against your private TM, surfaces fuzzy
+    matches in real time in a side panel, and writes approved translations
+    back into the target column with one click.
+  </p>
+  <p>
+    Built for translators who work in spreadsheets — game localization,
+    UI string tables, terminology lists, anywhere the unit of translation
+    is a row.
+  </p>
+  <p>
+    <a class="cta disabled" href="#">Add to Chrome — coming to the Web Store soon</a>
+    <a class="cta secondary" href="https://github.com/ibushimaru/felix-tm">View source on GitHub</a>
+  </p>
+</section>
+
+<section>
+  <h2>Features</h2>
+  <div class="features">
+    <div class="feature">
+      <h3>Real-time fuzzy matching</h3>
+      <p>Levenshtein-based scoring with bag-distance pre-filtering. Finds 65 %+ matches as you type, faithful port of the original Felix CAT algorithm.</p>
+    </div>
+    <div class="feature">
+      <h3>Auto Translate</h3>
+      <p>Apply 100 % matches across a selection in one action. Numbers and registered glossary terms are placed automatically.</p>
+    </div>
+    <div class="feature">
+      <h3>Glossary &amp; placement rules</h3>
+      <p>Term-level translations with case preservation. Regex-based placement for product names, version strings, and recurring patterns.</p>
+    </div>
+    <div class="feature">
+      <h3>Quality control</h3>
+      <p>Catches mismatched numbers, missing ALL CAPS terms, and untranslated glossary items. Click a flag to register the fix.</p>
+    </div>
+    <div class="feature">
+      <h3>TMX / TSV / XLSX I/O</h3>
+      <p>Standard format import and export. Bring your existing TM in or share it across tools.</p>
+    </div>
+    <div class="feature">
+      <h3>Local-first &amp; private</h3>
+      <p>Your TM lives in your browser's IndexedDB. No backend, no analytics, no external transmission. Sheets API calls go directly browser → Google.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Privacy at a glance</h2>
+  <ul>
+    <li>Your TM and glossary stay in your browser. Felix TM has no server.</li>
+    <li>The <code>spreadsheets</code> OAuth scope is used only when you take an explicit action (Auto Translate, Import, etc.).</li>
+    <li>No analytics. No tracking. No third-party scripts.</li>
+  </ul>
+  <p>Full <a href="./privacy/">privacy policy</a>.</p>
+</section>
+
+<section>
+  <h2>About Felix CAT</h2>
+  <div class="lineage">
+    Felix TM is inspired by and shares its matching algorithm with
+    <strong>Felix CAT</strong>, the Windows-only translation memory tool
+    originally created by Ryan Ginstrom and released as open source under
+    the MIT license. Felix TM is a separate project — a ground-up
+    re-implementation in Python and JavaScript targeting Google Sheets
+    and the modern web — and is not affiliated with Mr. Ginstrom or the
+    original Felix CAT product. We are grateful for the algorithm work
+    that made this project possible.
+  </div>
+</section>
+
+<section>
+  <h2>Status</h2>
+  <p>
+    Felix TM is currently in <strong>private beta</strong> while we complete
+    Google OAuth verification and Chrome Web Store review. If you are a
+    translator interested in early access, contact
+    <a href="mailto:ibushimaru@veriscio.com">ibushimaru@veriscio.com</a>.
+  </p>
+</section>
+
+</div>
+
+<hr class="sep" id="ja">
+
+<header>
+  <h1>Felix TM</h1>
+  <p class="tagline">Google Sheets のための翻訳メモリ — ローカル完結、無料、オープンソース。</p>
+  <p class="lang"><a href="#top">English ↑</a></p>
+</header>
+
+<div class="wrap">
+
+<section>
+  <h2>製品概要</h2>
+  <p>
+    Felix TM は、翻訳メモリ (TM) と用語集検索を Google Sheets 上に直接持ち込む
+    Chrome 拡張機能です。セル間を移動するたびに、原文を非公開の TM と照合し、
+    あいまい一致候補をサイドパネルにリアルタイムで表示。承認した訳文をワンクリックで
+    訳文列に書き戻します。
+  </p>
+  <p>
+    スプレッドシート上で作業する翻訳者向けに設計されています — ゲームローカリゼーション、
+    UI 文字列、用語リスト、行単位での翻訳作業全般。
+  </p>
+  <p>
+    <a class="cta disabled" href="#">Chrome に追加 — Web Store 公開準備中</a>
+    <a class="cta secondary" href="https://github.com/ibushimaru/felix-tm">GitHub でソースを見る</a>
+  </p>
+</section>
+
+<section>
+  <h2>主な機能</h2>
+  <div class="features">
+    <div class="feature">
+      <h3>リアルタイムあいまい一致</h3>
+      <p>レーベンシュタイン距離 + バッグ距離の事前フィルタによる高速検索。65 % 以上のマッチを瞬時に表示。元 Felix CAT アルゴリズムの忠実な移植。</p>
+    </div>
+    <div class="feature">
+      <h3>Auto Translate</h3>
+      <p>選択範囲に 100 % 一致を一括適用。数字と登録済み用語は自動配置されます。</p>
+    </div>
+    <div class="feature">
+      <h3>用語集 &amp; 配置ルール</h3>
+      <p>大文字小文字を保ったまま用語単位で訳語を適用。製品名・バージョン文字列・定型パターン用に正規表現ベースの配置ルールも対応。</p>
+    </div>
+    <div class="feature">
+      <h3>品質チェック</h3>
+      <p>数字の不一致、訳出漏れの ALL CAPS 用語、未翻訳の用語集項目を検出。フラグをクリックすればその場で用語登録できます。</p>
+    </div>
+    <div class="feature">
+      <h3>TMX / TSV / XLSX 入出力</h3>
+      <p>標準フォーマットでのインポート・エクスポート。既存の TM を取り込んで他ツールと共有できます。</p>
+    </div>
+    <div class="feature">
+      <h3>ローカル完結・プライバシー</h3>
+      <p>TM はブラウザの IndexedDB 内に保存。サーバーなし、アナリティクスなし、外部送信なし。Sheets API はブラウザから Google へ直接通信。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>プライバシーの要点</h2>
+  <ul>
+    <li>TM・用語集はブラウザ内に留まります。Felix TM にサーバーはありません。</li>
+    <li><code>spreadsheets</code> OAuth スコープは、Auto Translate やインポート等の明示的操作時にのみ使用されます。</li>
+    <li>アナリティクスなし。トラッキングなし。サードパーティスクリプトなし。</li>
+  </ul>
+  <p>詳細は <a href="./privacy/#ja">プライバシーポリシー</a> をご覧ください。</p>
+</section>
+
+<section>
+  <h2>Felix CAT との関係</h2>
+  <div class="lineage">
+    Felix TM は、Ryan Ginstrom 氏が制作し MIT ライセンスでオープンソース公開した
+    Windows 専用翻訳メモリツール <strong>Felix CAT</strong> から着想を得ており、
+    マッチングアルゴリズムを共有しています。Felix TM は独立したプロジェクトであり
+    — Google Sheets と現代の Web 環境を対象に Python と JavaScript で
+    一から再実装したものです — Ginstrom 氏および元 Felix CAT 製品とは
+    関係を持ちません。本プロジェクトを可能にしたアルゴリズムへの感謝を申し上げます。
+  </div>
+</section>
+
+<section>
+  <h2>現在のステータス</h2>
+  <p>
+    Felix TM は現在 <strong>プライベートベータ</strong> 段階で、Google OAuth
+    verification と Chrome Web Store 審査の通過を進めています。早期アクセスを
+    ご希望の翻訳者の方は
+    <a href="mailto:ibushimaru@veriscio.com">ibushimaru@veriscio.com</a>
+    までご連絡ください。
+  </p>
+</section>
+
+</div>
+
+<footer>
+  <p>
+    Felix TM &middot; <a href="./privacy/">Privacy</a>
+    &middot; <a href="https://github.com/ibushimaru/felix-tm">GitHub</a>
+    &middot; <a href="mailto:ibushimaru@veriscio.com">Contact</a>
+  </p>
+  <p>&copy; 2026 Veriscio. Released under the MIT License.</p>
+</footer>
+
+</body>
+</html>

@@ -1297,11 +1297,9 @@ wireQcToggle('qc-glossary');
 
 // === Google account UI (Settings tab) ===
 //
-// The Sheets-API-dependent features only work after the user signs in
-// (chrome.identity OAuth) AND grants per-spreadsheet access via the
-// Picker. The "Sign in" button just gets the OAuth token; "Pick
-// another sheet…" opens the Picker; the Connected sheets list shows
-// what's authorized and lets the user revoke individual grants.
+// Sheets-API-dependent features (Auto Translate, Import from Sheet,
+// etc.) require the user to sign in via chrome.identity. One consent
+// to the `spreadsheets` scope covers every sheet the user opens.
 
 function refreshAuthUI() {
   const status = document.getElementById('auth-status');

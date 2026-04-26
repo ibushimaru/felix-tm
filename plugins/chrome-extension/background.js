@@ -328,7 +328,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // === Auth + authorization grants (drive.file) ===
+  // === Auth (sign-in / sign-out / status) ===
 
   // Returns the current sign-in state. interactive=false so we
   // don't pop a consent dialog for a status check.

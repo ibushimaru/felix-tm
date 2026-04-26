@@ -18,3 +18,4 @@ docs/manual-ja/
 .claude/settings.local.json
 node_modules/
 .secrets/
+.DS_Store

@@ -99,12 +99,11 @@
     settings = sets || settings;
     _dataReady = true;
     updateBadge();
-    // preloadSourceCache used to hit Sheets API on panel mount, but
-    // that pre-emptive read no longer fits the drive.file model
-    // (the user hasn't picked a sheet yet at this point). The cache
-    // still works opportunistically — see the SELECTION_CHANGED
-    // broadcast handler below where we record cell values as the
-    // user navigates.
+    // preloadSourceCache used to hit Sheets API on panel mount,
+    // which costs a request before the user has done anything.
+    // The cache still works opportunistically — see the
+    // SELECTION_CHANGED broadcast handler below where we record
+    // cell values as the user navigates.
     // Run initial search immediately if the cell value is already in the
     // DOM. When the panel mounts faster than Sheets stabilises the
     // selection DOM, the first read comes back empty; schedule a

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Felix TM</title>
+<style>
+  :root { color-scheme: light; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "Hiragino Sans", "Yu Gothic UI", sans-serif; max-width: 760px; margin: 0 auto; padding: 32px 24px 80px; color: #202124; line-height: 1.65; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 20px; margin: 32px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #e8eaed; }
+  h3 { font-size: 16px; margin: 20px 0 6px; }
+  .meta { color: #5f6368; font-size: 14px; margin-bottom: 24px; }
+  .lang-switch { font-size: 14px; margin-bottom: 24px; }
+  .lang-switch a { color: #1a73e8; text-decoration: none; }
+  ul { padding-left: 22px; }
+  li { margin: 4px 0; }
+  code { background: #f1f3f4; padding: 1px 6px; border-radius: 3px; font-size: 0.92em; }
+  .scope-table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+  .scope-table th, .scope-table td { border: 1px solid #dadce0; padding: 8px 10px; text-align: left; vertical-align: top; }
+  .scope-table th { background: #f8f9fa; font-weight: 600; }
+  .nav-back { display: inline-block; margin-top: 40px; color: #1a73e8; text-decoration: none; font-size: 14px; }
+  hr.section-break { border: none; border-top: 2px solid #dadce0; margin: 64px 0 48px; }
+</style>
+</head>
+<body>
+
+<a href="../" class="nav-back">← Felix TM home</a>
+
+<h1>Privacy Policy</h1>
+<p class="meta">Last updated: 2026-04-27</p>
+
+<p class="lang-switch"><a href="#ja">日本語版はこちら →</a></p>
+
+<p>
+  Felix TM is a Chrome extension that provides translation memory (TM) and
+  glossary lookup for translators working in Google Sheets. This document
+  explains exactly what data Felix TM accesses, where it is stored, and how
+  it is used.
+</p>
+
+<h2>Who we are</h2>
+<p>
+  Felix TM is developed and operated by <strong>Veriscio (sole proprietor: Ibushimaru)</strong>,
+  based in Japan. Contact for privacy questions:
+  <a href="mailto:ibushimaru@veriscio.com">ibushimaru@veriscio.com</a>.
+</p>
+
+<h2>Summary</h2>
+<ul>
+  <li>Translation memory and glossary entries you create live <strong>only in your own browser</strong> (IndexedDB). They are never sent to any server we operate.</li>
+  <li>Felix TM has <strong>no backend</strong>. There are no analytics, no usage tracking, and no third-party trackers.</li>
+  <li>When you sign in, Google issues an OAuth token to your browser. Felix TM uses that token <strong>directly from your browser to Google's APIs</strong> to read and write the active spreadsheet on your behalf.</li>
+  <li>We do not see, store, or transmit the contents of your spreadsheets.</li>
+</ul>
+
+<h2>Data Felix TM accesses</h2>
+
+<h3>1. Your translation memory and glossary (local only)</h3>
+<p>
+  Source/target text pairs, glossary terms, placement rules, and per-entry
+  metadata (notes, project, client) you create through Felix TM are stored
+  in your browser's local <strong>IndexedDB</strong>. This data:
+</p>
+<ul>
+  <li>Never leaves your computer.</li>
+  <li>Is not synced across devices by Felix TM.</li>
+  <li>Can be exported by you at any time as TMX, TSV, or XLSX from the side panel.</li>
+  <li>Is deleted if you uninstall the extension or clear the browser's site data for the extension.</li>
+</ul>
+
+<h3>2. Google Sheets content (transmitted directly to Google)</h3>
+<p>
+  When you use Sheets-connected features such as Auto Translate or Import
+  from Sheet, Felix TM reads from and writes to the spreadsheet you have
+  open. Those API calls go from your browser straight to
+  <code>sheets.googleapis.com</code>, authenticated with the OAuth token
+  Google issued to you. The cell values pass through your browser's memory
+  briefly to be matched against your local TM, and are not persisted
+  anywhere outside of (a) your local IndexedDB if you explicitly add an
+  entry to your TM, and (b) the spreadsheet itself.
+</p>
+
+<h3>3. Your Google account email</h3>
+<p>
+  After sign-in, Felix TM calls
+  <code>oauth2.googleapis.com/oauth2/v3/userinfo</code> once to retrieve
+  your account email address. This is shown in the side panel
+  ("Signed in as <em>you@example.com</em>") so you can confirm which
+  account is connected. The email is held only in the side panel's
+  in-memory state and is never transmitted off-device.
+</p>
+
+<h2>OAuth scopes Felix TM requests</h2>
+<table class="scope-table">
+  <thead>
+    <tr><th>Scope</th><th>Why Felix TM needs it</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>https://www.googleapis.com/auth/spreadsheets</code></td>
+      <td>
+        Read source-language cells and write target-language cells in the
+        Google Sheets you have open. Required for Auto Translate, Import
+        from Sheet, and the cell-write button. Felix TM only reads/writes
+        when you take an explicit action; it never reads in the
+        background.
+      </td>
+    </tr>
+    <tr>
+      <td><code>https://www.googleapis.com/auth/userinfo.email</code></td>
+      <td>
+        Display your signed-in email in the side panel so you can verify
+        which account is active.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Limited Use compliance</h2>
+<p>
+  Felix TM's use of information received from Google APIs adheres to the
+  <a href="https://developers.google.com/terms/api-services-user-data-policy#limited-use">Google API Services User Data Policy</a>,
+  including the <strong>Limited Use</strong> requirements. Specifically:
+</p>
+<ul>
+  <li>Spreadsheet content accessed via the <code>spreadsheets</code> scope is used <strong>only to provide the user-facing translation-memory features</strong> (matching, write-back, import) within the running extension.</li>
+  <li>We do <strong>not</strong> transfer this data to others except as necessary to provide or improve user-facing features, comply with applicable law, or as part of a merger, acquisition, or sale of assets with the user's prior consent.</li>
+  <li>We do <strong>not</strong> use this data to serve advertisements.</li>
+  <li>We do <strong>not</strong> allow humans to read this data unless we have the user's affirmative agreement, it is necessary for security purposes, to comply with applicable law, or the data is aggregated and used for internal operations in accordance with applicable law.</li>
+  <li>We do <strong>not</strong> use this data to develop, improve, or train generalized AI and/or ML models. Matching is performed entirely by deterministic algorithms running locally in your browser.</li>
+</ul>
+
+<h2>Data we do <em>not</em> collect</h2>
+<ul>
+  <li>No analytics, telemetry, or crash reports.</li>
+  <li>No advertising identifiers.</li>
+  <li>No third-party trackers.</li>
+  <li>No remote logs of your translation work.</li>
+</ul>
+
+<h2>Children</h2>
+<p>
+  Felix TM is a professional tool for translators and is not directed at
+  children under 13. We do not knowingly collect data from children.
+</p>
+
+<h2>Your choices</h2>
+<ul>
+  <li><strong>Sign out</strong> at any time from the Settings tab. This revokes the OAuth token and removes it from your browser's identity cache.</li>
+  <li><strong>Revoke access</strong> entirely at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</li>
+  <li><strong>Delete your local data</strong> by uninstalling the extension or clearing the extension's site data from <code>chrome://settings/cookies</code>.</li>
+  <li><strong>Export your TM</strong> as TMX/TSV/XLSX at any time before deleting it.</li>
+</ul>
+
+<h2>Changes to this policy</h2>
+<p>
+  If we change how Felix TM handles data, we will update this page and the
+  "Last updated" date above. For material changes (such as new data
+  collection or a new third-party integration), we will also surface a
+  notice in the extension's side panel.
+</p>
+
+<h2>Contact</h2>
+<p>
+  Questions or requests:
+  <a href="mailto:ibushimaru@veriscio.com">ibushimaru@veriscio.com</a><br>
+  Source code and issue tracker: <a href="https://github.com/ibushimaru/felix-tm">github.com/ibushimaru/felix-tm</a>
+</p>
+
+
+<hr class="section-break" id="ja">
+
+<h1>プライバシーポリシー</h1>
+<p class="meta">最終更新日: 2026-04-27</p>
+
+<p class="lang-switch"><a href="#top">↑ English version</a></p>
+
+<p>
+  Felix TM は、Google Sheets で作業する翻訳者向けに、翻訳メモリ (TM)
+  と用語集 (Glossary) の検索機能を提供する Chrome 拡張機能です。本ポリシーは、
+  Felix TM がアクセスするデータの種類、保管場所、利用方法を明確に説明します。
+</p>
+
+<h2>運営者</h2>
+<p>
+  Felix TM は、日本国内で活動する <strong>Veriscio (個人事業主: Ibushimaru)</strong>
+  が開発・運営しています。プライバシーに関するお問い合わせは
+  <a href="mailto:ibushimaru@veriscio.com">ibushimaru@veriscio.com</a> までお願いします。
+</p>
+
+<h2>要約</h2>
+<ul>
+  <li>翻訳メモリ・用語集のエントリは <strong>すべてご自身のブラウザ内 (IndexedDB)</strong> に保存され、当方のサーバーには一切送信されません。</li>
+  <li>Felix TM には <strong>バックエンドサーバーが存在しません</strong>。アナリティクス、利用状況追跡、サードパーティトラッカーは一切組み込まれていません。</li>
+  <li>サインインすると、Google が OAuth トークンをご自身のブラウザに発行します。Felix TM はそのトークンを <strong>ブラウザから Google の API に直接</strong> 使用して、開いている spreadsheet を読み書きします。</li>
+  <li>当方が spreadsheet の内容を閲覧・保存・送信することはありません。</li>
+</ul>
+
+<h2>Felix TM がアクセスするデータ</h2>
+
+<h3>1. 翻訳メモリと用語集（ローカル保存のみ）</h3>
+<p>
+  Felix TM 経由で作成される原文/訳文ペア、用語、プレースメントルール、
+  およびエントリ単位のメタデータ（メモ、プロジェクト名、クライアント名）は、
+  ブラウザのローカル <strong>IndexedDB</strong> に保存されます。これらのデータは:
+</p>
+<ul>
+  <li>お使いのコンピュータから外部に送信されることはありません。</li>
+  <li>Felix TM 自体によるデバイス間同期は行いません。</li>
+  <li>サイドパネルから TMX / TSV / XLSX 形式でいつでもエクスポート可能です。</li>
+  <li>拡張機能をアンインストールするか、ブラウザの拡張機能サイトデータをクリアすると削除されます。</li>
+</ul>
+
+<h3>2. Google Sheets の内容（Google に直接送信）</h3>
+<p>
+  Auto Translate や Import from Sheet などの Sheets 連携機能を使用する際、
+  Felix TM は開いている spreadsheet を読み書きします。これらの API 呼び出しは、
+  ブラウザから <code>sheets.googleapis.com</code> へ直接送信され、
+  Google が発行した OAuth トークンで認証されます。セルの値はローカルの TM
+  と照合するためにブラウザのメモリを一時的に通過するだけで、
+  以下の場合を除き、どこにも保存されません:
+  (a) ユーザーが明示的に TM へエントリを追加した場合のローカル IndexedDB、
+  (b) spreadsheet 自体への書き込み。
+</p>
+
+<h3>3. Google アカウントのメールアドレス</h3>
+<p>
+  サインイン後、Felix TM は <code>oauth2.googleapis.com/oauth2/v3/userinfo</code>
+  を 1 回呼び出し、アカウントのメールアドレスを取得します。これはサイドパネルに
+  「Signed in as <em>you@example.com</em>」として表示され、どのアカウントが
+  接続されているかを確認するためだけに使用されます。メールアドレスはサイドパネルの
+  メモリ内状態にのみ保持され、デバイス外へ送信されることはありません。
+</p>
+
+<h2>Felix TM が要求する OAuth スコープ</h2>
+<table class="scope-table">
+  <thead>
+    <tr><th>スコープ</th><th>必要な理由</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>https://www.googleapis.com/auth/spreadsheets</code></td>
+      <td>
+        開いている Google Sheets の原文セルを読み取り、訳文セルに書き込みます。
+        Auto Translate、Import from Sheet、セル書き込みボタンに必要です。
+        Felix TM はユーザーが明示的に操作した場合にのみ読み書きを行い、
+        バックグラウンドで読み取ることはありません。
+      </td>
+    </tr>
+    <tr>
+      <td><code>https://www.googleapis.com/auth/userinfo.email</code></td>
+      <td>
+        サインイン中のメールアドレスをサイドパネルに表示し、
+        どのアカウントが有効かを確認できるようにします。
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Limited Use ポリシーへの準拠</h2>
+<p>
+  Felix TM が Google API から受け取る情報の取り扱いは、
+  <a href="https://developers.google.com/terms/api-services-user-data-policy#limited-use">Google API サービス ユーザーデータポリシー</a>、
+  特に <strong>Limited Use</strong> 要件に準拠します。具体的には:
+</p>
+<ul>
+  <li><code>spreadsheets</code> スコープでアクセスする spreadsheet の内容は、<strong>動作中の拡張機能内でユーザー向けの翻訳メモリ機能（マッチング、書き戻し、インポート）を提供する目的のみ</strong>に使用します。</li>
+  <li>このデータを第三者へ転送することは、ユーザー向け機能の提供・改善に必要な場合、適用される法令を遵守する場合、またはユーザーの事前同意を得た合併・買収・資産売却の場合を除き、<strong>行いません</strong>。</li>
+  <li>このデータを広告配信に <strong>使用しません</strong>。</li>
+  <li>ユーザーの明示的同意、セキュリティ上の必要性、適用法令への準拠、または法令に従った内部運用のための集計データを除き、人間がこのデータを閲覧することを <strong>許可しません</strong>。</li>
+  <li>このデータを汎用的な AI / ML モデルの開発・改善・学習に <strong>使用しません</strong>。マッチングはすべて、ブラウザ内でローカルに動作する決定論的アルゴリズムにより実行されます。</li>
+</ul>
+
+<h2>収集 <em>しない</em> データ</h2>
+<ul>
+  <li>アナリティクス、テレメトリ、クラッシュレポートなし。</li>
+  <li>広告識別子なし。</li>
+  <li>サードパーティトラッカーなし。</li>
+  <li>翻訳作業のリモートログなし。</li>
+</ul>
+
+<h2>お子様について</h2>
+<p>
+  Felix TM は翻訳者向けの業務用ツールであり、13 歳未満を対象としていません。
+  当方は意図的に児童からデータを収集することはありません。
+</p>
+
+<h2>ユーザーの選択</h2>
+<ul>
+  <li>設定タブからいつでも <strong>サインアウト</strong> できます。これにより OAuth トークンが取り消され、ブラウザの identity キャッシュから削除されます。</li>
+  <li><a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a> から <strong>アクセス権限を完全に取り消す</strong> ことができます。</li>
+  <li>拡張機能をアンインストールするか、<code>chrome://settings/cookies</code> で拡張機能のサイトデータを削除することで <strong>ローカルデータを削除</strong> できます。</li>
+  <li>削除前に、いつでも <strong>TM を TMX / TSV / XLSX 形式でエクスポート</strong> できます。</li>
+</ul>
+
+<h2>本ポリシーの変更</h2>
+<p>
+  Felix TM のデータ取り扱いに変更がある場合、本ページと上部の「最終更新日」を
+  更新します。新たなデータ収集や新しいサードパーティ連携など重要な変更の場合は、
+  拡張機能のサイドパネル内にも通知を表示します。
+</p>
+
+<h2>お問い合わせ</h2>
+<p>
+  ご質問・ご要望:
+  <a href="mailto:ibushimaru@veriscio.com">ibushimaru@veriscio.com</a><br>
+  ソースコード・課題管理: <a href="https://github.com/ibushimaru/felix-tm">github.com/ibushimaru/felix-tm</a>
+</p>
+
+<a href="../" class="nav-back">← Felix TM home</a>
+
+</body>
+</html>
