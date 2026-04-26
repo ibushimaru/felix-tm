@@ -1059,30 +1059,27 @@ function _collectRanges(text, issues, side) {
   const ranges = [];
   for (const x of issues) {
     if (x.type === 'number') {
-      // Highlight on the side where the digit actually lives — that's
-      // where "this didn't make it across" reads naturally. The other
-      // side is where the gap is (no span to highlight).
+      // Highlight on the side where the digit actually lives — the
+      // other side is the gap. Tip = direction only; the value itself
+      // is already visible in the highlighted span.
       const wantSide = x.side === 'target' ? 'source' : 'target';
       if (side !== wantSide) continue;
-      const tip = x.side === 'target'
-        ? `数値 ${x.value} が訳文に欠落`
-        : `数値 ${x.value} が原文に無いのに訳文にある`;
+      const tip = x.side === 'target' ? '訳文に無し' : '原文に無し';
       for (const o of _findAllOccurrences(text, x.value)) {
         ranges.push({ ...o, type: 'number', tip });
       }
     } else if (x.type === 'allcaps') {
-      // CAPS issue is per definition: source has the word, target lacks
-      // it — so we mark it on source.
       if (side !== 'source') continue;
       for (const o of _findAllOccurrences(text, x.word)) {
-        ranges.push({ ...o, type: 'allcaps', tip: `CAPS: 「${x.word}」 を訳文にもそのまま残す想定` });
+        ranges.push({ ...o, type: 'allcaps', tip: '訳文に無し' });
       }
     } else if (x.type === 'glossary') {
-      // Glossary mark on source-side term, tooltip carries the
-      // expected translation that isn't appearing in target.
+      // Tip = just the registered translation. The user already sees
+      // the source-side term in the highlight; what they need from
+      // hover is "what should appear in target."
       if (side !== 'source') continue;
       for (const o of _findAllOccurrences(text, x.term)) {
-        ranges.push({ ...o, type: 'glossary', tip: `用語: ${x.term} → ${x.translation}（訳文に欠落）` });
+        ranges.push({ ...o, type: 'glossary', tip: `→ ${x.translation}` });
       }
     }
   }

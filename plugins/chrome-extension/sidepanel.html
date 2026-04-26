@@ -52,7 +52,8 @@ input:focus { outline: none; border-color: #1a73e8; }
   content: attr(data-tip); display: none; position: absolute;
   bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0;
   border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124;
-  white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  max-width: 240px; white-space: normal; word-break: break-word;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
   z-index: 10; pointer-events: none;
 }
 .qc-mark:hover::after { display: block; }
