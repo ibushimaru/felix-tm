@@ -55,6 +55,7 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
   <div class="tab active" data-panel="tm" id="tab-tm">TM</div>
   <div class="tab" data-panel="glossary" id="tab-glossary">Glossary</div>
   <div class="tab" data-panel="rules" id="tab-rules">Rules</div>
+  <div class="tab" data-panel="tools" id="tab-tools">Tools</div>
   <div class="tab" data-panel="settings" id="tab-settings">Settings</div>
 </div>
 
@@ -148,6 +149,32 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
   <h3 id="h-rule-export">Import / Export</h3>
   <div id="rule-paste-zone" style="width:100%;min-height:32px;border:1px dashed #dadce0;border-radius:4px;padding:6px;margin-bottom:4px;font-size:12px;color:#9aa0a6;cursor:text" contenteditable="true">Ctrl+V (TSV: source_pattern → target_template)</div>
   <button class="btn btn-outline" style="width:100%" id="btn-export-rules">Export Rules as TSV</button>
+</div>
+
+<!-- Tools (QC + Search/Replace) -->
+<div id="tools" class="panel">
+  <h3 id="h-qc">QC Check</h3>
+  <p style="font-size:12px;color:#5f6368;margin-bottom:6px" id="p-qc-desc">Scan the TM for source/target issues. Click a result to view the row.</p>
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px;font-size:13px;color:#5f6368">
+    <label><input type="checkbox" id="qc-numbers" checked> <span id="lbl-qc-numbers">Numbers</span></label>
+    <label><input type="checkbox" id="qc-allcaps" checked> <span id="lbl-qc-allcaps">ALL CAPS</span></label>
+    <label><input type="checkbox" id="qc-glossary" checked> <span id="lbl-qc-glossary">Glossary</span></label>
+  </div>
+  <button class="btn btn-primary" style="width:100%;margin-bottom:6px" id="btn-run-qc">Run QC</button>
+  <div id="qc-results" style="max-height:280px;overflow:auto;font-size:13px"></div>
+  <div style="font-size:13px;color:#9aa0a6;margin-top:4px" id="qc-summary"></div>
+
+  <hr>
+  <h3 id="h-sr">Search &amp; Replace</h3>
+  <p style="font-size:12px;color:#5f6368;margin-bottom:6px" id="p-sr-desc">Tags: source: trans: context: created-by: regex: &lt;field&gt;:* (replace whole field).</p>
+  <input type="text" id="sr-from" placeholder="From — text or source:foo / regex:bar / source:*">
+  <input type="text" id="sr-to" placeholder="To — replacement text">
+  <div style="display:flex;gap:6px;margin-bottom:6px">
+    <button class="btn" style="flex:1" id="btn-sr-find">Find</button>
+    <button class="btn btn-primary" style="flex:1" id="btn-sr-replace">Replace All</button>
+  </div>
+  <div id="sr-results" style="max-height:240px;overflow:auto;font-size:13px"></div>
+  <div style="font-size:13px;color:#9aa0a6;margin-top:4px" id="sr-summary"></div>
 </div>
 
 <!-- Settings -->

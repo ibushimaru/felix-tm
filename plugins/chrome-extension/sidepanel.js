@@ -36,6 +36,21 @@ const I18N = {
     exportRules: 'Export Rules as TSV', ruleAdded: 'Rule added!', ruleExists: 'Rule already exists',
     invalidRegex: 'Invalid regex pattern',
     save: 'Save', saved: 'Saved!',
+    tools: 'Tools',
+    qcCheck: 'QC Check',
+    qcDesc: 'Scan the TM for source/target issues. Click a result to view the row.',
+    qcNumbers: 'Numbers', qcAllCaps: 'ALL CAPS', qcGlossary: 'Glossary',
+    runQc: 'Run QC',
+    qcClean: 'No issues found.',
+    qcCount: '{n} issue(s) across {rows} row(s)',
+    sr: 'Search & Replace',
+    srDesc: 'Tags: source: trans: context: created-by: regex: <field>:* (replace whole field).',
+    srFromPh: 'From — text or source:foo / regex:bar / source:*',
+    srToPh: 'To — replacement text',
+    find: 'Find', replaceAll: 'Replace All',
+    srNoMatch: 'No matches.',
+    srFoundN: 'Found {n} record(s)',
+    srReplacedN: 'Replaced in {n} record(s)',
     danger: 'Danger Zone', clearTM: 'Clear TM', clearGloss: 'Clear Glossary',
     confirmClear: 'Delete all entries?', cancel: 'Cancel',
   },
@@ -60,6 +75,21 @@ const I18N = {
     exportRules: 'ルールをTSVでエクスポート', ruleAdded: 'ルールを追加しました', ruleExists: '既に存在します',
     invalidRegex: '無効な正規表現です',
     save: '保存', saved: '保存しました',
+    tools: 'ツール',
+    qcCheck: 'QCチェック',
+    qcDesc: 'TM の原文／訳文の問題をスキャン。結果クリックで該当行を表示。',
+    qcNumbers: '数値', qcAllCaps: '全大文字', qcGlossary: '用語',
+    runQc: 'QC実行',
+    qcClean: '問題は見つかりませんでした。',
+    qcCount: '{rows}行 / {n}件の問題',
+    sr: '検索 & 置換',
+    srDesc: 'タグ: source: trans: context: created-by: regex: <field>:* （フィールド全体置換）',
+    srFromPh: '検索 — テキスト or source:foo / regex:bar / source:*',
+    srToPh: '置換 — 置換後のテキスト',
+    find: '検索', replaceAll: '一括置換',
+    srNoMatch: '該当なし。',
+    srFoundN: '{n} 件ヒット',
+    srReplacedN: '{n} 件を置換',
     danger: '危険な操作', clearTM: 'TMを全削除', clearGloss: '用語集を全削除',
     confirmClear: '全エントリを削除しますか？', cancel: 'キャンセル',
   },
@@ -110,6 +140,20 @@ function applyLang() {
   set('h-browse-rules', t('browseRules'));
   set('p-rule-desc', t('ruleDesc'));
   set('btn-export-rules', t('exportRules'));
+  // Tools
+  set('tab-tools', t('tools'));
+  set('h-qc', t('qcCheck'));
+  set('p-qc-desc', t('qcDesc'));
+  set('lbl-qc-numbers', t('qcNumbers'));
+  set('lbl-qc-allcaps', t('qcAllCaps'));
+  set('lbl-qc-glossary', t('qcGlossary'));
+  set('btn-run-qc', t('runQc'));
+  set('h-sr', t('sr'));
+  set('p-sr-desc', t('srDesc'));
+  ph('sr-from', t('srFromPh'));
+  ph('sr-to', t('srToPh'));
+  set('btn-sr-find', t('find'));
+  set('btn-sr-replace', t('replaceAll'));
   // Settings
   set('h-settings', t('settings'));
   set('btn-save-settings', t('save'));
@@ -732,24 +776,29 @@ function handleFile(file) {
 }
 
 function importTMX(xml) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xml, 'text/xml');
-  const tus = doc.querySelectorAll('tu');
-  let added = 0;
-
-  tus.forEach(tu => {
-    const tuvs = tu.querySelectorAll('tuv');
-    if (tuvs.length >= 2) {
-      const src = tuvs[0].querySelector('seg')?.textContent || '';
-      const tgt = tuvs[1].querySelector('seg')?.textContent || '';
-      if (src && tgt) { FelixEngine.addEntry(tmData, src, tgt); added++; }
-    }
-  });
+  // Engine-side parser handles header srclang, x-context props,
+  // multi-language TUs, and TUV inline tags. Carries metadata
+  // (createdBy/modifiedBy/created/modified/refcount/context) onto
+  // each addEntry call so audit info survives a round-trip.
+  const { records } = FelixEngine.parseTmx(xml);
+  let added = 0, dups = 0;
+  for (const r of records) {
+    if (!r.source || !r.target) continue;
+    const status = FelixEngine.addEntry(tmData, r.source, r.target, {
+      context: r.context || '',
+      createdBy: r.createdBy || '',
+      modifiedBy: r.modifiedBy || '',
+      created: r.created || undefined,
+      modified: r.modified || undefined,
+    });
+    if (status === 'added') added++;
+    else dups++;
+  }
 
   saveTM();
   updateStats();
   renderTMList();
-  showToast(`Imported ${added} entries from TMX`);
+  showToast(`Imported ${added} new entries from TMX${dups ? ` (${dups} dups skipped)` : ''}`);
 }
 
 function importTSV(text) {
@@ -785,20 +834,15 @@ function exportTSV() {
 }
 
 function exportTMX() {
-  function xmlEsc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-  const now = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
-  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-  xml += `<tmx version="1.4">\n`;
-  xml += `  <header creationtool="Felix TM" creationtoolversion="1.0" datatype="plaintext" segtype="sentence" adminlang="en" srclang="*all*" o-tmf="FelixTM" creationdate="${now}"/>\n`;
-  xml += `  <body>\n`;
-  for (const e of tmData) {
-    xml += `    <tu>\n`;
-    xml += `      <tuv xml:lang="src"><seg>${xmlEsc(e.source)}</seg></tuv>\n`;
-    xml += `      <tuv xml:lang="tgt"><seg>${xmlEsc(e.target)}</seg></tuv>\n`;
-    xml += `    </tu>\n`;
-  }
-  xml += `  </body>\n</tmx>\n`;
-
+  // Engine serializer emits proper xml:lang tuvs, escapes entities,
+  // and only writes optional attrs (creationid/changeid/usagecount)
+  // when the record actually carries them.
+  const xml = FelixEngine.serializeTmx(tmData, {
+    sourceLang: (settings.sourceLang || 'en').toLowerCase(),
+    targetLang: (settings.targetLang || 'ja').toLowerCase(),
+    creationTool: 'Felix TM',
+    creationToolVersion: '1.0',
+  });
   const blob = new Blob([xml], { type: 'application/xml;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -954,6 +998,113 @@ dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.
 dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = '#dadce0'; });
 dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.style.borderColor = '#dadce0'; handleFile(e.dataTransfer.files[0]); });
 fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+// ============================================================
+// Tools tab — QC + Search & Replace
+// ============================================================
+
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function jumpToTMRow(idx) {
+  // Switch to the TM tab and scroll the list into view; the existing
+  // tm-list rendering handles its own click → cell focus, so this is
+  // just a navigation hop.
+  const tmTab = document.querySelector('.tab[data-panel="tm"]');
+  if (tmTab) tmTab.click();
+  // Force the filter to a unique fragment so the targeted row is
+  // visible in a small tm-list. Scope it to one record by source.
+  const e = tmData[idx];
+  if (e) {
+    const filt = document.getElementById('tm-filter');
+    if (filt) { filt.value = e.source; filt.dispatchEvent(new Event('input')); }
+  }
+}
+
+function runQC() {
+  const opts = {
+    numbers: document.getElementById('qc-numbers').checked,
+    allCaps: document.getElementById('qc-allcaps').checked,
+    glossary: document.getElementById('qc-glossary').checked,
+  };
+  const results = document.getElementById('qc-results');
+  const summary = document.getElementById('qc-summary');
+  results.innerHTML = '';
+  let totalIssues = 0;
+  let rowsWithIssues = 0;
+  for (let i = 0; i < tmData.length; i++) {
+    const rec = tmData[i];
+    const issues = FelixEngine.qcCheck(rec, glossaryData, opts);
+    if (!issues.length) continue;
+    rowsWithIssues++;
+    totalIssues += issues.length;
+    const div = document.createElement('div');
+    div.className = 'match';
+    div.style.cursor = 'pointer';
+    div.innerHTML =
+      '<div class="match-source">' + escHtml(rec.source) + '</div>' +
+      '<div class="match-target">' + escHtml(rec.target) + '</div>' +
+      '<div style="margin-top:4px;font-size:12px">' +
+      issues.map(x => {
+        if (x.type === 'number') return '<span style="color:#d93025">[#' + escHtml(x.value) + ' ' + (x.side === 'target' ? 'missing in target' : 'extra in target') + ']</span>';
+        if (x.type === 'allcaps') return '<span style="color:#e8710a">[CAPS:' + escHtml(x.word) + ']</span>';
+        if (x.type === 'glossary') return '<span style="color:#1a73e8">[GLOSS:' + escHtml(x.term) + '→' + escHtml(x.translation) + ']</span>';
+        return '<span>[' + escHtml(x.type) + ']</span>';
+      }).join(' ') +
+      '</div>';
+    div.addEventListener('click', () => jumpToTMRow(i));
+    results.appendChild(div);
+  }
+  if (totalIssues === 0) {
+    summary.textContent = t('qcClean');
+  } else {
+    summary.textContent = t('qcCount').replace('{n}', totalIssues).replace('{rows}', rowsWithIssues);
+  }
+}
+
+function srFind() {
+  const expr = document.getElementById('sr-from').value;
+  const list = document.getElementById('sr-results');
+  const summary = document.getElementById('sr-summary');
+  list.innerHTML = '';
+  if (!expr) { summary.textContent = ''; return; }
+  const hits = FelixEngine.searchAndReplace(tmData, expr);
+  if (!hits.length) { summary.textContent = t('srNoMatch'); return; }
+  for (const h of hits) {
+    const div = document.createElement('div');
+    div.className = 'match';
+    div.style.cursor = 'pointer';
+    div.innerHTML =
+      '<div style="font-size:11px;color:#9aa0a6">[' + escHtml(h.matchField) + ']</div>' +
+      '<div class="match-source">' + escHtml(h.source) + '</div>' +
+      '<div class="match-target">' + escHtml(h.target) + '</div>';
+    div.addEventListener('click', () => jumpToTMRow(h.tmIdx));
+    list.appendChild(div);
+  }
+  summary.textContent = t('srFoundN').replace('{n}', hits.length);
+}
+
+function srReplaceAll() {
+  const fromExpr = document.getElementById('sr-from').value;
+  const toExpr = document.getElementById('sr-to').value;
+  const summary = document.getElementById('sr-summary');
+  if (!fromExpr) return;
+  const result = FelixEngine.applyReplace(tmData, fromExpr, toExpr);
+  saveTM();
+  updateStats();
+  renderTMList();
+  summary.textContent = t('srReplacedN').replace('{n}', result.changed);
+  // Refresh the find list so the user sees the post-replace state.
+  srFind();
+  showToast(t('srReplacedN').replace('{n}', result.changed));
+}
+
+document.getElementById('btn-run-qc').addEventListener('click', runQC);
+document.getElementById('btn-sr-find').addEventListener('click', srFind);
+document.getElementById('btn-sr-replace').addEventListener('click', srReplaceAll);
 
 // Init
 init();
