@@ -33,11 +33,11 @@ input:focus { outline: none; border-color: #1a73e8; }
 .btn { padding: 8px 16px; border-radius: 4px; border: 1px solid #dadce0; cursor: pointer; font-size: 15px; font-weight: 500; background: #fff; color: #1a73e8; }
 .btn:hover { background: #f1f3f4; }
 .btn-primary { width: 100%; border-color: #1a73e8; }
-.qc-toggle { transition: background 0.1s, color 0.1s, border-color 0.1s; }
-.qc-toggle[data-on="true"] { background: #1a73e8; color: #fff; border-color: #1a73e8; }
-.qc-toggle[data-on="true"]:hover { background: #1762c4; border-color: #1762c4; }
-.qc-toggle[data-on="false"] { background: #fff; color: #5f6368; border-color: #dadce0; }
-.qc-toggle[data-on="false"]:hover { background: #f1f3f4; }
+.qc-toggle { transition: color 0.1s, border-color 0.1s; background: #fff; }
+.qc-toggle[data-on="true"] { color: #1a73e8; border-color: #1a73e8; font-weight: 600; }
+.qc-toggle[data-on="true"]:hover { background: #f1f3f4; }
+.qc-toggle[data-on="false"] { color: #9aa0a6; border-color: #dadce0; }
+.qc-toggle[data-on="false"]:hover { background: #f8f9fa; color: #5f6368; }
 
 .match { background: #f8f9fa; border: 1px solid #e8eaed; border-radius: 6px; padding: 8px 10px; margin-bottom: 4px; transition: all 0.1s; }
 .match:hover { border-color: #1a73e8; background: #e8f0fe; }
