@@ -2049,11 +2049,24 @@ var FelixEngine = (() => {
     while ((m = re.exec(text)) !== null) out.push(m[0]);
     return out;
   }
-  function qcAllCaps(source, target) {
+  function qcAllCaps(source, target, glossaryData) {
     const words = _extractAllCapsWords(source);
     if (!words.length) return [];
+    // CAPS words that are themselves a glossary term get a pass —
+    // qcGlossary already handles "is the translation in target?" for
+    // them. Without this dedup, every translated CAPS word ("DOWN" →
+    // "下降", "UP" → "提升") double-flags: once correctly via glossary,
+    // once spuriously via CAPS just because the literal English form
+    // doesn't survive translation.
+    const glossaryTerms = new Set();
+    if (glossaryData) {
+      for (const g of glossaryData) {
+        if (g && g.term) glossaryTerms.add(cmpLen(g.term));
+      }
+    }
     const issues = [];
     for (const w of words) {
+      if (glossaryTerms.has(cmpLen(w))) continue;
       if (target.indexOf(w) === -1) issues.push({ word: w });
     }
     return issues;
@@ -2099,7 +2112,7 @@ var FelixEngine = (() => {
       }
     }
     if (opts.allCaps !== false) {
-      for (const issue of qcAllCaps(src, tgt)) {
+      for (const issue of qcAllCaps(src, tgt, glossaryData)) {
         out.push({ type: 'allcaps', ...issue });
       }
     }

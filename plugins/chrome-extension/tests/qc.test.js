@@ -110,6 +110,31 @@ test('qcAllCaps: empty source → no issues', () => {
   assert.deepEqual(qcAllCaps('', 'irrelevant'), []);
 });
 
+test('qcAllCaps: words registered as a glossary term are skipped (qcGlossary handles them)', () => {
+  // DOWN is intentionally translated to 下降 — registering DOWN→下降
+  // in the glossary tells qcAllCaps "stop flagging this; the glossary
+  // check owns it." Without this pass, the user's only escape from
+  // the false positive was disabling the entire CAPS check.
+  const r = qcAllCaps(
+    'Stat DOWN by 50%',
+    'ステータスが50%下降',
+    gloss(['DOWN', '下降']),
+  );
+  assert.deepEqual(r, []);
+});
+
+test('qcAllCaps: glossary-registered word with translation NOT in target → still skipped here (qcGlossary will fire)', () => {
+  // The CAPS check's job is "did this preserve verbatim?". For
+  // glossary-managed words that's the wrong question — qcGlossary
+  // is the one that should fire when the translation is missing.
+  const r = qcAllCaps(
+    'Stat DOWN by 50%',
+    'ステータスが50%増加',  // wrong target — but qcAllCaps still steps aside
+    gloss(['DOWN', '下降']),
+  );
+  assert.deepEqual(r, []);
+});
+
 // -------------------- qcGlossary --------------------
 
 test('qcGlossary: term in source AND translation in target → no issue', () => {
@@ -217,9 +242,10 @@ test('qcCheck: omitting opts runs all three checks by default', () => {
     { source: 'HP by 50', target: 'を回復' },
     gloss(['HP', 'HP']),
   );
-  // Default = all checks on. number 50 missing + allcaps HP missing
-  // + glossary translation HP missing.
-  assert.equal(r.length, 3);
+  // Default = all checks on. number 50 missing + glossary HP→HP
+  // missing. CAPS would also fire on "HP" but qcAllCaps now defers
+  // to glossary when the word is a registered term.
+  assert.equal(r.length, 2);
   const types = r.map(x => x.type).sort();
-  assert.deepEqual(types, ['allcaps', 'glossary', 'number']);
+  assert.deepEqual(types, ['glossary', 'number']);
 });
