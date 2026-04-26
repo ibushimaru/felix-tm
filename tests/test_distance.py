@@ -1,11 +1,62 @@
 """Tests for the Levenshtein distance module."""
 
+import random
+
 from felix_tm.core.distance import (
     bag_distance,
     edit_distance,
     edit_distance_score,
     substring_distance,
 )
+
+
+def _naive_edit(a: str, b: str) -> int:
+    """Reference full O(nm) DP — used as truth for the banded fuzz test."""
+    n, m = len(a), len(b)
+    if n == 0:
+        return m
+    if m == 0:
+        return n
+    dp = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n + 1):
+        dp[i][0] = i
+    for j in range(m + 1):
+        dp[0][j] = j
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            dp[i][j] = min(
+                dp[i - 1][j] + 1,
+                dp[i][j - 1] + 1,
+                dp[i - 1][j - 1] + cost,
+            )
+    return dp[n][m]
+
+
+class TestEditDistanceFuzz:
+    """Banded edit_distance must match the full DP for any input —
+    the band trick changes runtime, never the answer."""
+
+    def test_random_pairs_match_naive(self):
+        rand = random.Random(12345)
+        pool = "abcde123 光闇"
+        for _ in range(200):
+            a_len = rand.randint(1, 25)
+            b_len = rand.randint(1, 25)
+            a = "".join(rand.choice(pool) for _ in range(a_len))
+            b = "".join(rand.choice(pool) for _ in range(b_len))
+            truth = _naive_edit(a, b)
+            for max_d in (truth + 5, truth, max(0, truth - 1), 0):
+                got = edit_distance(a, b, max_distance=max_d)
+                if truth <= max_d:
+                    assert got == truth, (
+                        f"a={a!r} b={b!r} max_d={max_d} got={got} truth={truth}"
+                    )
+                else:
+                    assert got > max_d, (
+                        f"a={a!r} b={b!r} max_d={max_d} got={got} truth={truth} — "
+                        "banded should cap"
+                    )
 
 
 class TestEditDistance:

@@ -65,6 +65,57 @@ test('editDistance: CJK characters counted per code point', () => {
   assert.equal(editDistance('日本語', '中国語'), 2);
 });
 
+test('editDistance fuzz: banded result matches naive full-DP for 200 random pairs', () => {
+  // The banded implementation must be equivalent to the naive
+  // O(nm) full-DP for any input, modulo the maxD-cap convention
+  // (banded returns maxD+1 when the answer exceeds maxD).
+  function naiveEdit(a, b) {
+    const n = a.length, m = b.length;
+    if (n === 0) return m;
+    if (m === 0) return n;
+    const dp = [];
+    for (let i = 0; i <= n; i++) {
+      dp[i] = new Array(m + 1);
+      dp[i][0] = i;
+    }
+    for (let j = 0; j <= m; j++) dp[0][j] = j;
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        const cost = a[i-1] === b[j-1] ? 0 : 1;
+        dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost);
+      }
+    }
+    return dp[n][m];
+  }
+  const POOL = 'abcde123 光闇';
+  let seed = 12345;
+  function rand() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+  function randStr(len) {
+    let s = '';
+    for (let i = 0; i < len; i++) s += POOL[Math.floor(rand() * POOL.length)];
+    return s;
+  }
+  for (let trial = 0; trial < 200; trial++) {
+    const aLen = 1 + Math.floor(rand() * 25);
+    const bLen = 1 + Math.floor(rand() * 25);
+    const a = randStr(aLen);
+    const b = randStr(bLen);
+    const truth = naiveEdit(a, b);
+    // Test multiple maxD values around the truth.
+    for (const maxD of [truth + 5, truth, Math.max(0, truth - 1), 0]) {
+      const got = editDistance(a, b, maxD);
+      if (truth <= maxD) {
+        assert.equal(got, truth,
+          `trial ${trial}: a=${JSON.stringify(a)} b=${JSON.stringify(b)} maxD=${maxD} got=${got} truth=${truth}`);
+      } else {
+        // Expect the cap signal (anything > maxD is acceptable).
+        assert.ok(got > maxD,
+          `trial ${trial}: a=${JSON.stringify(a)} b=${JSON.stringify(b)} maxD=${maxD} got=${got} truth=${truth} — banded should cap`);
+      }
+    }
+  }
+});
+
 // -------------------- bagDistance --------------------
 
 test('bagDistance: identical strings → 0', () => {

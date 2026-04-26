@@ -112,6 +112,18 @@ var FelixEngine = (() => {
 
   // === Levenshtein Edit Distance ===
 
+  // Ukkonen-style banded Levenshtein. The standard single-row DP fills
+  // every cell of an rl × cl matrix; the optimal alignment of two
+  // similar strings stays close to the diagonal, so cells far from it
+  // can never be on a path that fits within maxD operations. Felix
+  // Distance::edist applies the same band trick (with hard-coded
+  // bandwidth = a_len/2). We use a maxD-driven band:
+  //
+  //   For column j, valid rows are i ∈ [j - maxD, j + maxD - lenDiff]
+  //   (clipped to [1, rl]) where lenDiff = cl - rl.
+  //
+  // Cells outside the band hold SENTINEL = maxD + 1, so any path that
+  // would touch them gets correctly priced out of the DP min.
   function editDistance(src, tgt, maxD) {
     let n = src.length, m = tgt.length;
     if (n === 0) return m; if (m === 0) return n;
@@ -127,19 +139,59 @@ var FelixEngine = (() => {
     const [rows, cols] = n2 > m2 ? [t, s] : [s, t];
     const rl = rows.length, cl = cols.length;
     if (maxD === undefined) maxD = cl;
+    const lenDiff = cl - rl;
+    // Length asymmetry alone exceeds the budget — no path can fit.
+    if (lenDiff > maxD) return maxD + 1;
+
+    const SENTINEL = maxD + 1;
     const row = new Array(rl + 1);
-    for (let i = 0; i <= rl; i++) row[i] = i;
+    // Initial column (j = 0): only the first maxD+1 cells are valid;
+    // the rest start at SENTINEL because they'd already exceed budget.
+    const initEnd = Math.min(rl, maxD);
+    for (let i = 0; i <= initEnd; i++) row[i] = i;
+    for (let i = initEnd + 1; i <= rl; i++) row[i] = SENTINEL;
+
     for (let j = 1; j <= cl; j++) {
-      let prev = row[0]; row[0] = j; let rm = j;
-      const cc = cols[j - 1];
-      for (let i = 1; i <= rl; i++) {
-        const tmp = row[i];
-        row[i] = Math.min(row[i] + 1, row[i - 1] + 1, prev + (rows[i - 1] === cc ? 0 : 1));
-        prev = tmp; if (row[i] < rm) rm = row[i];
+      const iLo = Math.max(1, j - maxD);
+      const iHi = Math.min(rl, j + maxD - lenDiff);
+      if (iLo > iHi) return maxD + 1;
+
+      // Save prev = (iLo - 1, j-1), then sentinel-out (iLo - 1, j).
+      let prev;
+      let rm;
+      if (iLo === 1) {
+        prev = row[0];   // (0, j-1) = j-1
+        row[0] = j;      // (0, j) = j
+        rm = j > maxD ? SENTINEL : j;
+      } else {
+        prev = row[iLo - 1];          // (iLo - 1, j - 1) — was in prev band
+        row[iLo - 1] = SENTINEL;      // (iLo - 1, j) — out of this band
+        rm = SENTINEL;
       }
+
+      const cc = cols[j - 1];
+      for (let i = iLo; i <= iHi; i++) {
+        const tmp = row[i];                     // (i, j-1) — may be SENTINEL
+        const aboveCost = row[i - 1] + 1;       // (i-1, j) — already updated
+        const leftCost = tmp + 1;               // (i, j-1) + 1 (insertion)
+        const subCost = prev + (rows[i - 1] === cc ? 0 : 1);
+        let cell = aboveCost < leftCost ? aboveCost : leftCost;
+        if (subCost < cell) cell = subCost;
+        if (cell > maxD) cell = SENTINEL;
+        row[i] = cell;
+        prev = tmp;
+        if (cell < rm) rm = cell;
+      }
+
+      // The cell just above the band needs to be SENTINEL so the next
+      // column's "above" lookup at row iHi+1 gets the right value.
+      if (iHi < rl) row[iHi + 1] = SENTINEL;
+
       if (rm > maxD) return maxD + 1;
     }
-    return row[rl];
+
+    const result = row[rl];
+    return result > maxD ? maxD + 1 : result;
   }
 
   function edScore(s, t, ms) {

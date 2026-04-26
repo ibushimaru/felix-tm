@@ -7,40 +7,41 @@ from __future__ import annotations
 
 
 def edit_distance(source: str, target: str, max_distance: int | None = None) -> int:
-    """Calculate Levenshtein edit distance between two strings.
+    """Banded Levenshtein edit distance.
 
-    Uses single-row optimization (O(min(m,n)) space) and early termination
-    when max_distance threshold is exceeded.
+    Single-row DP plus an Ukkonen-style band: only cells within
+    ``max_distance`` of the matrix diagonal are computed; cells
+    outside the band cannot be on a path that fits the budget so
+    they're skipped. Cuts the inner loop from O(n*m) to roughly
+    O(n * (2*max_distance + 1 + lenDiff)) when the strings are
+    similar enough to actually score above the threshold.
+
+    The ``max_distance + 1`` cap signal is preserved: when no path
+    within the band fits the budget, the function returns
+    ``max_distance + 1`` (matching the existing API contract).
 
     Args:
         source: Source string.
         target: Target string.
         max_distance: Stop early and return max_distance+1 if distance exceeds this.
-
-    Returns:
-        Edit distance (number of insertions, deletions, substitutions).
     """
     n = len(source)
     m = len(target)
 
-    # Trivial cases
     if n == 0:
         return m
     if m == 0:
         return n
 
-    # Skip matching prefix
     prefix = 0
     while prefix < n and prefix < m and source[prefix] == target[prefix]:
         prefix += 1
 
-    # Skip matching suffix
     suffix = 0
     while (suffix < n - prefix and suffix < m - prefix
            and source[n - 1 - suffix] == target[m - 1 - suffix]):
         suffix += 1
 
-    # Work on the trimmed portion
     s = source[prefix:n - suffix]
     t = target[prefix:m - suffix]
     n2 = len(s)
@@ -50,48 +51,69 @@ def edit_distance(source: str, target: str, max_distance: int | None = None) -> 
         return m2
     if m2 == 0:
         return n2
-
-    # Special case: one string is a single character
-    # If the char exists in the other string: delete all others = len - 1
-    # If not: delete all others + substitute = len
     if n2 == 1:
         return m2 - 1 if s[0] in t else m2
     if m2 == 1:
         return n2 - 1 if t[0] in s else n2
 
-    # Ensure we iterate over the shorter string in the inner loop
+    # Match the JS layout: rows is shorter, cols is longer.
     if n2 > m2:
         s, t = t, s
         n2, m2 = m2, n2
+    rows, cols = s, t
+    rl, cl = n2, m2
+    len_diff = cl - rl  # >= 0
 
-    # Single-row DP (Felix's optimization)
     if max_distance is None:
-        max_distance = m2  # effectively no limit
+        max_distance = cl
+    if len_diff > max_distance:
+        return max_distance + 1
 
-    row = list(range(n2 + 1))
+    sentinel = max_distance + 1
+    init_end = min(rl, max_distance)
+    row = [i if i <= init_end else sentinel for i in range(rl + 1)]
 
-    for j in range(1, m2 + 1):
-        prev = row[0]
-        row[0] = j
-        row_min = j  # track minimum in this row for early termination
+    for j in range(1, cl + 1):
+        i_lo = max(1, j - max_distance)
+        i_hi = min(rl, j + max_distance - len_diff)
+        if i_lo > i_hi:
+            return max_distance + 1
 
-        for i in range(1, n2 + 1):
-            cost = 0 if s[i - 1] == t[j - 1] else 1
-            temp = row[i]
-            row[i] = min(
-                row[i] + 1,      # deletion
-                row[i - 1] + 1,  # insertion
-                prev + cost,     # substitution
-            )
-            prev = temp
-            if row[i] < row_min:
-                row_min = row[i]
+        if i_lo == 1:
+            prev = row[0]
+            row[0] = j
+            row_min = j if j <= max_distance else sentinel
+        else:
+            prev = row[i_lo - 1]
+            row[i_lo - 1] = sentinel
+            row_min = sentinel
 
-        # Early termination
+        cc = cols[j - 1]
+        for i in range(i_lo, i_hi + 1):
+            tmp = row[i]
+            cost = 0 if rows[i - 1] == cc else 1
+            cell = row[i - 1] + 1
+            left = tmp + 1
+            if left < cell:
+                cell = left
+            sub = prev + cost
+            if sub < cell:
+                cell = sub
+            if cell > max_distance:
+                cell = sentinel
+            row[i] = cell
+            prev = tmp
+            if cell < row_min:
+                row_min = cell
+
+        if i_hi < rl:
+            row[i_hi + 1] = sentinel
+
         if row_min > max_distance:
             return max_distance + 1
 
-    return row[n2]
+    result = row[rl]
+    return result if result <= max_distance else max_distance + 1
 
 
 def edit_distance_score(source: str, target: str, min_score: float = 0.0) -> float:
