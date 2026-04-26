@@ -674,19 +674,45 @@
   // read the row's source from the spreadsheet and re-run search. Without
   // this, the panel sits blank on a fresh target cell until the user has
   // navigated through the source column at least once.
+  // Logging is opt-in via `window.__felixDebug = true` in DevTools so the
+  // production console stays quiet but a stuck-loading bug becomes
+  // diagnosable by toggling one flag.
+  function dbg(...args) {
+    if (window.__felixDebug) console.log('[Felix TM:fetch]', ...args);
+  }
+
   async function fetchSourceForRow(rowNum) {
-    if (!rowNum || _pendingSourceFetch.has(rowNum)) return;
+    if (!rowNum) { dbg('skip: no rowNum'); return; }
+    if (_pendingSourceFetch.has(rowNum)) {
+      dbg('skip: already pending', rowNum, '(will resolve when first fetch completes — if this is stuck, the previous fetch hung)');
+      return;
+    }
     _pendingSourceFetch.add(rowNum);
+    dbg('start', rowNum);
     try {
       const ssId = getSpreadsheetId();
-      if (!ssId) return;
+      if (!ssId) {
+        dbg('abort: no spreadsheetId — caching empty so we do not loop', rowNum);
+        _sourceCache[rowNum] = '';
+        return;
+      }
       const srcCol = settings.sourceCol || 'A';
       const range = sheetRef(`${srcCol}${rowNum}`);
       let val = '';
+      // Race the fetch against an 8s timeout so a hung background or a
+      // dropped sendResponse doesn't leave the row pinned in the dedupe
+      // set forever.
+      const FETCH_TIMEOUT_MS = 8000;
       try {
-        const resp = await msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range });
+        const resp = await Promise.race([
+          msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('timeout')), FETCH_TIMEOUT_MS)),
+        ]);
         val = (resp && resp.value) ? resp.value : '';
-      } catch (_) {
+        dbg('result', rowNum, range, JSON.stringify(resp));
+      } catch (e) {
+        dbg('fetch failed', rowNum, range, e && e.message);
         val = '';
       }
       // Always cache, even when empty, so a fresh selection on the same
@@ -698,12 +724,28 @@
       // fetch (otherwise the result would clobber a more recent cell).
       const curRef = getCellRef();
       if (curRef && new RegExp(`(?:^|[^0-9])${rowNum}$`).test(curRef)) {
+        dbg('rerun doSearch', rowNum, curRef);
         doSearch();
+      } else {
+        dbg('skip rerun: user moved off row', rowNum, '→', curRef);
       }
     } finally {
       _pendingSourceFetch.delete(rowNum);
+      dbg('done', rowNum);
     }
   }
+
+  // Debug inspector: from DevTools, run `__felixDebugCache()` to see what
+  // the cache and the pending set look like right now. Helpful when the
+  // panel is stuck on "Reading source row…" — the row in question should
+  // either be missing from the cache (fetch never ran) or in the pending
+  // set (fetch is in flight or hung).
+  window.__felixDebugCache = () => ({
+    sourceCache: { ..._sourceCache },
+    pending: Array.from(_pendingSourceFetch),
+    lastCellRef,
+    lastCellValue,
+  });
 
   function markRegions(text, regions, cls) {
     if (!regions.length) return esc(text);
