@@ -228,6 +228,32 @@ test('glossarySearch: term not found in query → not returned', () => {
   assert.deepEqual(r, []);
 });
 
+test('glossarySearch: fuzzy substring match below threshold returns the term with its score', () => {
+  // Felix's fuzzy_gloss_score path: term ≈ substring inside query.
+  // "attck" (typo) should still hit "attack" at high enough fuzzy
+  // tolerance — Felix uses Distance::subdist_score.
+  const r = glossarySearch(
+    'the attck is strong',
+    gloss(['attack', '攻撃']),
+    0.7,
+  );
+  assert.equal(r.length, 1);
+  assert.equal(r[0].term, 'attack');
+  // 1 substitution in a 6-char term → (6-1)/6 ≈ 0.833.
+  assert.ok(Math.abs(r[0].score - 5 / 6) < 1e-9, `expected 5/6, got ${r[0].score}`);
+});
+
+test('glossarySearch: minScore=1.0 (default) restricts to exact substring only', () => {
+  // Backward-compatible default: at threshold 1.0 the fuzzy path
+  // never fires, so a near-miss term is dropped.
+  const r = glossarySearch(
+    'the attck is strong',
+    gloss(['attack', '攻撃']),
+    1.0,
+  );
+  assert.deepEqual(r, []);
+});
+
 // -------------------- addEntry --------------------
 
 test('addEntry: new pair → "added", appended with cmp/targetCmp/refcount', () => {

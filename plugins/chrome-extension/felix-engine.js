@@ -273,27 +273,45 @@ var FelixEngine = (() => {
 
   // === Glossary Matching (Felix-faithful) ===
 
-  /**
-   * subdist_score: fuzzy substring match score.
-   * Checks if term appears (fuzzily) within the query text.
-   * Returns score (0-1) or 0 if below threshold.
-   */
-  function subdistScore(queryCmp, termCmp, minScore) {
-    if (!queryCmp || !termCmp) return 0;
-    // Exact substring check first (fast path)
-    if (queryCmp.includes(termCmp)) return 1.0;
-    if (termCmp.length > queryCmp.length) return 0;
-    // Slide term-sized window over query, find best fuzzy match
-    const tLen = termCmp.length;
-    const margin = Math.max(1, Math.floor(tLen * 0.3)); // allow window to vary
-    let bestScore = 0;
-    for (let i = 0; i <= queryCmp.length - tLen + margin; i++) {
-      const end = Math.min(i + tLen + margin, queryCmp.length);
-      const window = queryCmp.substring(i, end);
-      const score = edScore(termCmp, window, minScore);
-      if (score > bestScore) bestScore = score;
+  // Substring edit distance: minimum edit distance from `needle` to
+  // any substring of `haystack`. Two-row DP with the first row
+  // initialized to zero, so the needle can start at any position in
+  // the haystack at no cost. Direct port of Felix Distance::subdist.
+  function subdist(needle, haystack) {
+    const n = needle.length, m = haystack.length;
+    if (n === 0) return 0;
+    if (m === 0) return n;
+    let row1 = new Array(m + 1).fill(0);
+    let row2 = new Array(m + 1).fill(0);
+    for (let i = 0; i < n; i++) {
+      row2[0] = i + 1;
+      for (let j = 0; j < m; j++) {
+        const cost = needle[i] === haystack[j] ? 0 : 1;
+        row2[j + 1] = Math.min(
+          row1[j + 1] + 1,  // deletion
+          row2[j] + 1,      // insertion
+          row1[j] + cost,   // substitution / match
+        );
+      }
+      const tmp = row1; row1 = row2; row2 = tmp;
     }
-    return bestScore >= minScore ? bestScore : 0;
+    let best = row1[0];
+    for (let j = 1; j <= m; j++) if (row1[j] < best) best = row1[j];
+    return best;
+  }
+
+  /**
+   * Felix subdist_score: fuzzy substring match score for glossary
+   * lookup. needle = the glossary term we're hunting, haystack =
+   * the cmp text we're searching inside. Returns (n - distance) / n
+   * — same formula as Felix Distance::subdist_score.
+   */
+  function subdistScore(needle, haystack, minScore) {
+    if (!needle || !haystack) return 0;
+    if (haystack.includes(needle)) return 1.0;
+    const n = needle.length;
+    const score = (n - subdist(needle, haystack)) / n;
+    return score >= (minScore || 0) ? score : 0;
   }
 
   /**
@@ -305,15 +323,29 @@ var FelixEngine = (() => {
   function glossarySearch(query, glossaryData, minScore) {
     if (!query || !glossaryData || !glossaryData.length) return [];
     const qCmp = makeCmp(query);
+    const threshold = typeof minScore === 'number' ? minScore : 1.0;
     const hits = [];
     for (const entry of glossaryData) {
       const tCmp = entry.cmp || makeCmp(entry.term);
+      if (!tCmp) continue;
+      // Fast path: exact substring match wins (score 1.0) and
+      // matches the OG behavior for typical glossary lookups.
       if (qCmp.includes(tCmp)) {
         hits.push({ ...entry, score: 1.0 });
+        continue;
+      }
+      // Felix's fuzzy_gloss_score path: subdist of term inside the
+      // query text. Only kicks in below a threshold of 1.0 — at the
+      // default of 1.0, glossary lookup remains exact.
+      if (threshold < 1.0) {
+        const score = subdistScore(tCmp, qCmp, threshold);
+        if (score >= threshold) hits.push({ ...entry, score });
       }
     }
-    // Sort: longest term first (greedy matching)
-    hits.sort((a, b) => b.term.length - a.term.length);
+    // Sort: highest score first, then longest term first (Felix
+    // GlossMatchComparator) so an exact "attack damage up" beats a
+    // partial "damage" hit on the same query.
+    hits.sort((a, b) => b.score - a.score || b.term.length - a.term.length);
     return hits;
   }
 
