@@ -498,7 +498,15 @@ var FelixEngine = (() => {
       const registered = side === 'q' ? d.qRegistered : d.sRegistered;
       if (typeof start !== 'number' || typeof end !== 'number') continue;
       if (end <= start || start < 0 || end > text.length) continue;
-      const cls = registered ? 'diff-uncovered-present' : 'diff-uncovered-missing';
+      // 2-axis classification:
+      //   missing/present → glossary registration (red vs amber background)
+      //   sub/insdel       → kind of edit (sub keeps default; insdel adds
+      //                      a dashed underline so the translator can tell
+      //                      "swap a term" from "extra/missing content"
+      //                      at a glance).
+      const baseCls = registered ? 'diff-uncovered-present' : 'diff-uncovered-missing';
+      const isInsDel = !d.qText || !d.sText;
+      const cls = isInsDel ? `${baseCls} diff-uncovered-insdel` : baseCls;
       regions.push({ start, end, cls });
     }
     regions.sort((a, b) => a.start - b.start || a.end - b.end);
@@ -1324,10 +1332,45 @@ var FelixEngine = (() => {
     // entry. Without this, per-diff glossary can't match the atoms
     // (the whole merged qText isn't in glossary) and numberPlacement
     // ends up with asymmetric masking.
-    if (glossaryData && glossaryData.length) {
-      return diffs.flatMap(d => splitDiffAtAtomPairs(d, glossaryData));
+    let out = (glossaryData && glossaryData.length)
+      ? diffs.flatMap(d => splitDiffAtAtomPairs(d, glossaryData))
+      : diffs;
+    // For pure insertions/deletions, DP is free to place the diff at
+    // either end of a run of common characters. When the source has
+    // `…与え、自身の…1%UPし、…` and the query has `…与え、…`, DP often
+    // ends up with `sText='、自身の…1%UPし'` (the *leading* comma in
+    // the diff), even though the natural read is to keep `与え、` as
+    // the shared prefix and put the *trailing* comma in the diff:
+    // `sText='自身の…1%UPし、'`. Rotate forward while the rotation
+    // is cost-neutral — the leading char of the diff equals the char
+    // immediately after it — so the highlighted region matches the
+    // translator's intuition.
+    return out.map(d => rotateBoundaryDiff(d, query, tmSource));
+  }
+
+  // Cost-neutral forward rotation for pure insert/delete diffs. Sub
+  // diffs (both qText and sText non-empty) are returned unchanged —
+  // their boundaries are constrained by both sides and rotation could
+  // change DP cost.
+  function rotateBoundaryDiff(diff, query, tmSource) {
+    if (diff.qText === '' && diff.sText) {
+      let sStart = diff.sStart, sEnd = diff.sEnd;
+      while (sEnd < tmSource.length && tmSource[sStart] === tmSource[sEnd]) {
+        sStart++; sEnd++;
+      }
+      if (sStart !== diff.sStart) {
+        return { ...diff, sStart, sEnd, sText: tmSource.substring(sStart, sEnd) };
+      }
+    } else if (diff.sText === '' && diff.qText) {
+      let qStart = diff.qStart, qEnd = diff.qEnd;
+      while (qEnd < query.length && query[qStart] === query[qEnd]) {
+        qStart++; qEnd++;
+      }
+      if (qStart !== diff.qStart) {
+        return { ...diff, qStart, qEnd, qText: query.substring(qStart, qEnd) };
+      }
     }
-    return diffs;
+    return diff;
   }
 
   // Find every non-overlapping glossary-atom occurrence inside `text`.

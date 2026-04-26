@@ -133,6 +133,69 @@ test('uncoveredRegionsForText: position-specific — a sText that also appears i
   assert.equal(s.substring(regs[0].start, regs[0].end), 'ZZ');
 });
 
+// --- type-axis: sub vs insdel ---------------------------------------------
+// The translator needs to distinguish "swap one term for another" (sub)
+// from "extra/missing content" (ins/del) at a glance. Encoded as a second
+// class (diff-uncovered-insdel) layered on top of the registered/missing
+// background class, so the existing red/amber palette stays the same.
+
+test('uncoveredRegionsForText: sub diff (both sides non-empty) does NOT add insdel class', () => {
+  const uncovered = uncoveredOf([]);  // MIND ↔ 光属性ダメージ — sub diff
+  const qRegs = uncoveredRegionsForText(query, uncovered, 'q');
+  assert.equal(qRegs.length, 1);
+  assert.ok(!qRegs[0].cls.includes('diff-uncovered-insdel'));
+  const sRegs = uncoveredRegionsForText(tmSrc, uncovered, 's');
+  assert.equal(sRegs.length, 1);
+  assert.ok(!sRegs[0].cls.includes('diff-uncovered-insdel'));
+});
+
+test('uncoveredRegionsForText: pure insertion (qText empty) adds insdel class on the s side', () => {
+  // After-rotation form: leading shared 与え、 stays out, trailing 、 enters the diff.
+  const q = '与え、UPする';
+  const s = '与え、自身の神絆ゲージを1%UPし、UPする';
+  const r = resolveWithPlacement(q, s, 'X', [], []);
+  // Must have at least one pure insertion in source.
+  const ins = r.uncovered.find(u => !u.qText && u.sText);
+  assert.ok(ins, 'expected a pure insertion diff');
+  const regs = uncoveredRegionsForText(s, [ins], 's');
+  assert.equal(regs.length, 1);
+  assert.ok(regs[0].cls.includes('diff-uncovered-insdel'),
+    `expected insdel class, got: ${regs[0].cls}`);
+});
+
+// --- rotateBoundaryDiff ---------------------------------------------------
+// When DP is free to place a pure insertion at either end of a run of
+// common chars, rotate forward so the leading char of the diff becomes
+// part of the shared prefix. Concretely: when source has `与え、…し、` and
+// query has `与え、`, the diff should be `自身…し、` (trailing comma in
+// the diff), not `、自身…し` (leading comma in the diff).
+
+test('rotateBoundaryDiff: pure insertion with duplicated boundary char rotates forward', () => {
+  const q = '与え、UPする';
+  const s = '与え、自身の神絆ゲージを1%UPし、UPする';
+  const diffs = engine.nonNumericDiffs(q, s, []);
+  const ins = diffs.find(d => !d.qText && d.sText);
+  assert.ok(ins, 'expected a pure-insertion diff');
+  // After rotation: the diff text should NOT begin with 、 — that comma
+  // belongs to the shared prefix `与え、`.
+  assert.ok(!ins.sText.startsWith('、'),
+    `diff still starts with leading 、: ${ins.sText}`);
+  assert.ok(ins.sText.includes('自身の神絆ゲージ'));
+  // And the diff position in source should map back to the same text.
+  assert.equal(s.substring(ins.sStart, ins.sEnd), ins.sText);
+});
+
+test('rotateBoundaryDiff: substitution diff is NOT rotated (positions unchanged)', () => {
+  // MIND ↔ 光属性ダメージ — both sides non-empty, rotation rules out subs.
+  const diffs = engine.nonNumericDiffs(query, tmSrc, []);
+  const sub = diffs.find(d => d.qText && d.sText);
+  assert.ok(sub);
+  assert.equal(sub.qText, 'MIND');
+  assert.equal(sub.sText, '光属性ダメージ');
+  assert.equal(query.substring(sub.qStart, sub.qEnd), 'MIND');
+  assert.equal(tmSrc.substring(sub.sStart, sub.sEnd), '光属性ダメージ');
+});
+
 // --- markUncoveredHtml -----------------------------------------------------
 
 test('markUncoveredHtml: wraps sText in red when sRegistered=false', () => {
