@@ -69,7 +69,7 @@
       tipManage: 'Side panel (TM / Glossary / Rules)',
       tipUndo: 'Undo (also restores an Auto Translate batch in one step)',
       tipAutoFuzzy: 'Translate downward from the active row. Continues while exact matches plus numbers/glossary fill the row; stops on the first uncovered diff. Overwrites existing target.',
-      tipAutoRange: 'Translate empty cells in the selection (exact matches only). Does not overwrite existing target.',
+      tipAutoRange: 'Translate every empty cell in the selection. Rows without a confident match are skipped (not blockers); existing target cells are left untouched.',
       tipSet: "Register the active row's source + target to TM (⌘⇧U)",
       tipModeTranslate: 'Look up target translations from source',
       tipModeReview: 'Look up source from target (reverse / check)',
@@ -111,7 +111,7 @@
       tipManage: 'サイドパネル（TM・用語集・ルール管理）',
       tipUndo: '元に戻す（Auto Translate の一括挿入も 1 回で復元）',
       tipAutoFuzzy: '現在行から下方向へ連続翻訳。完全一致＋数値／用語集で埋められる行まで続行、埋められない差分が出たら停止／既存訳文は上書き',
-      tipAutoRange: '選択範囲の空セルだけ翻訳（完全一致のみ）／既存訳文は上書きしない',
+      tipAutoRange: '選択範囲の空セルをまとめて翻訳。マッチしない行はスキップ（処理は止まらない）／既存訳文は上書きしない',
       tipSet: '現在行の原文＋訳文を TM に登録（⌘⇧U）',
       tipModeTranslate: '原文を見て訳文候補を探す',
       tipModeReview: '訳文を見て原文候補を探す（逆引き・チェック用）',
@@ -1308,9 +1308,12 @@
   }
 
   /**
-   * Auto-translate the currently selected range. Writes 100% matches only,
-   * and skips rows whose target cell is already non-empty so prior work is
-   * preserved.
+   * Auto-translate the currently selected range. Walks every row in the
+   * selection independently — a row that can't be translated (no candidate
+   * above threshold, or fuzzy with uncovered diffs) is recorded and
+   * surfaced in the result toast but does NOT stop the rest of the range
+   * from being processed. Existing non-empty target cells are left
+   * untouched so prior work is preserved.
    */
   async function autoTranslateSelection() {
     if (!tmData.length) { showToast(t('noTmLoaded')); return; }

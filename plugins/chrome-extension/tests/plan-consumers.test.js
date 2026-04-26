@@ -162,6 +162,40 @@ test('describePlan: fuzzy_uncovered truncates long lists of missing terms', () =
   assert.match(text, /他 \d+ 件/);
 });
 
+test('describePlan: selection plan with mixed writes + skips reads as one summary', () => {
+  const { text, ms } = describePlan(
+    {
+      writes: [{ rowNum: 2 }, { rowNum: 4 }],
+      skippedEmpty: 0,
+      skippedFilled: 0,
+      skippedNoMatch: [{ rowNum: 3, source: 'unmatched' }],
+      skippedFuzzyUncovered: [{ rowNum: 5, source: 'uncov', matchScore: 0.78 }],
+      stopReason: 'end_of_range', stoppedAt: null, stopRow: null,
+    },
+    { srcCol: 'A' },
+  );
+  assert.match(text, /2 行挿入/);
+  assert.match(text, /スキップ 2 行/);
+  assert.match(text, /A3/);   // example no-match row
+  assert.match(text, /A5/);   // example uncovered row
+  assert.match(text, /78%/);  // uncovered row's score
+  assert.ok(ms >= 5000, 'mixed report should display longer to be readable');
+});
+
+test('describePlan: selection plan with only writes reads like a normal completion', () => {
+  const { text } = describePlan(
+    {
+      writes: [{ rowNum: 2 }, { rowNum: 3 }],
+      skippedEmpty: 0, skippedFilled: 0,
+      skippedNoMatch: [], skippedFuzzyUncovered: [],
+      stopReason: 'end_of_range', stoppedAt: null, stopRow: null,
+    },
+    { srcCol: 'A' },
+  );
+  assert.match(text, /完了: 2 行/);
+  assert.doesNotMatch(text, /スキップ/);
+});
+
 test('describePlan: survives a plan with stopReason but no stoppedAt', () => {
   const { text } = describePlan(
     { writes: [], stopReason: 'fuzzy_uncovered', stoppedAt: null },

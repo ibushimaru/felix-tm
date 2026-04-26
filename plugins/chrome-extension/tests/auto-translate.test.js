@@ -153,20 +153,27 @@ test('selection: empty source / filled target are soft-skipped (counts only)', (
   assert.equal(r.stopReason, 'end_of_range');
 });
 
-test("selection: stops at first row with no TM candidate above threshold", () => {
+test('selection: a row with no TM candidate is skipped, others still run', () => {
+  // Regression coverage for the "row 1 stuck blocks rows 2-4" complaint.
+  // Selection always processes the entire range; un-translatable rows are
+  // recorded in skippedNoMatch / skippedFuzzyUncovered but do NOT stop
+  // the walk, so the remaining rows still get their 100% / placement
+  // matches written.
   const r = planAutoTranslateSelection({
     startRow: 2, endRow: 4,
-    srcValues: ['hello', 'absolutely unrelated text here', 'world'],
+    srcValues: ['absolutely unrelated text here', 'hello', 'world'],
     tgtValues: ['', '', ''],
     tmData: tm(['hello', 'こんにちは'], ['world', '世界']),
   });
-  assert.equal(r.writes.length, 1);
-  assert.equal(r.stopRow, 3);
-  assert.equal(r.stopReason, 'no_match');
-  assert.equal(r.stoppedAt.source, 'absolutely unrelated text here');
+  assert.equal(r.writes.length, 2);
+  assert.deepEqual(r.writes.map(w => w.rowNum), [3, 4]);
+  assert.equal(r.skippedNoMatch.length, 1);
+  assert.equal(r.skippedNoMatch[0].rowNum, 2);
+  assert.equal(r.skippedNoMatch[0].source, 'absolutely unrelated text here');
+  assert.equal(r.stopReason, 'end_of_range');
 });
 
-test('selection: stops at first uncovered fuzzy row with detail', () => {
+test('selection: an uncovered fuzzy row is skipped with full detail attached', () => {
   const r = planAutoTranslateSelection({
     startRow: 2, endRow: 2,
     srcValues: ['MATK110%のダメージを与え、2ターンの間、味方全体のMINDを5%UPする'],
@@ -178,10 +185,23 @@ test('selection: stops at first uncovered fuzzy row with detail', () => {
     glossaryData: gloss(['MIND', 'MIND']),  // 光属性傷害 missing
   });
   assert.equal(r.writes.length, 0);
-  assert.equal(r.stopReason, 'fuzzy_uncovered');
-  assert.ok(r.stoppedAt.matchScore >= 0.7);
-  const flat = r.stoppedAt.missingTerms.flatMap(t => [t.query, t.source]);
+  assert.equal(r.skippedFuzzyUncovered.length, 1);
+  const stuck = r.skippedFuzzyUncovered[0];
+  assert.ok(stuck.matchScore >= 0.7);
+  const flat = stuck.missingTerms.flatMap(t => [t.query, t.source]);
   assert.ok(flat.includes('MIND') || flat.includes('光属性傷害'));
+});
+
+test('selection: mixed range — writes good rows, lists both kinds of skips', () => {
+  const r = planAutoTranslateSelection({
+    startRow: 2, endRow: 4,
+    srcValues: ['hello', 'absolutely unrelated', 'world'],
+    tgtValues: ['', '', ''],
+    tmData: tm(['hello', 'こんにちは'], ['world', '世界']),
+  });
+  assert.equal(r.writes.length, 2);
+  assert.equal(r.skippedNoMatch.length, 1);
+  assert.equal(r.skippedFuzzyUncovered.length, 0);
 });
 
 test('selection: fully covered range writes everything and ends with end_of_range', () => {
@@ -193,7 +213,8 @@ test('selection: fully covered range writes everything and ends with end_of_rang
   });
   assert.equal(r.writes.length, 2);
   assert.equal(r.stopReason, 'end_of_range');
-  assert.equal(r.stoppedAt, null);
+  assert.equal(r.skippedNoMatch.length, 0);
+  assert.equal(r.skippedFuzzyUncovered.length, 0);
 });
 
 // ---------- resolveWithPlacement ----------

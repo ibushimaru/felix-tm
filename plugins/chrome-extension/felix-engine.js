@@ -1487,21 +1487,26 @@ var FelixEngine = (() => {
     const threshold = typeof minScore === 'number' ? minScore : 0.7;
     const writes = [];
     let skippedEmpty = 0, skippedFilled = 0;
-    let stopRow = null, stopReason = null, stoppedAt = null;
+    // Selection processes every row in the range independently. A row that
+    // can't be translated (no candidate above threshold, or fuzzy-uncovered)
+    // is recorded but does NOT stop the walk — the user explicitly defined
+    // the range, so the rest of it should still be filled in. Compare with
+    // planAutoTranslateToFuzzy, which walks downward from a single anchor
+    // and stops on the first stuck row by design.
+    const skippedNoMatch = [];
+    const skippedFuzzyUncovered = [];
     const total = Math.max(0, endRow - startRow + 1);
     for (let i = 0; i < total; i++) {
       const rowNum = startRow + i;
       const src = ((srcValues && srcValues[i]) || '').trim();
       const existing = ((tgtValues && tgtValues[i]) || '').trim();
-      // Empty / filled rows are soft skips — they don't block the walk.
       if (!src) { skippedEmpty++; continue; }
       if (existing) { skippedFilled++; continue; }
 
       const matches = search(src, tmData, threshold);
       if (!matches.length) {
-        stopRow = rowNum; stopReason = 'no_match';
-        stoppedAt = { rowNum, source: src };
-        break;
+        skippedNoMatch.push({ rowNum, source: src });
+        continue;
       }
       const top = matches[0];
 
@@ -1516,16 +1521,21 @@ var FelixEngine = (() => {
         continue;
       }
 
-      stopRow = rowNum; stopReason = 'fuzzy_uncovered';
-      stoppedAt = {
+      skippedFuzzyUncovered.push({
         rowNum, source: src,
         matchSource: top.source, matchScore: top.score,
         missingTerms: resolved.uncovered.map(d => ({ query: d.qText, source: d.sText })),
-      };
-      break;
+      });
     }
-    if (stopRow == null) stopReason = 'end_of_range';
-    return { total, writes, skippedEmpty, skippedFilled, stopRow, stopReason, stoppedAt };
+    return {
+      total, writes,
+      skippedEmpty, skippedFilled,
+      skippedNoMatch, skippedFuzzyUncovered,
+      stopReason: 'end_of_range',
+      stoppedAt: null,
+      // stopRow kept null so buildPlanActions falls through to startRow + writes.length.
+      stopRow: null,
+    };
   }
 
   /**
@@ -1765,6 +1775,45 @@ var FelixEngine = (() => {
     const wrote = (plan.writes || []).length;
     const reason = plan.stopReason;
     const at = plan.stoppedAt;
+
+    // Selection plans (planAutoTranslateSelection) carry per-row skip
+    // arrays and never stop early — every row in the range is examined.
+    // Format the report as a roll-up with a few example rows so the
+    // translator knows exactly which rows still need attention.
+    if (plan.skippedNoMatch || plan.skippedFuzzyUncovered) {
+      const noMatch = plan.skippedNoMatch || [];
+      const uncovered = plan.skippedFuzzyUncovered || [];
+      const skipTotal = noMatch.length + uncovered.length;
+      const lines = [];
+      if (wrote && skipTotal) {
+        let breakdown;
+        if (noMatch.length && uncovered.length) {
+          breakdown = `（候補なし: ${noMatch.length}, 未対応の差分: ${uncovered.length}）`;
+        } else if (noMatch.length) {
+          breakdown = `（候補なし: ${noMatch.length}）`;
+        } else {
+          breakdown = `（未対応の差分: ${uncovered.length}）`;
+        }
+        lines.push(`完了: ${wrote} 行挿入、スキップ ${skipTotal} 行 ${breakdown}`);
+      } else if (wrote) {
+        lines.push(`完了: ${wrote} 行挿入`);
+      } else if (skipTotal) {
+        lines.push(`挿入なし、スキップ ${skipTotal} 行`);
+      } else {
+        lines.push('挿入なし（候補や対象がありません）');
+      }
+      const SHOW = 3;
+      for (const r of noMatch.slice(0, SHOW)) {
+        lines.push(`  ・候補なし: ${col}${r.rowNum}`);
+      }
+      for (const r of uncovered.slice(0, SHOW)) {
+        const pct = r.matchScore != null ? Math.round(r.matchScore * 100) : '?';
+        lines.push(`  ・未対応 ${pct}%: ${col}${r.rowNum}`);
+      }
+      const extra = (noMatch.length + uncovered.length) - Math.min(SHOW, noMatch.length) - Math.min(SHOW, uncovered.length);
+      if (extra > 0) lines.push(`  ・他 ${extra} 件`);
+      return { text: lines.join('\n'), ms: skipTotal ? 6000 : 3000 };
+    }
 
     if (!reason || reason === 'end_of_batch' || reason === 'end_of_range') {
       return {
