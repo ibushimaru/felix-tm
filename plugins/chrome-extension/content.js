@@ -727,8 +727,23 @@
       // fetch (otherwise the result would clobber a more recent cell).
       const curRef = getCellRef();
       if (curRef && new RegExp(`(?:^|[^0-9])${rowNum}$`).test(curRef)) {
-        dbg('rerun doSearch', rowNum, curRef);
-        doSearch();
+        if (val) {
+          // Pass the cached value explicitly. doSearch() with no args
+          // falls back to lastCellValue, which is '' when the active
+          // cell is a blank target — and doSearch early-returns on
+          // empty query before ever consulting the cache. That would
+          // leave the "Reading source row…" placeholder pinned forever.
+          dbg('rerun doSearch', rowNum, curRef);
+          doSearch(val);
+        } else {
+          // Source row is genuinely empty — paint the message directly
+          // for the same reason: no truthy query means doSearch would
+          // early-return.
+          dbg('paint empty-source message', rowNum, curRef);
+          const sh = getShadow();
+          const rs = sh && sh.getElementById('results');
+          if (rs) rs.innerHTML = `<div class="empty">${t('emptySourceRow')}</div>`;
+        }
       } else {
         dbg('skip rerun: user moved off row', rowNum, '→', curRef);
       }
