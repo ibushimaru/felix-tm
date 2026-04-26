@@ -309,6 +309,104 @@ test('addGlossaryEntry: stores notes when given, defaults to empty string', () =
   assert.equal(data[0].notes, 'animal');
 });
 
+// -------------------- TM metadata extensions --------------------
+
+test('addEntry: opts object form sets reliability / validated / createdBy', () => {
+  const data = [];
+  addEntry(data, 'hello', 'こんにちは', {
+    context: 'greeting',
+    createdBy: 'alice',
+    reliability: 5,
+    validated: true,
+  });
+  assert.equal(data[0].context, 'greeting');
+  assert.equal(data[0].createdBy, 'alice');
+  assert.equal(data[0].reliability, 5);
+  assert.equal(data[0].validated, true);
+});
+
+test('addEntry: defaults — reliability 0, validated false, createdBy empty', () => {
+  const data = [];
+  addEntry(data, 'hi', 'やあ');
+  assert.equal(data[0].reliability, 0);
+  assert.equal(data[0].validated, false);
+  assert.equal(data[0].createdBy, '');
+  assert.equal(data[0].modifiedBy, '');
+});
+
+test('addEntry: created and modified default to now (Date)', () => {
+  const before = Date.now();
+  const data = [];
+  addEntry(data, 'hi', 'やあ');
+  const after = Date.now();
+  assert.ok(data[0].created instanceof Date);
+  assert.ok(data[0].modified instanceof Date);
+  assert.ok(data[0].created.getTime() >= before && data[0].created.getTime() <= after);
+});
+
+test('addEntry: explicit Date opts respected (no overwrite with now)', () => {
+  const ts = new Date('2024-01-15T08:30:00Z');
+  const data = [];
+  addEntry(data, 'hi', 'やあ', { created: ts, modified: ts });
+  assert.equal(data[0].created.toISOString(), ts.toISOString());
+  assert.equal(data[0].modified.toISOString(), ts.toISOString());
+});
+
+test('addEntry: refcount path bumps modified timestamp', async () => {
+  const data = [];
+  addEntry(data, 'hi', 'やあ', { modified: new Date('2020-01-01T00:00:00Z') });
+  const before = data[0].modified.getTime();
+  // Sleep a tick to ensure clock advances on fast machines.
+  await new Promise(r => setTimeout(r, 5));
+  const r = addEntry(data, 'hi', 'やあ');
+  assert.equal(r, 'refcount');
+  assert.equal(data[0].refcount, 1);
+  assert.ok(data[0].modified.getTime() > before, 'modified bumped on refcount');
+});
+
+test('addEntry: refcount path with opts.modifiedBy updates that too', () => {
+  const data = [];
+  addEntry(data, 'hi', 'やあ', { modifiedBy: 'alice' });
+  addEntry(data, 'hi', 'やあ', { modifiedBy: 'bob' });
+  assert.equal(data[0].modifiedBy, 'bob', 'last writer wins on refcount');
+});
+
+test('addEntry: legacy string-as-context still works (backward compat)', () => {
+  const data = [];
+  addEntry(data, 'hi', 'やあ', 'a context string');
+  assert.equal(data[0].context, 'a context string');
+  // Defaults still applied:
+  assert.equal(data[0].reliability, 0);
+  assert.equal(data[0].validated, false);
+});
+
+test('addGlossaryEntry: opts object form sets metadata fields', () => {
+  const data = [];
+  addGlossaryEntry(data, 'cat', '猫', {
+    notes: 'animal',
+    reliability: 9,
+    validated: true,
+    createdBy: 'alice',
+  });
+  assert.equal(data[0].notes, 'animal');
+  assert.equal(data[0].reliability, 9);
+  assert.equal(data[0].validated, true);
+  assert.equal(data[0].createdBy, 'alice');
+});
+
+test('addGlossaryEntry: legacy string-as-notes still works (backward compat)', () => {
+  const data = [];
+  addGlossaryEntry(data, 'cat', '猫', 'a note string');
+  assert.equal(data[0].notes, 'a note string');
+});
+
+test('addGlossaryEntry: created and modified default to now', () => {
+  const data = [];
+  addGlossaryEntry(data, 'cat', '猫');
+  assert.ok(data[0].created instanceof Date);
+  assert.ok(data[0].modified instanceof Date);
+});
+
 // -------------------- parseA1 --------------------
 
 test('parseA1: single cell A2 → col=A, row=2, no col2/row2', () => {

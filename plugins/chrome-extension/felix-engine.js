@@ -678,8 +678,20 @@ var FelixEngine = (() => {
   /**
    * Add a source/target pair to tmData with dedup.
    * Returns 'added' if new, 'refcount' if duplicate (refcount incremented).
+   *
+   * Fourth argument is overloaded for backward compatibility:
+   *   addEntry(tm, src, tgt, 'some context string')   ← legacy
+   *   addEntry(tm, src, tgt, { context, createdBy,    ← full metadata
+   *      modifiedBy, created, modified, reliability, validated })
+   *
+   * On 'refcount', the entry's `modified` timestamp is bumped to now
+   * (or to opts.modified if explicitly provided) so callers can tell
+   * which rows were touched in the current session.
    */
-  function addEntry(tmData, source, target, context) {
+  function addEntry(tmData, source, target, contextOrOpts) {
+    const opts = (contextOrOpts && typeof contextOrOpts === 'object' && !(contextOrOpts instanceof Date))
+      ? contextOrOpts
+      : { context: contextOrOpts };
     const sCmp = makeCmp(source);
     const tCmp = makeCmp(target);
 
@@ -688,13 +700,24 @@ var FelixEngine = (() => {
       const entryTCmp = entry.targetCmp || makeCmp(entry.target);
       if (entrySCmp === sCmp && entryTCmp === tCmp) {
         entry.refcount = (entry.refcount || 0) + 1;
+        entry.modified = opts.modified || new Date();
+        if (opts.modifiedBy) entry.modifiedBy = opts.modifiedBy;
         return 'refcount';
       }
     }
 
+    const now = new Date();
     tmData.push({
-      source, target, context: context || '',
-      cmp: sCmp, targetCmp: tCmp, refcount: 0,
+      source, target,
+      context: opts.context || '',
+      cmp: sCmp, targetCmp: tCmp,
+      refcount: 0,
+      reliability: opts.reliability != null ? opts.reliability : 0,
+      validated: opts.validated === true,
+      created: opts.created || now,
+      modified: opts.modified || now,
+      createdBy: opts.createdBy || '',
+      modifiedBy: opts.modifiedBy || '',
     });
     return 'added';
   }
@@ -724,7 +747,16 @@ var FelixEngine = (() => {
     };
   }
 
-  function addGlossaryEntry(glossaryData, term, translation, notes) {
+  /**
+   * Dedup-aware glossary insert. Fourth arg is overloaded the same way
+   * as addEntry: a plain string is treated as the legacy `notes` slot,
+   * while an object form lets callers attach reliability / validated /
+   * createdBy / modifiedBy / created / modified.
+   */
+  function addGlossaryEntry(glossaryData, term, translation, notesOrOpts) {
+    const opts = (notesOrOpts && typeof notesOrOpts === 'object' && !(notesOrOpts instanceof Date))
+      ? notesOrOpts
+      : { notes: notesOrOpts };
     const tCmp = makeCmp(term);
     const trCmp = makeCmp(translation);
     for (const g of glossaryData) {
@@ -732,9 +764,17 @@ var FelixEngine = (() => {
       const gTrCmp = g.translationCmp || makeCmp(g.translation);
       if (gCmp === tCmp && gTrCmp === trCmp) return 'exists';
     }
+    const now = new Date();
     glossaryData.push({
-      term, translation, notes: notes || '',
+      term, translation,
+      notes: opts.notes || '',
       cmp: tCmp, translationCmp: trCmp,
+      reliability: opts.reliability != null ? opts.reliability : 0,
+      validated: opts.validated === true,
+      created: opts.created || now,
+      modified: opts.modified || now,
+      createdBy: opts.createdBy || '',
+      modifiedBy: opts.modifiedBy || '',
     });
     return 'added';
   }
