@@ -14,12 +14,14 @@
   ],
   "host_permissions": [
     "https://docs.google.com/spreadsheets/*",
-    "https://sheets.googleapis.com/*"
+    "https://sheets.googleapis.com/*",
+    "https://www.googleapis.com/*"
   ],
   "oauth2": {
     "client_id": "429083959906-70usbck7jmid93l2f76671ig0jpk7jdg.apps.googleusercontent.com",
     "scopes": [
-      "https://www.googleapis.com/auth/spreadsheets"
+      "https://www.googleapis.com/auth/drive.file",
+      "https://www.googleapis.com/auth/userinfo.email"
     ]
   },
   "background": {
@@ -36,7 +38,7 @@
     "default_path": "sidepanel.html"
   },
   "web_accessible_resources": [{
-    "resources": ["felix-engine.js"],
+    "resources": ["felix-engine.js", "picker.html", "picker.js"],
     "matches": ["https://docs.google.com/*"]
   }],
   "action": {

@@ -15,6 +15,59 @@ let _lastSheetsTabId = null;
 // broadcast below when the panel is already open.
 let _pendingGlossaryAction = null;
 
+// === Drive.file authorization gate ===
+//
+// Felix's OAuth scope is `drive.file`, which means the access token
+// can only read/write spreadsheets the user explicitly granted via
+// the Google Picker. We mirror that grant set locally in IndexedDB
+// (authorized_files store) and refuse any Sheets API call against a
+// spreadsheet not in the set — defense in depth on top of Google's
+// own scope enforcement, and the gate that drives the in-page
+// "Authorize this sheet" prompt.
+let _authorizedSpreadsheets = null;  // Set<spreadsheetId> | null = not yet loaded
+
+async function ensureAuthorizedSet() {
+  if (_authorizedSpreadsheets) return _authorizedSpreadsheets;
+  try {
+    const rows = await authorizedFilesGetAll();
+    _authorizedSpreadsheets = new Set(rows.map(r => r.spreadsheetId));
+  } catch (_) {
+    _authorizedSpreadsheets = new Set();
+  }
+  return _authorizedSpreadsheets;
+}
+
+async function isAuthorized(spreadsheetId) {
+  if (!spreadsheetId) return false;
+  const set = await ensureAuthorizedSet();
+  return set.has(spreadsheetId);
+}
+
+async function rememberAuthorized(spreadsheetId, name) {
+  const set = await ensureAuthorizedSet();
+  set.add(spreadsheetId);
+  await authorizedFileAdd(spreadsheetId, name);
+}
+
+async function forgetAuthorized(spreadsheetId) {
+  const set = await ensureAuthorizedSet();
+  set.delete(spreadsheetId);
+  await authorizedFileForget(spreadsheetId);
+}
+
+async function clearAllAuthorized() {
+  _authorizedSpreadsheets = new Set();
+  await authorizedFilesClear();
+}
+
+// Standard "not authorized for this spreadsheet" response shape so
+// every caller can switch on resp.error === 'NOT_AUTHORIZED' and
+// trigger the Picker prompt. Includes the offending spreadsheetId
+// so the prompt can pre-fill it.
+function notAuthorizedResp(spreadsheetId) {
+  return { error: 'NOT_AUTHORIZED', spreadsheetId: spreadsheetId || null };
+}
+
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   chrome.tabs.get(tabId, (tab) => {
     if (tab && tab.url && tab.url.includes('docs.google.com/spreadsheets/')) {
@@ -147,22 +200,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Sheets API write via chrome.identity token
   if (msg.type === 'SHEETS_API_WRITE') {
     const d = msg.data || msg; // support both { type, data: {...} } and flat format
-    chrome.identity.getAuthToken({ interactive: true }, (token) => {
-      if (!token) {
-        sendResponse({ error: chrome.runtime.lastError?.message || 'No token' });
-        return;
-      }
-      const range = encodeURIComponent(d.range);
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`;
-      fetch(url, {
-        method: 'PUT',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ values: [[d.value]] }),
-      }).then(r => r.json()).then(data => sendResponse(data))
-        .catch(err => sendResponse({ error: err.message }));
+    isAuthorized(d.spreadsheetId).then(ok => {
+      if (!ok) { sendResponse(notAuthorizedResp(d.spreadsheetId)); return; }
+      chrome.identity.getAuthToken({ interactive: false }, (token) => {
+        if (!token) {
+          sendResponse({ error: chrome.runtime.lastError?.message || 'No token' });
+          return;
+        }
+        const range = encodeURIComponent(d.range);
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`;
+        fetch(url, {
+          method: 'PUT',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ values: [[d.value]] }),
+        }).then(r => r.json()).then(data => sendResponse(data))
+          .catch(err => sendResponse({ error: err.message }));
+      });
     });
     return true;
   }
@@ -174,21 +230,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const d = msg.data || msg;
     const updates = Array.isArray(d.updates) ? d.updates : [];
     if (!updates.length) { sendResponse({ updatedCells: 0 }); return; }
-    chrome.identity.getAuthToken({ interactive: true }, (token) => {
-      if (!token) {
-        sendResponse({ error: chrome.runtime.lastError?.message || 'No token' });
-        return;
-      }
-      const body = {
-        valueInputOption: 'USER_ENTERED',
-        data: updates.map(u => ({ range: u.range, values: [[u.value]] })),
-      };
-      fetch(`https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values:batchUpdate`, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }).then(r => r.json()).then(data => sendResponse(data))
-        .catch(err => sendResponse({ error: err.message }));
+    isAuthorized(d.spreadsheetId).then(ok => {
+      if (!ok) { sendResponse(notAuthorizedResp(d.spreadsheetId)); return; }
+      chrome.identity.getAuthToken({ interactive: false }, (token) => {
+        if (!token) {
+          sendResponse({ error: chrome.runtime.lastError?.message || 'No token' });
+          return;
+        }
+        const body = {
+          valueInputOption: 'USER_ENTERED',
+          data: updates.map(u => ({ range: u.range, values: [[u.value]] })),
+        };
+        fetch(`https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values:batchUpdate`, {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }).then(r => r.json()).then(data => sendResponse(data))
+          .catch(err => sendResponse({ error: err.message }));
+      });
     });
     return true;
   }
@@ -196,16 +255,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Sheets API batch read (single column)
   if (msg.type === 'SHEETS_API_READ_BATCH') {
     const d = msg.data || msg;
-    chrome.identity.getAuthToken({ interactive: false }, (token) => {
-      if (!token) { sendResponse({ values: [] }); return; }
-      const range = encodeURIComponent(d.range);
-      fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values/${range}`,
-        { headers: { 'Authorization': 'Bearer ' + token } }
-      ).then(r => r.json()).then(data => {
-        const values = (data.values || []).map(row => row[0] || '');
-        sendResponse({ values });
-      }).catch(() => sendResponse({ values: [] }));
+    isAuthorized(d.spreadsheetId).then(ok => {
+      if (!ok) { sendResponse(notAuthorizedResp(d.spreadsheetId)); return; }
+      chrome.identity.getAuthToken({ interactive: false }, (token) => {
+        if (!token) { sendResponse({ values: [] }); return; }
+        const range = encodeURIComponent(d.range);
+        fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values/${range}`,
+          { headers: { 'Authorization': 'Bearer ' + token } }
+        ).then(r => r.json()).then(data => {
+          const values = (data.values || []).map(row => row[0] || '');
+          sendResponse({ values });
+        }).catch(() => sendResponse({ values: [] }));
+      });
     });
     return true;
   }
@@ -213,16 +275,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Sheets API read (from content script directly)
   if (msg.type === 'SHEETS_API_READ_DIRECT') {
     const d = msg.data || msg;
-    chrome.identity.getAuthToken({ interactive: false }, (token) => {
-      if (!token) { sendResponse({ value: '' }); return; }
-      const range = encodeURIComponent(d.range);
-      fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values/${range}`,
-        { headers: { 'Authorization': 'Bearer ' + token } }
-      ).then(r => r.json()).then(data => {
-        const val = data.values && data.values[0] ? data.values[0][0] : '';
-        sendResponse({ value: val || '' });
-      }).catch(() => sendResponse({ value: '' }));
+    isAuthorized(d.spreadsheetId).then(ok => {
+      if (!ok) { sendResponse(notAuthorizedResp(d.spreadsheetId)); return; }
+      chrome.identity.getAuthToken({ interactive: false }, (token) => {
+        if (!token) { sendResponse({ value: '' }); return; }
+        const range = encodeURIComponent(d.range);
+        fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values/${range}`,
+          { headers: { 'Authorization': 'Bearer ' + token } }
+        ).then(r => r.json()).then(data => {
+          const val = data.values && data.values[0] ? data.values[0][0] : '';
+          sendResponse({ value: val || '' });
+        }).catch(() => sendResponse({ value: '' }));
+      });
     });
     return true;
   }
@@ -272,50 +337,159 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Sheets API write with rich text formatting (bold/color on specific ranges)
   if (msg.type === 'SHEETS_API_WRITE_FORMATTED') {
     const d = msg.data || msg;
-    chrome.identity.getAuthToken({ interactive: true }, (token) => {
-      if (!token) { sendResponse({ error: 'No token' }); return; }
+    isAuthorized(d.spreadsheetId).then(ok => {
+      if (!ok) { sendResponse(notAuthorizedResp(d.spreadsheetId)); return; }
+      chrome.identity.getAuthToken({ interactive: false }, (token) => {
+        if (!token) { sendResponse({ error: 'No token' }); return; }
 
-      // First: get sheetId from sheet name
-      const ssId = d.spreadsheetId;
-      const rangeMatch = d.range.match(/^'?([^'!]+)'?!([A-Z]+)(\d+)$/i);
-      if (!rangeMatch) { sendResponse({ error: 'Invalid range' }); return; }
+        // First: get sheetId from sheet name
+        const ssId = d.spreadsheetId;
+        const rangeMatch = d.range.match(/^'?([^'!]+)'?!([A-Z]+)(\d+)$/i);
+        if (!rangeMatch) { sendResponse({ error: 'Invalid range' }); return; }
 
-      const sheetName = rangeMatch[1];
-      const col = rangeMatch[2].toUpperCase().charCodeAt(0) - 65;
-      const row = parseInt(rangeMatch[3]) - 1;
+        const sheetName = rangeMatch[1];
+        const col = rangeMatch[2].toUpperCase().charCodeAt(0) - 65;
+        const row = parseInt(rangeMatch[3]) - 1;
 
-      // Get sheet ID
-      fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}?fields=sheets.properties`, {
+        // Get sheet ID
+        fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}?fields=sheets.properties`, {
+          headers: { 'Authorization': 'Bearer ' + token },
+        }).then(r => r.json()).then(meta => {
+          const sheet = meta.sheets.find(s => s.properties.title === sheetName);
+          const sheetId = sheet ? sheet.properties.sheetId : 0;
+
+          const runs = FelixEngine.buildCellFormatRuns(
+            d.value, d.placedRanges || [], d.unverifiedRanges || [],
+          );
+
+          const body = {
+            requests: [{
+              updateCells: {
+                rows: [{ values: [{
+                  userEnteredValue: { stringValue: d.value },
+                  textFormatRuns: runs,
+                }] }],
+                range: { sheetId, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: col, endColumnIndex: col + 1 },
+                fields: 'userEnteredValue,textFormatRuns',
+              }
+            }]
+          };
+
+          return fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}:batchUpdate`, {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+        }).then(r => r.json()).then(data => {
+          sendResponse(data);
+        }).catch(err => sendResponse({ error: err.message }));
+      });
+    });
+    return true;
+  }
+
+  // === Auth + authorization grants (drive.file) ===
+
+  // Returns the current sign-in state. interactive=false so we
+  // don't pop a consent dialog for a status check.
+  if (msg.type === 'AUTH_STATUS') {
+    chrome.identity.getAuthToken({ interactive: false }, (token) => {
+      if (!token) { sendResponse({ signedIn: false }); return; }
+      // Token in hand → fetch the email so the UI can show "Connected as <user>".
+      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { 'Authorization': 'Bearer ' + token },
-      }).then(r => r.json()).then(meta => {
-        const sheet = meta.sheets.find(s => s.properties.title === sheetName);
-        const sheetId = sheet ? sheet.properties.sheetId : 0;
+      }).then(r => r.json()).then(info => {
+        sendResponse({ signedIn: true, email: info.email || '' });
+      }).catch(() => sendResponse({ signedIn: true, email: '' }));
+    });
+    return true;
+  }
 
-        const runs = FelixEngine.buildCellFormatRuns(
-          d.value, d.placedRanges || [], d.unverifiedRanges || [],
-        );
+  // Explicit "Sign in" — interactive consent.
+  if (msg.type === 'SIGN_IN') {
+    chrome.identity.getAuthToken({ interactive: true }, (token) => {
+      if (!token) {
+        sendResponse({ signedIn: false, error: chrome.runtime.lastError?.message || 'No token' });
+        return;
+      }
+      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { 'Authorization': 'Bearer ' + token },
+      }).then(r => r.json()).then(info => {
+        sendResponse({ signedIn: true, email: info.email || '' });
+      }).catch(() => sendResponse({ signedIn: true, email: '' }));
+    });
+    return true;
+  }
 
-        const body = {
-          requests: [{
-            updateCells: {
-              rows: [{ values: [{
-                userEnteredValue: { stringValue: d.value },
-                textFormatRuns: runs,
-              }] }],
-              range: { sheetId, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: col, endColumnIndex: col + 1 },
-              fields: 'userEnteredValue,textFormatRuns',
-            }
-          }]
-        };
-
-        return fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}:batchUpdate`, {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+  // Sign out — revoke + remove cached token + drop authorized files.
+  // The user can sign back in and re-authorize files individually.
+  if (msg.type === 'SIGN_OUT') {
+    chrome.identity.getAuthToken({ interactive: false }, (token) => {
+      const finish = () => {
+        clearAllAuthorized().then(() => {
+          chrome.runtime.sendMessage({ type: 'AUTH_CHANGED', signedIn: false }).catch(() => {});
+          sendResponse({ ok: true });
         });
-      }).then(r => r.json()).then(data => {
-        sendResponse(data);
-      }).catch(err => sendResponse({ error: err.message }));
+      };
+      if (!token) { finish(); return; }
+      // Revoke at Google's end so the consent screen is required next time.
+      fetch('https://oauth2.googleapis.com/revoke?token=' + encodeURIComponent(token), { method: 'POST' })
+        .catch(() => {})
+        .finally(() => {
+          chrome.identity.removeCachedAuthToken({ token }, () => finish());
+        });
+    });
+    return true;
+  }
+
+  // Open the Google Picker in a popup window. The popup runs picker.js,
+  // which requests its own OAuth token (drive.file) and sends the
+  // chosen spreadsheet back via chrome.runtime.sendMessage with type
+  // PICKER_RESULT (handled below).
+  if (msg.type === 'PICKER_AUTHORIZE_FILE') {
+    const url = chrome.runtime.getURL('picker.html');
+    chrome.windows.create({ url, type: 'popup', width: 720, height: 560 }, () => {
+      // No immediate response — the result arrives asynchronously
+      // via PICKER_RESULT. We resolve this call right away with
+      // { pending: true } so the caller's UI can show "Picker open…".
+      sendResponse({ pending: true });
+    });
+    return true;
+  }
+
+  // Picker → background result hand-off. picker.js dispatches this
+  // after the user selects (or cancels). We persist the grant and
+  // broadcast AUTH_CHANGED so any open content scripts / side panel
+  // can re-render their authorized state.
+  if (msg.type === 'PICKER_RESULT') {
+    const d = msg.data || msg;
+    if (!d || !d.spreadsheetId) {
+      sendResponse({ ok: false, cancelled: !!(d && d.cancelled) });
+      return;
+    }
+    rememberAuthorized(d.spreadsheetId, d.name || '').then(() => {
+      chrome.runtime.sendMessage({ type: 'AUTH_CHANGED', authorizedSpreadsheetId: d.spreadsheetId }).catch(() => {});
+      chrome.tabs.query({ url: 'https://docs.google.com/spreadsheets/*' }, (tabs) => {
+        for (const tab of tabs) {
+          chrome.tabs.sendMessage(tab.id, { type: 'AUTH_CHANGED', authorizedSpreadsheetId: d.spreadsheetId }).catch(() => {});
+        }
+      });
+      sendResponse({ ok: true, spreadsheetId: d.spreadsheetId });
+    });
+    return true;
+  }
+
+  if (msg.type === 'AUTHORIZED_FILES_LIST') {
+    authorizedFilesGetAll().then(rows => sendResponse({ files: rows || [] }))
+      .catch(() => sendResponse({ files: [] }));
+    return true;
+  }
+
+  if (msg.type === 'AUTHORIZED_FILE_FORGET') {
+    const d = msg.data || msg;
+    forgetAuthorized(d.spreadsheetId).then(() => {
+      chrome.runtime.sendMessage({ type: 'AUTH_CHANGED' }).catch(() => {});
+      sendResponse({ ok: true });
     });
     return true;
   }

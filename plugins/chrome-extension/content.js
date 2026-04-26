@@ -81,6 +81,51 @@
     });
   }
 
+  // === drive.file authorization plumbing ===
+  //
+  // Every Sheets API call goes through msg('SHEETS_API_*'). When the
+  // user hasn't yet picked the current spreadsheet, background.js
+  // returns { error: 'NOT_AUTHORIZED', spreadsheetId } and we surface
+  // the in-page banner that prompts them to grant access via the
+  // Picker. After the grant we re-run the original action.
+  function isNotAuthorized(resp) {
+    return resp && resp.error === 'NOT_AUTHORIZED';
+  }
+
+  let _authBanner = null;
+  function showAuthBanner(spreadsheetId, retryFn) {
+    hideAuthBanner();
+    const banner = document.createElement('div');
+    banner.style.cssText = [
+      'position:fixed', 'top:14px', 'right:14px',
+      'z-index:2147483647',
+      'background:#fff', 'border:1px solid #1a73e8', 'border-radius:6px',
+      'padding:10px 12px', 'font-size:12px', 'line-height:1.5',
+      'color:#202124', 'box-shadow:0 4px 12px rgba(0,0,0,0.15)',
+      'max-width:280px', 'font-family:-apple-system,BlinkMacSystemFont,sans-serif',
+    ].join(';');
+    banner.innerHTML = ''
+      + '<div style="font-weight:600;color:#1a73e8;margin-bottom:4px">Felix TM</div>'
+      + '<div style="margin-bottom:8px">このスプレッドシートへのアクセス権がまだありません。Felix は Picker で許可されたシートだけ読み書きします。</div>'
+      + '<button id="felix-auth-pick" style="background:#fff;color:#1a73e8;border:1px solid #1a73e8;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:600">このシートを許可</button>'
+      + '<button id="felix-auth-dismiss" style="background:#fff;color:#5f6368;border:1px solid #dadce0;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;margin-left:6px">閉じる</button>';
+    document.body.appendChild(banner);
+    _authBanner = banner;
+    banner.querySelector('#felix-auth-pick').addEventListener('click', async () => {
+      hideAuthBanner();
+      await msg('PICKER_AUTHORIZE_FILE', { spreadsheetId });
+      // PICKER_RESULT comes back asynchronously via AUTH_CHANGED
+      // (see message listener below) — the retry happens there.
+      _pendingRetryAfterAuth = { spreadsheetId, fn: retryFn };
+    });
+    banner.querySelector('#felix-auth-dismiss').addEventListener('click', hideAuthBanner);
+  }
+  function hideAuthBanner() {
+    if (_authBanner) { _authBanner.remove(); _authBanner = null; }
+  }
+
+  let _pendingRetryAfterAuth = null;
+
   // === Load data from storage ===
   let _dataReady = false;
   async function loadData() {
@@ -93,8 +138,12 @@
     settings = sets || settings;
     _dataReady = true;
     updateBadge();
-    // Preload source column cache via Sheets API
-    preloadSourceCache();
+    // preloadSourceCache used to hit Sheets API on panel mount, but
+    // that pre-emptive read no longer fits the drive.file model
+    // (the user hasn't picked a sheet yet at this point). The cache
+    // still works opportunistically — see the SELECTION_CHANGED
+    // broadcast handler below where we record cell values as the
+    // user navigates.
     // Run initial search immediately if the cell value is already in the
     // DOM. When the panel mounts faster than Sheets stabilises the
     // selection DOM, the first read comes back empty; schedule a
@@ -1051,6 +1100,11 @@
       msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: sheetRef(targetRef) }),
     ]);
 
+    if (isNotAuthorized(srcResp) || isNotAuthorized(tgtResp)) {
+      showAuthBanner(ssId, () => doSet());
+      return;
+    }
+
     const source = srcResp && srcResp.value ? srcResp.value : '';
     const target = tgtResp && tgtResp.value ? tgtResp.value : '';
 
@@ -1091,6 +1145,10 @@
     // Read old value for undo
     const fullRange = sheetRef(targetRef);
     const oldResp = await msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: fullRange });
+    if (isNotAuthorized(oldResp)) {
+      showAuthBanner(ssId, () => writeToTarget(value, editMode));
+      return;
+    }
     const oldValue = oldResp && oldResp.value ? oldResp.value : '';
     pushUndo({ ssId, range: fullRange, oldValue, newValue: value });
 
@@ -1099,10 +1157,14 @@
     // cell blue / underline) get reset. The batchUpdate path writes
     // `textFormatRuns: [{ startIndex: 0, format: {} }]` which clears
     // prior custom formatting and leaves the cell fully plain.
-    await msg('SHEETS_API_WRITE_FORMATTED', {
+    const writeResp = await msg('SHEETS_API_WRITE_FORMATTED', {
       spreadsheetId: ssId, range: fullRange, value,
       placedRanges: [], unverifiedRanges: [],
     });
+    if (isNotAuthorized(writeResp)) {
+      showAuthBanner(ssId, () => writeToTarget(value, editMode));
+      return;
+    }
 
     // Edit mode → jump to the target cell; otherwise → next row's source.
     moveCursorTo(editMode ? targetRef : (settings.sourceCol || 'A') + (rowNum + 1));
@@ -1114,11 +1176,22 @@
     let result;
     if (entry.batch && entry.batch.length) {
       const updates = entry.batch.map(b => ({ range: b.range, value: b.oldValue }));
-      await msg('SHEETS_API_BATCH_WRITE', { spreadsheetId: entry.ssId, updates });
+      const resp = await msg('SHEETS_API_BATCH_WRITE', { spreadsheetId: entry.ssId, updates });
+      if (isNotAuthorized(resp)) {
+        // Push the entry back so the user can retry after authorizing.
+        _undoStack.push(entry);
+        showAuthBanner(entry.ssId, () => undoLastWrite());
+        return { reason: 'not_authorized' };
+      }
       showToast(`Undo: ${entry.batch.length} cells`);
       result = { kind: 'batch', restored: entry.batch.length, firstRange: entry.batch[0].range };
     } else {
-      await msg('SHEETS_API_WRITE', { spreadsheetId: entry.ssId, range: entry.range, value: entry.oldValue });
+      const resp = await msg('SHEETS_API_WRITE', { spreadsheetId: entry.ssId, range: entry.range, value: entry.oldValue });
+      if (isNotAuthorized(resp)) {
+        _undoStack.push(entry);
+        showAuthBanner(entry.ssId, () => undoLastWrite());
+        return { reason: 'not_authorized' };
+      }
       showToast(`Undo: ${entry.range}`);
       result = { kind: 'single', range: entry.range };
     }
@@ -1167,6 +1240,10 @@
       msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: srcRange }),
       msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: tgtRange }),
     ]);
+    if (isNotAuthorized(srcResp) || isNotAuthorized(tgtResp)) {
+      showAuthBanner(ssId, () => autoTranslateToFuzzy());
+      return;
+    }
     const srcValues = (srcResp && srcResp.values) || [];
     const tgtValues = (tgtResp && tgtResp.values) || [];
 
@@ -1217,6 +1294,10 @@
       msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: srcRange }),
       msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: tgtRange }),
     ]);
+    if (isNotAuthorized(srcResp) || isNotAuthorized(tgtResp)) {
+      showAuthBanner(ssId, () => autoTranslateSelection());
+      return;
+    }
     const srcValues = (srcResp && srcResp.values) || [];
     const tgtValues = (tgtResp && tgtResp.values) || [];
 
@@ -1248,6 +1329,11 @@
     if (updates.length) {
       showToast(`Writing ${updates.length} cells…`);
       const resp = await msg('SHEETS_API_BATCH_WRITE', { spreadsheetId: ssId, updates });
+      if (isNotAuthorized(resp)) {
+        // Don't push undo since the write didn't happen.
+        showAuthBanner(ssId, () => executePlan(plan, { ssId, startRow, srcCol, tgtCol }));
+        return;
+      }
       if (resp && resp.error) { showToast(`Error: ${resp.error}`); return; }
       pushUndo({ ssId, batch: undoEntries });
     }
@@ -1397,6 +1483,21 @@
     if (m.type === 'WRITE_CELL') {
       writeToTarget(m.value);
       sendResponse({ ok: true });
+      return;
+    }
+    if (m.type === 'AUTH_CHANGED') {
+      // The user just (re-)authorized this spreadsheet via Picker.
+      // Retry the action that was waiting on auth, if any.
+      hideAuthBanner();
+      const pending = _pendingRetryAfterAuth;
+      _pendingRetryAfterAuth = null;
+      if (pending && pending.fn) {
+        // Only retry when the new auth actually covers the
+        // spreadsheet the pending action wanted.
+        if (!m.authorizedSpreadsheetId || m.authorizedSpreadsheetId === pending.spreadsheetId) {
+          try { pending.fn(); } catch (_) {}
+        }
+      }
       return;
     }
   });

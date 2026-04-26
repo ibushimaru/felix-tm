@@ -3,13 +3,20 @@
  * Replaces chrome.storage.local for TM/Glossary/Settings persistence.
  *
  * Schema:
- *   tm       — { id (auto), source, target, context, cmp, targetCmp, sourceLen, refcount }
- *   glossary — { id (auto), term, translation, notes, cmp }
- *   settings — { key, value }
+ *   tm               — { id (auto), source, target, context, cmp, targetCmp, sourceLen, refcount }
+ *   glossary         — { id (auto), term, translation, notes, cmp }
+ *   rules            — { id (auto), source_pattern, target_template, enabled }
+ *   settings         — { key, value }
+ *   authorized_files — { spreadsheetId, name, authorizedAt }   (v3+)
+ *
+ * v3 added authorized_files: per-spreadsheet OAuth grants from the
+ * Google Picker flow. Felix only allows Sheets API calls against
+ * spreadsheets the user explicitly picked, satisfying the drive.file
+ * scope's "files the app has been granted access to" semantics.
  */
 
 const DB_NAME = 'FelixTM';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let _db = null;
 
@@ -41,6 +48,13 @@ function openDB() {
       // Rules store (v2) — placement rules with regex
       if (!db.objectStoreNames.contains('rules')) {
         db.createObjectStore('rules', { keyPath: 'id', autoIncrement: true });
+      }
+
+      // Authorized files store (v3) — per-spreadsheet OAuth grants
+      // from the Google Picker flow. Existence in this store is the
+      // gate background.js uses before any Sheets API call.
+      if (!db.objectStoreNames.contains('authorized_files')) {
+        db.createObjectStore('authorized_files', { keyPath: 'spreadsheetId' });
       }
     };
     req.onsuccess = (e) => { _db = e.target.result; resolve(_db); };
@@ -181,6 +195,58 @@ async function settingsSave(settings) {
     }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+  });
+}
+
+// === Authorized Files Operations (v3+) ===
+//
+// Felix's drive.file scope means the OAuth token can only access
+// files the user explicitly granted via Google Picker. We persist
+// the granted spreadsheet IDs locally so background.js can refuse
+// requests against any spreadsheet not in this list (defense in
+// depth on top of Google's own scope enforcement).
+
+async function authorizedFilesGetAll() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('authorized_files', 'readonly');
+    const req = tx.objectStore('authorized_files').getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function authorizedFileAdd(spreadsheetId, name) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('authorized_files', 'readwrite');
+    const req = tx.objectStore('authorized_files').put({
+      spreadsheetId,
+      name: name || '',
+      authorizedAt: Date.now(),
+    });
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function authorizedFileForget(spreadsheetId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('authorized_files', 'readwrite');
+    const req = tx.objectStore('authorized_files').delete(spreadsheetId);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function authorizedFilesClear() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('authorized_files', 'readwrite');
+    const req = tx.objectStore('authorized_files').clear();
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
   });
 }
 
