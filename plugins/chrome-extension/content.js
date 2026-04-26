@@ -663,6 +663,12 @@
     if (!match) return false;
     return match[1].toUpperCase() === (settings.targetCol || 'B').toUpperCase();
   }
+  function isSourceColumn() {
+    const ref = getCellRef();
+    const match = ref ? ref.match(/([A-Z]+)/i) : null;
+    if (!match) return false;
+    return match[1].toUpperCase() === (settings.sourceCol || 'A').toUpperCase();
+  }
 
   // Cache: source value per row (populated when user is on source column)
   let _sourceCache = {}; // { rowNum: value }
@@ -772,10 +778,22 @@
   function doSearch(query) {
     const s = getShadow();
     if (!s || !panelVisible) return;
+
+    // Outside the configured source/target pair, the cell content has
+    // nothing to do with TM lookup — searching it would just paint
+    // arbitrary results in the panel and the previous (relevant) ones
+    // would be replaced with noise. Clear and bail.
+    const onTarget = isTargetColumn();
+    const onSource = isSourceColumn();
+    if (!onTarget && !onSource) {
+      const rs = s.getElementById('results');
+      if (rs) rs.innerHTML = `<div class="empty">${t('selectCell')}</div>`;
+      return;
+    }
+
     if (!query) query = lastCellValue;
     if (!query) return;
 
-    const onTarget = isTargetColumn();
     const minScore = parseFloat(s.getElementById('min-score').value);
 
     let searchQuery = query;
