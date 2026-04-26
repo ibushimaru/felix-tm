@@ -260,13 +260,13 @@
       .mode-btn { padding: 3px 8px; font-size: 10px; cursor: pointer; color: #5f6368; user-select: none; }
       .mode-btn:first-child { border-radius: 3px 0 0 3px; }
       .mode-btn:last-child  { border-radius: 0 3px 3px 0; }
-      .mode-btn.mode-active { background: #1a73e8; color: #fff; }
+      .mode-btn.mode-active { color: #1a73e8; font-weight: 600; }
       .conc-row { display: flex; gap: 4px; margin-bottom: 6px; }
       .conc-input { flex: 1; padding: 4px 6px; border: 1px solid #dadce0; border-radius: 4px; font-size: 11px; }
       .conc-input:focus { outline: none; border-color: #1a73e8; }
       .conc-highlight { background: #fef7cd; border-radius: 2px; padding: 0 1px; }
       .regex-toggle { padding: 3px 6px; border: 1px solid #dadce0; border-radius: 4px; font-size: 11px; font-family: monospace; cursor: pointer; color: #9aa0a6; user-select: none; }
-      .regex-toggle.active { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+      .regex-toggle.active { color: #1a73e8; border-color: #1a73e8; font-weight: 600; }
       .auto-label { font-size: 10px; color: #5f6368; margin: 0 2px 0 4px; white-space: nowrap; }
       /* Tooltip via CSS Anchor Positioning (Chrome 125+).
          anchor-scope: --felix-tip confines each element's anchor to its own

@@ -427,7 +427,7 @@ function editTMEntry(idx) {
     <input type="text" value="${escH(entry.target)}" style="width:100%;margin-bottom:4px;font-size:13px;padding:4px" data-field="target">
     <div style="display:flex;gap:4px">
       <button class="btn btn-primary" style="flex:1;padding:3px 6px;font-size:12px" data-save>OK</button>
-      <button class="btn btn-outline" style="flex:1;padding:3px 6px;font-size:12px" data-cancel>Cancel</button>
+      <button class="btn" style="flex:1;padding:3px 6px;font-size:12px" data-cancel>Cancel</button>
     </div>`;
 
   div.querySelector('[data-save]').addEventListener('click', async () => {
@@ -553,7 +553,7 @@ function editGlossaryEntry(idx) {
     <input type="text" value="${escH(entry.translation)}" style="width:100%;margin-bottom:4px;font-size:13px;padding:4px" data-field="translation">
     <div style="display:flex;gap:4px">
       <button class="btn btn-primary" style="flex:1;padding:3px 6px;font-size:12px" data-save>OK</button>
-      <button class="btn btn-outline" style="flex:1;padding:3px 6px;font-size:12px" data-cancel>Cancel</button>
+      <button class="btn" style="flex:1;padding:3px 6px;font-size:12px" data-cancel>Cancel</button>
     </div>`;
 
   div.querySelector('[data-save]').addEventListener('click', async () => {
@@ -924,8 +924,8 @@ function inlineConfirm(btnId, message, onConfirm) {
   const div = document.createElement('div');
   div.style.cssText = 'display:flex;gap:4px;align-items:center;width:100%;margin-bottom:' + (btn.style.marginBottom || '0');
   div.innerHTML = `<span style="font-size:12px;color:#ea4335;flex:1">${escH(message)}</span>
-    <button class="btn btn-outline" style="padding:5px 10px;font-size:13px;color:#ea4335;border-color:#ea4335" data-ok>OK</button>
-    <button class="btn btn-outline" style="padding:5px 10px;font-size:13px" data-cancel>${t('cancel')}</button>`;
+    <button class="btn" style="padding:5px 10px;font-size:13px;color:#ea4335;border-color:#ea4335" data-ok>OK</button>
+    <button class="btn" style="padding:5px 10px;font-size:13px" data-cancel>${t('cancel')}</button>`;
   function restore() { div.replaceWith(btn); }
   btn.replaceWith(div);
   div.querySelector('[data-ok]').addEventListener('click', () => { restore(); onConfirm(); });
