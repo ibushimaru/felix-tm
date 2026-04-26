@@ -649,7 +649,8 @@
   }
 
   // === Search ===
-  // Auto-detects forward vs reverse based on which column is selected
+  // Translate mode = forward search; Review mode = reverse search.
+  // The user picks the mode explicitly via the Translate / Review toggle.
   function isTargetColumn() {
     const ref = getCellRef();
     const match = ref ? ref.match(/([A-Z]+)/i) : null;
@@ -741,17 +742,19 @@
       }
       isReverse = true;
     } else {
-      // Translate mode: forward search
+      // Translate mode: forward search. When the cursor lands on a target
+      // cell, look up the same row's source from the cache so the panel
+      // keeps showing source-side matches as the translator navigates
+      // back and forth between source and target columns. With no cache,
+      // we just run forward search on the target cell value (the user
+      // sees "no match" — explicit signal to switch to Review mode rather
+      // than the old auto-flip-to-reverse, which confused the UX).
       if (onTarget) {
         const ref = getCellRef();
         const rowMatch = ref ? ref.match(/(\d+)/i) : null;
         const rowNum = rowMatch ? rowMatch[1] : null;
         const cachedSource = rowNum ? _sourceCache[rowNum] : null;
-        if (cachedSource) {
-          searchQuery = cachedSource;
-        } else {
-          isReverse = true;
-        }
+        if (cachedSource) searchQuery = cachedSource;
       }
     }
 
@@ -768,7 +771,7 @@
     const glossHits = glossHitsRaw.filter(g => qLower.includes(g.term.toLowerCase()));
 
     const el = s.getElementById('results');
-    const label = panelMode === 'review' ? '↔ Review' : (onTarget ? (isReverse ? '↔ Reverse' : '← Source') : '');
+    const label = panelMode === 'review' ? '↔ Review' : (onTarget ? '← Source' : '');
     // Check if any match is 100% — if so, skip Placement entirely
     const has100 = !isReverse && matches.some(m => Math.round(m.score * 100) === 100);
 
