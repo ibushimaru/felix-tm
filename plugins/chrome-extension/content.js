@@ -674,11 +674,14 @@
   // read the row's source from the spreadsheet and re-run search. Without
   // this, the panel sits blank on a fresh target cell until the user has
   // navigated through the source column at least once.
-  // Logging is opt-in via `window.__felixDebug = true` in DevTools so the
-  // production console stays quiet but a stuck-loading bug becomes
-  // diagnosable by toggling one flag.
+  // Always log from the source-fetch path. content-script logs land in
+  // the page's DevTools console (the default "top" context), so the
+  // user just opens DevTools and filters by `[Felix TM:fetch]` — no
+  // need to find the right isolated world to flip a debug flag in.
+  // The volume is ~2 lines per target-cell selection, low enough to
+  // tolerate in production until shipping.
   function dbg(...args) {
-    if (window.__felixDebug) console.log('[Felix TM:fetch]', ...args);
+    console.log('[Felix TM:fetch]', ...args);
   }
 
   async function fetchSourceForRow(rowNum) {
@@ -1742,6 +1745,18 @@
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data) return;
     if (e.data.type === 'FELIX_TM_DEV_RELOAD') msg('DEV_RELOAD');
+    if (e.data.type === 'FELIX_TM_INSPECT') {
+      // Page-world inspector hook: from the default DevTools console
+      // (no context switch needed) run
+      //   window.postMessage({ type: 'FELIX_TM_INSPECT' }, '*');
+      // and the live content script will dump its cache + pending set.
+      console.log('[Felix TM:inspect]', {
+        sourceCache: { ..._sourceCache },
+        pending: Array.from(_pendingSourceFetch),
+        lastCellRef,
+        lastCellValue,
+      });
+    }
   }, { signal });
 
   // === Show panel on load ===
