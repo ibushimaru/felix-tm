@@ -320,16 +320,20 @@
       .diff-match { color: #137333; }
       /* Uncovered-diff palette has two axes:
            background  → glossary registration (red = missing, amber = registered)
-           underline   → kind of edit (none = substitution, dashed = ins/del)
-         The dashed underline lets a translator immediately distinguish
-         "swap one term for another" from "extra/missing content" without
-         hovering or reading. */
+           decoration  → post-placement action:
+                           none           = substitution / swap
+                           dashed under   = must ADD (cell has it, TM doesn't)
+                           line-through   = must REMOVE (TM has it, cell doesn't)
+         The decoration mirrors the actual edit the translator will make
+         on top of the placed TM target, so add/remove read as opposite
+         actions instead of two flavors of "ins/del". */
       .diff-uncovered-missing { background: #fce8e6; color: #c5221f; font-weight: 500; }
       .diff-uncovered-present { background: #feefc3; color: #b06000; font-weight: 500; }
-      .diff-uncovered-insdel { text-decoration: underline dashed; text-underline-offset: 2px; }
+      .diff-uncovered-add { text-decoration: underline dashed; text-underline-offset: 2px; }
+      .diff-uncovered-remove { text-decoration: line-through; }
       .diff-sub { background: #feefc3; color: #b06000; }
       .diff-del { background: #fce8e6; color: #c5221f; text-decoration: underline dashed; text-underline-offset: 2px; }
-      .diff-ins { background: #fce8e6; color: #c5221f; text-decoration: underline dashed; text-underline-offset: 2px; }
+      .diff-ins { background: #fce8e6; color: #c5221f; text-decoration: line-through; }
       .gloss_match { text-decoration: underline; text-decoration-color: #1a73e8; text-underline-offset: 2px; cursor: pointer; position: relative; }
       .gloss_match::after { content: attr(data-tip); display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
       .gloss_match:hover::after { display: block; }

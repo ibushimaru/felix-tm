@@ -500,13 +500,22 @@ var FelixEngine = (() => {
       if (end <= start || start < 0 || end > text.length) continue;
       // 2-axis classification:
       //   missing/present → glossary registration (red vs amber background)
-      //   sub/insdel       → kind of edit (sub keeps default; insdel adds
-      //                      a dashed underline so the translator can tell
-      //                      "swap a term" from "extra/missing content"
-      //                      at a glance).
+      //   add / remove    → action the translator must take after the TM
+      //                     match is placed:
+      //                       q-side ins/del (this content is in the cell
+      //                         but not in TM) → must ADD to placement
+      //                         → dashed underline
+      //                       s-side ins/del (this content is in TM but
+      //                         not in the cell) → must REMOVE from
+      //                         placement → strikethrough
+      //                     sub diffs are a swap, neither pure-add nor
+      //                     pure-remove, so they keep the default style.
       const baseCls = registered ? 'diff-uncovered-present' : 'diff-uncovered-missing';
-      const isInsDel = !d.qText || !d.sText;
-      const cls = isInsDel ? `${baseCls} diff-uncovered-insdel` : baseCls;
+      const mustAdd = side === 'q' && !d.sText;
+      const mustRemove = side === 's' && !d.qText;
+      const cls = mustAdd ? `${baseCls} diff-uncovered-add`
+        : mustRemove ? `${baseCls} diff-uncovered-remove`
+        : baseCls;
       regions.push({ start, end, cls });
     }
     regions.sort((a, b) => a.start - b.start || a.end - b.end);

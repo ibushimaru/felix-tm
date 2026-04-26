@@ -133,34 +133,53 @@ test('uncoveredRegionsForText: position-specific — a sText that also appears i
   assert.equal(s.substring(regs[0].start, regs[0].end), 'ZZ');
 });
 
-// --- type-axis: sub vs insdel ---------------------------------------------
-// The translator needs to distinguish "swap one term for another" (sub)
-// from "extra/missing content" (ins/del) at a glance. Encoded as a second
-// class (diff-uncovered-insdel) layered on top of the registered/missing
-// background class, so the existing red/amber palette stays the same.
+// --- direction-axis: add vs remove ----------------------------------------
+// After the translator clicks a TM match, the placed target needs
+// post-edit. The action depends on which side the diff is on:
+//   q-side ins/del  = cell has it, TM doesn't → must ADD to placement
+//                     → underline dashed (additive cue)
+//   s-side ins/del  = TM has it, cell doesn't → must REMOVE from placement
+//                     → strikethrough (subtractive cue)
+//   sub             = swap, no special decoration
 
-test('uncoveredRegionsForText: sub diff (both sides non-empty) does NOT add insdel class', () => {
+test('uncoveredRegionsForText: sub diff (both sides non-empty) — neither add nor remove class', () => {
   const uncovered = uncoveredOf([]);  // MIND ↔ 光属性ダメージ — sub diff
   const qRegs = uncoveredRegionsForText(query, uncovered, 'q');
   assert.equal(qRegs.length, 1);
-  assert.ok(!qRegs[0].cls.includes('diff-uncovered-insdel'));
+  assert.ok(!qRegs[0].cls.includes('diff-uncovered-add'));
+  assert.ok(!qRegs[0].cls.includes('diff-uncovered-remove'));
   const sRegs = uncoveredRegionsForText(tmSrc, uncovered, 's');
   assert.equal(sRegs.length, 1);
-  assert.ok(!sRegs[0].cls.includes('diff-uncovered-insdel'));
+  assert.ok(!sRegs[0].cls.includes('diff-uncovered-add'));
+  assert.ok(!sRegs[0].cls.includes('diff-uncovered-remove'));
 });
 
-test('uncoveredRegionsForText: pure insertion (qText empty) adds insdel class on the s side', () => {
+test('uncoveredRegionsForText: TM has extra content (qText empty) → s side gets remove (strikethrough)', () => {
   // After-rotation form: leading shared 与え、 stays out, trailing 、 enters the diff.
   const q = '与え、UPする';
   const s = '与え、自身の神絆ゲージを1%UPし、UPする';
   const r = resolveWithPlacement(q, s, 'X', [], []);
-  // Must have at least one pure insertion in source.
   const ins = r.uncovered.find(u => !u.qText && u.sText);
-  assert.ok(ins, 'expected a pure insertion diff');
+  assert.ok(ins, 'expected a TM-only insertion diff');
   const regs = uncoveredRegionsForText(s, [ins], 's');
   assert.equal(regs.length, 1);
-  assert.ok(regs[0].cls.includes('diff-uncovered-insdel'),
-    `expected insdel class, got: ${regs[0].cls}`);
+  assert.ok(regs[0].cls.includes('diff-uncovered-remove'),
+    `expected remove class on s side, got: ${regs[0].cls}`);
+  assert.ok(!regs[0].cls.includes('diff-uncovered-add'));
+});
+
+test('uncoveredRegionsForText: cell has extra content (sText empty) → q side gets add (underline)', () => {
+  // Cell has extra `土属性の味方に` that's not in TM source.
+  const q = '与え、UPし、土属性の味方に応戦する';
+  const s = '与え、UPし、応戦する';
+  const r = resolveWithPlacement(q, s, 'X', [], []);
+  const del = r.uncovered.find(u => u.qText && !u.sText);
+  assert.ok(del, 'expected a cell-only deletion diff');
+  const regs = uncoveredRegionsForText(q, [del], 'q');
+  assert.equal(regs.length, 1);
+  assert.ok(regs[0].cls.includes('diff-uncovered-add'),
+    `expected add class on q side, got: ${regs[0].cls}`);
+  assert.ok(!regs[0].cls.includes('diff-uncovered-remove'));
 });
 
 // --- rotateBoundaryDiff ---------------------------------------------------
