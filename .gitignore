@@ -17,3 +17,4 @@ docs/manual-ja/
 .service-account.json
 .claude/settings.local.json
 node_modules/
+.secrets/

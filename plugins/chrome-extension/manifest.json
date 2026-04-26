@@ -29,18 +29,31 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://docs.google.com/spreadsheets/*"],
-      "js": ["felix-engine.js", "content.js"],
+      "matches": [
+        "https://docs.google.com/spreadsheets/*"
+      ],
+      "js": [
+        "felix-engine.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "side_panel": {
     "default_path": "sidepanel.html"
   },
-  "web_accessible_resources": [{
-    "resources": ["felix-engine.js", "picker.html", "picker.js"],
-    "matches": ["https://docs.google.com/*"]
-  }],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "felix-engine.js",
+        "picker.html",
+        "picker.js"
+      ],
+      "matches": [
+        "https://docs.google.com/*"
+      ]
+    }
+  ],
   "action": {
     "default_title": "Felix TM",
     "default_icon": {
@@ -53,5 +66,6 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAp8SXkCT97T5hEBe6mBSKiLOIw9yoq0tXGEr2NEEDeFV68+lIuoX/FdFeq9n8R5Ujp75wYVZbZ45UYYf4OYqq/6XrLEvZpJaROoHoS6tHXoG8F8CchEZBplDdsg2qvNlBfirW3PCyEU6SA+9SJ7Go3G8xgb4hfhqnDo5mtP77jDwbga/A5Cg5iOMVyoZa8HStCj0J2kGkY+R66rmUzKPw9HsuVSMoiZcDj6XyZoZtTbkRu+bKKi2d7PeeQgivFojyzOPmWazWAHdYZWZ0Lz9QjKheRWrJEYlw5xjd7lSzxVGKs8t1Z7Nli1MTMoNNMiVjxT0L4OG8fMcp27TPssF8GwIDAQAB"
 }

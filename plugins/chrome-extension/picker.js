@@ -22,10 +22,13 @@
  * and reports the error in the popup so it's obvious during testing.
  */
 
-// TODO(deploy): replace with the real API key from Cloud Console.
-// Tracked in the launch plan (clever-puzzling-treasure.md, "Cloud
-// Console" prereq). Picker API key + Google Picker API enabled.
-const PICKER_API_KEY = ''; // <-- TODO: paste from Cloud Console
+// Cloud Console: project felix-tm, "Felix TM Picker" API key.
+// Public by design — Chrome extension code ships to every user, so
+// the key is restricted on the server side by HTTP-referrer to
+// chrome-extension://fapjbogdcfkecnfloofkgdfpfaammcik/*. A leaked
+// key would only be usable from that exact extension origin, which
+// can't be spoofed.
+const PICKER_API_KEY = 'AIzaSyCJwjvWNgTDQgxsB5SOb6WSGdy5_0LJ0KA';
 
 const statusEl = document.getElementById('status');
 
