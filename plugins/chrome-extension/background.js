@@ -205,6 +205,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'SHEETS_API_READ_BATCH') {
     const d = msg.data || msg;
     chrome.identity.getAuthToken({ interactive: false }, (token) => {
+      void chrome.runtime.lastError;
       if (!token) { sendResponse({ values: [] }); return; }
       const range = encodeURIComponent(d.range);
       fetch(
@@ -222,6 +223,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'SHEETS_API_READ_DIRECT') {
     const d = msg.data || msg;
     chrome.identity.getAuthToken({ interactive: false }, (token) => {
+      void chrome.runtime.lastError;
       if (!token) { sendResponse({ value: '' }); return; }
       const range = encodeURIComponent(d.range);
       fetch(
@@ -335,20 +337,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // do not fetch the user's email — Felix TM does not request the
   // userinfo.email scope, so there is no identity to show beyond
   // "signed in / not signed in".
+  //
+  // When no token is cached, Chrome populates runtime.lastError with
+  // "OAuth2 not granted or revoked." Reading it here consumes the
+  // error so it doesn't surface as an unchecked-warning in the
+  // console on every status poll.
   if (msg.type === 'AUTH_STATUS') {
     chrome.identity.getAuthToken({ interactive: false }, (token) => {
+      void chrome.runtime.lastError;
       sendResponse({ signedIn: !!token });
     });
     return true;
   }
 
-  // Explicit "Sign in" — interactive consent.
+  // Explicit "Sign in" — interactive consent. Broadcasts AUTH_CHANGED
+  // so every surface (in-page overlay banner, side panel) updates,
+  // not just the one that initiated the sign-in.
   if (msg.type === 'SIGN_IN') {
     chrome.identity.getAuthToken({ interactive: true }, (token) => {
       if (!token) {
         sendResponse({ signedIn: false, error: chrome.runtime.lastError?.message || 'No token' });
         return;
       }
+      chrome.runtime.sendMessage({ type: 'AUTH_CHANGED', signedIn: true }).catch(() => {});
       sendResponse({ signedIn: true });
     });
     return true;
@@ -358,6 +369,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Sign in button) will re-prompt the consent screen.
   if (msg.type === 'SIGN_OUT') {
     chrome.identity.getAuthToken({ interactive: false }, (token) => {
+      void chrome.runtime.lastError;
       const finish = () => {
         chrome.runtime.sendMessage({ type: 'AUTH_CHANGED', signedIn: false }).catch(() => {});
         sendResponse({ ok: true });

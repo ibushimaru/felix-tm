@@ -232,6 +232,11 @@
       .match-meta { color: #9aa0a6; font-size: 10px; margin-top: 3px; }
       .empty { text-align: center; color: #9aa0a6; padding: 16px 8px; font-size: 12px; }
       .action-bar { display: flex; gap: 6px; align-items: center; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #e8eaed; flex-shrink: 0; }
+      #auth-banner { display: none; flex-direction: column; gap: 6px; padding: 8px 10px; margin-bottom: 8px; background: #fef7e0; border: 1px solid #f9d56e; border-radius: 6px; font-size: 11px; color: #5f4400; flex-shrink: 0; }
+      #auth-banner.visible { display: flex; }
+      #auth-banner .msg { line-height: 1.4; }
+      #auth-banner button { padding: 6px 10px; border: 1px solid #1a73e8; background: #fff; color: #1a73e8; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500; align-self: flex-start; }
+      #auth-banner button:hover { background: #e8f0fe; }
       .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid #dadce0; cursor: pointer; font-size: 11px; font-weight: 500; background: #fff; color: #1a73e8; }
       .btn:hover { background: #f1f3f4; }
       .toast { padding: 6px 10px; border-radius: 4px; font-size: 11px; margin-top: 6px; background: #e6f4ea; color: #137333; white-space: pre-line; line-height: 1.4; }
@@ -327,6 +332,10 @@
         </span>
       </div>
       <div id="body">
+        <div id="auth-banner">
+          <div class="msg">Sign in to enable Auto Translate, Set, and Sheets sync.</div>
+          <button id="btn-sign-in-banner">Sign in with Google</button>
+        </div>
         <div class="action-bar">
           <button class="btn has-tip-below" id="btn-undo" data-tip="元に戻す（Auto Translate の一括挿入も 1 回で復元）" style="padding:6px 8px;color:#5f6368">↩</button>
           <span class="auto-label" id="lbl-auto">Auto:</span>
@@ -436,6 +445,27 @@
 
     // Set (register current row to TM)
     shadow.getElementById('btn-set').addEventListener('click', () => doSet());
+
+    // === Auth banner ===
+    // The in-page overlay is the user's primary surface; forcing a trip
+    // to the side panel just to sign in adds friction. The banner shows
+    // up only when no token is cached and disappears the moment the
+    // SIGN_IN handler reports success (also reacts to AUTH_CHANGED so
+    // signing out from the side panel re-shows the banner here).
+    function refreshAuthBanner() {
+      msg('AUTH_STATUS').then(resp => {
+        const banner = shadow.getElementById('auth-banner');
+        if (banner) banner.classList.toggle('visible', !(resp && resp.signedIn));
+      });
+    }
+    shadow.getElementById('btn-sign-in-banner').addEventListener('click', () => {
+      msg('SIGN_IN').then(resp => {
+        refreshAuthBanner();
+        if (resp && resp.signedIn) showToast('✓ Signed in');
+        else showToast('Sign-in cancelled');
+      });
+    });
+    refreshAuthBanner();
 
     // Mode toggle (Translate ↔ Review)
     shadow.querySelectorAll('.mode-btn').forEach(btn => {
@@ -1428,6 +1458,11 @@
         updateBadge();
         if (lastCellValue) doSearch();
       });
+    }
+    if (m2.type === 'AUTH_CHANGED') {
+      const s = getShadow();
+      const banner = s && s.getElementById('auth-banner');
+      if (banner) banner.classList.toggle('visible', !m2.signedIn);
     }
     if (m2.type === 'SETTINGS_CHANGED') {
       msg('SETTINGS_LOAD').then(data => {
