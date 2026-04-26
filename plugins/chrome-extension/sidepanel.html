@@ -33,6 +33,11 @@ input:focus { outline: none; border-color: #1a73e8; }
 .btn { padding: 8px 16px; border-radius: 4px; border: 1px solid #dadce0; cursor: pointer; font-size: 15px; font-weight: 500; background: #fff; color: #1a73e8; }
 .btn:hover { background: #f1f3f4; }
 .btn-primary { width: 100%; border-color: #1a73e8; }
+.qc-toggle { transition: background 0.1s, color 0.1s, border-color 0.1s; }
+.qc-toggle[data-on="true"] { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+.qc-toggle[data-on="true"]:hover { background: #1762c4; border-color: #1762c4; }
+.qc-toggle[data-on="false"] { background: #fff; color: #5f6368; border-color: #dadce0; }
+.qc-toggle[data-on="false"]:hover { background: #f1f3f4; }
 
 .match { background: #f8f9fa; border: 1px solid #e8eaed; border-radius: 6px; padding: 8px 10px; margin-bottom: 4px; transition: all 0.1s; }
 .match:hover { border-color: #1a73e8; background: #e8f0fe; }
@@ -155,13 +160,13 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
 <div id="tools" class="panel">
   <h3 id="h-qc">QC Check</h3>
   <p style="font-size:12px;color:#5f6368;margin-bottom:6px" id="p-qc-desc">Scan the TM for source/target issues. Click a result to view the row.</p>
-  <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px;font-size:13px;color:#5f6368">
-    <label><input type="checkbox" id="qc-numbers" checked> <span id="lbl-qc-numbers">Numbers</span></label>
-    <label><input type="checkbox" id="qc-allcaps" checked> <span id="lbl-qc-allcaps">ALL CAPS</span></label>
-    <label><input type="checkbox" id="qc-glossary" checked> <span id="lbl-qc-glossary">Glossary</span></label>
+  <div style="display:flex;gap:6px;margin-bottom:6px">
+    <button class="btn qc-toggle" id="qc-numbers" data-on="true" style="flex:1"><span id="lbl-qc-numbers">Numbers</span></button>
+    <button class="btn qc-toggle" id="qc-allcaps" data-on="true" style="flex:1"><span id="lbl-qc-allcaps">ALL CAPS</span></button>
+    <button class="btn qc-toggle" id="qc-glossary" data-on="true" style="flex:1"><span id="lbl-qc-glossary">Glossary</span></button>
   </div>
   <button class="btn btn-primary" style="width:100%;margin-bottom:6px" id="btn-run-qc">Run QC</button>
-  <div id="qc-results" style="max-height:280px;overflow:auto;font-size:13px"></div>
+  <div id="qc-results" style="max-height:65vh;overflow:auto;font-size:13px;border:1px solid #e8eaed;border-radius:4px;padding:4px"></div>
   <div style="font-size:13px;color:#9aa0a6;margin-top:4px" id="qc-summary"></div>
 
   <hr>
@@ -173,7 +178,7 @@ hr { margin: 12px 0; border: none; border-top: 1px solid #e8eaed; }
     <button class="btn" style="flex:1" id="btn-sr-find">Find</button>
     <button class="btn btn-primary" style="flex:1" id="btn-sr-replace">Replace All</button>
   </div>
-  <div id="sr-results" style="max-height:240px;overflow:auto;font-size:13px"></div>
+  <div id="sr-results" style="max-height:50vh;overflow:auto;font-size:13px;border:1px solid #e8eaed;border-radius:4px;padding:4px"></div>
   <div style="font-size:13px;color:#9aa0a6;margin-top:4px" id="sr-summary"></div>
 </div>
 

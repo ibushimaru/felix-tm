@@ -1024,45 +1024,145 @@ function jumpToTMRow(idx) {
   }
 }
 
+// Toggle-button helpers — the QC type filters are <button data-on="..">
+// rather than checkboxes, so the user gets the same visual language as
+// the Run QC primary button instead of a tiny browser checkbox.
+function toggleOn(id) { return document.getElementById(id).dataset.on === 'true'; }
+function wireQcToggle(id) {
+  const el = document.getElementById(id);
+  el.addEventListener('click', () => {
+    el.dataset.on = el.dataset.on === 'true' ? 'false' : 'true';
+  });
+}
+
+const QC_RENDER_CAP = 200;
+const QC_COLORS = {
+  number:   { bg: '#fce8e6', fg: '#d93025', label: 'NUM' },
+  allcaps:  { bg: '#fef7e0', fg: '#e8710a', label: 'CAPS' },
+  glossary: { bg: '#e8f0fe', fg: '#1a73e8', label: 'GLOSS' },
+};
+
+// Wrap every literal occurrence of any string in `needles` (case- and
+// width-insensitive via the engine's cmpLen folding) inside a <mark>.
+// Used to point at the offending span in source/target so a 9000-row
+// QC report doesn't reduce to opaque badges.
+function highlightSpans(text, needles, fg, bg) {
+  if (!text || !needles || !needles.length) return escHtml(text);
+  const escaped = needles
+    .filter(n => n && n.length)
+    .map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!escaped.length) return escHtml(text);
+  const re = new RegExp('(' + escaped.join('|') + ')', 'gi');
+  let out = '', last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    out += escHtml(text.slice(last, m.index));
+    out += '<mark style="background:' + bg + ';color:' + fg + ';padding:0 2px;border-radius:2px;font-weight:600">' + escHtml(m[0]) + '</mark>';
+    last = m.index + m[0].length;
+    if (!m[0].length) re.lastIndex++;
+  }
+  out += escHtml(text.slice(last));
+  return out;
+}
+
+function buildIssueCard(rec, recIdx, issues) {
+  const srcNeedles = [];
+  const tgtNeedles = [];
+  let srcStyle = QC_COLORS.allcaps, tgtStyle = QC_COLORS.allcaps;
+  for (const x of issues) {
+    if (x.type === 'number') {
+      // Highlight on the side where the digit actually lives — that's
+      // where the eye sees "this didn't make it across" rather than
+      // staring at a vacuum on the missing side.
+      if (x.side === 'target') { srcNeedles.push(x.value); srcStyle = QC_COLORS.number; }
+      else { tgtNeedles.push(x.value); tgtStyle = QC_COLORS.number; }
+    } else if (x.type === 'allcaps') {
+      srcNeedles.push(x.word);
+      srcStyle = QC_COLORS.allcaps;
+    } else if (x.type === 'glossary') {
+      srcNeedles.push(x.term);
+      srcStyle = QC_COLORS.glossary;
+    }
+  }
+  const tagsHtml = issues.map(x => {
+    const c = QC_COLORS[x.type] || { bg: '#f1f3f4', fg: '#5f6368', label: x.type };
+    let body;
+    if (x.type === 'number') body = '#' + x.value + (x.side === 'target' ? ' → missing' : ' → extra');
+    else if (x.type === 'allcaps') body = x.word;
+    else if (x.type === 'glossary') body = x.term + ' → ' + x.translation;
+    else body = JSON.stringify(x);
+    return '<span style="display:inline-block;background:' + c.bg + ';color:' + c.fg + ';padding:1px 6px;border-radius:10px;font-size:11px;margin-right:4px;margin-bottom:2px;font-weight:600">' + escHtml(c.label) + ': ' + escHtml(body) + '</span>';
+  }).join('');
+  const div = document.createElement('div');
+  div.className = 'match';
+  div.style.cursor = 'pointer';
+  div.dataset.tmidx = String(recIdx);
+  div.innerHTML =
+    '<div style="margin-bottom:4px">' + tagsHtml + '</div>' +
+    '<div class="match-source" style="line-height:1.5">' + highlightSpans(rec.source || '', srcNeedles, srcStyle.fg, srcStyle.bg) + '</div>' +
+    '<div class="match-target" style="line-height:1.5">' + highlightSpans(rec.target || '', tgtNeedles, tgtStyle.fg, tgtStyle.bg) + '</div>';
+  return div;
+}
+
+let _qcDelegationWired = false;
 function runQC() {
   const opts = {
-    numbers: document.getElementById('qc-numbers').checked,
-    allCaps: document.getElementById('qc-allcaps').checked,
-    glossary: document.getElementById('qc-glossary').checked,
+    numbers: toggleOn('qc-numbers'),
+    allCaps: toggleOn('qc-allcaps'),
+    glossary: toggleOn('qc-glossary'),
   };
   const results = document.getElementById('qc-results');
   const summary = document.getElementById('qc-summary');
   results.innerHTML = '';
+  summary.textContent = '';
+
+  // First pass: collect, so we can cap render and report accurate totals.
+  const flagged = [];
   let totalIssues = 0;
-  let rowsWithIssues = 0;
   for (let i = 0; i < tmData.length; i++) {
     const rec = tmData[i];
     const issues = FelixEngine.qcCheck(rec, glossaryData, opts);
     if (!issues.length) continue;
-    rowsWithIssues++;
+    flagged.push({ recIdx: i, rec, issues });
     totalIssues += issues.length;
-    const div = document.createElement('div');
-    div.className = 'match';
-    div.style.cursor = 'pointer';
-    div.innerHTML =
-      '<div class="match-source">' + escHtml(rec.source) + '</div>' +
-      '<div class="match-target">' + escHtml(rec.target) + '</div>' +
-      '<div style="margin-top:4px;font-size:12px">' +
-      issues.map(x => {
-        if (x.type === 'number') return '<span style="color:#d93025">[#' + escHtml(x.value) + ' ' + (x.side === 'target' ? 'missing in target' : 'extra in target') + ']</span>';
-        if (x.type === 'allcaps') return '<span style="color:#e8710a">[CAPS:' + escHtml(x.word) + ']</span>';
-        if (x.type === 'glossary') return '<span style="color:#1a73e8">[GLOSS:' + escHtml(x.term) + '→' + escHtml(x.translation) + ']</span>';
-        return '<span>[' + escHtml(x.type) + ']</span>';
-      }).join(' ') +
-      '</div>';
-    div.addEventListener('click', () => jumpToTMRow(i));
-    results.appendChild(div);
   }
-  if (totalIssues === 0) {
+
+  if (!flagged.length) {
     summary.textContent = t('qcClean');
-  } else {
-    summary.textContent = t('qcCount').replace('{n}', totalIssues).replace('{rows}', rowsWithIssues);
+    return;
   }
+
+  // Cap visible rows. 9000+ DOM nodes makes the panel unusable and the
+  // user can't scan that many anyway — they'll narrow with toggles or
+  // by re-importing a smaller TM subset.
+  const frag = document.createDocumentFragment();
+  const visible = Math.min(flagged.length, QC_RENDER_CAP);
+  for (let k = 0; k < visible; k++) {
+    const f = flagged[k];
+    frag.appendChild(buildIssueCard(f.rec, f.recIdx, f.issues));
+  }
+  if (flagged.length > visible) {
+    const more = document.createElement('div');
+    more.style.cssText = 'text-align:center;color:#9aa0a6;padding:8px;font-size:12px';
+    more.textContent = '… +' + (flagged.length - visible) + ' more rows hidden';
+    frag.appendChild(more);
+  }
+  results.appendChild(frag);
+
+  // Single delegated click handler — wired once, survives re-renders.
+  if (!_qcDelegationWired) {
+    results.addEventListener('click', e => {
+      const card = e.target.closest('[data-tmidx]');
+      if (!card) return;
+      const idx = parseInt(card.dataset.tmidx, 10);
+      if (Number.isFinite(idx)) jumpToTMRow(idx);
+    });
+    _qcDelegationWired = true;
+  }
+
+  summary.textContent = t('qcCount')
+    .replace('{n}', totalIssues)
+    .replace('{rows}', flagged.length)
+    + (flagged.length > visible ? '  ·  rendered ' + visible : '');
 }
 
 function srFind() {
@@ -1105,6 +1205,9 @@ function srReplaceAll() {
 document.getElementById('btn-run-qc').addEventListener('click', runQC);
 document.getElementById('btn-sr-find').addEventListener('click', srFind);
 document.getElementById('btn-sr-replace').addEventListener('click', srReplaceAll);
+wireQcToggle('qc-numbers');
+wireQcToggle('qc-allcaps');
+wireQcToggle('qc-glossary');
 
 // Init
 init();
