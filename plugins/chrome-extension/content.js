@@ -846,18 +846,32 @@
           }
         }
 
-        // Layout priority (for non-reverse non-100%): the insert preview is
-        // the single most important thing the translator needs to see —
-        // "what will be in the target cell if I click this?" — so it sits
-        // at the top. The TM entry's own source and target go below as a
-        // reference panel, separated by a hairline.
-        const showRef = !isReverse && pct < 100 && memSrcHtml;
+        // Layout: insert preview on top, optional reference block below.
+        // Reference block uses .match-ref everywhere (dashed separator,
+        // gray padding, click-excluded for select/copy) so Source and
+        // Reverse modes look the same.
+        //   Source mode  → top: TM.target placed, ref: TM.source vs query
+        //   Reverse mode → top: TM.source plain,  ref: TM.target vs query
+        // Both modes hide the reference at 100% — at that point there is
+        // no diff to show.
+        const showRef = pct < 100 && (isReverse ? !!srcHtml : !!memSrcHtml);
         // TM.source in the reference block gets uncovered coloring only for
         // the top match (where topResolved was computed). Subsequent cards
         // stay plain since placement is only applied to the top result.
-        const refSrcHtml = (showRef && i === 0 && topUncovered.length)
+        const refSrcHtml = (showRef && !isReverse && i === 0 && topUncovered.length)
           ? FelixEngine.markUncoveredHtml(m.source, topUncovered, 's')
           : esc(m.source);
+        let refBlock = '';
+        if (showRef) {
+          if (isReverse) {
+            refBlock = `<div class="match-ref"><div class="ref-row">${srcHtml}</div></div>`;
+          } else {
+            refBlock = `<div class="match-ref">
+              <div class="ref-row">${refSrcHtml}</div>
+              ${placed ? `<div class="ref-row">${esc(m.target)}</div>` : ''}
+            </div>`;
+          }
+        }
         return `<div class="match${placed ? ' match-placed' : ''}" data-idx="${i}" data-target="${escA(insertTarget)}" data-tm-idx="${tmIdx}">
           <span class="score ${cls}">${pct}%</span>
           <span style="float:right;display:flex;align-items:center;gap:4px">
@@ -865,11 +879,7 @@
             <span class="btn-del-tm" data-del-idx="${tmIdx}" title="Delete from TM" style="font-size:11px;color:#dadce0;cursor:pointer">✕</span>
           </span>
           <div class="match-target">${tgtDisplay}</div>
-          ${showRef ? `<div class="match-ref">
-            <div class="ref-row">${refSrcHtml}</div>
-            ${placed ? `<div class="ref-row">${esc(m.target)}</div>` : ''}
-          </div>` : ''}
-          ${isReverse ? `<div class="match-source">${srcHtml}</div>` : ''}
+          ${refBlock}
           ${meta ? `<div class="match-meta">${meta}</div>` : ''}
         </div>`;
       }).join('');
