@@ -61,6 +61,10 @@
       used: 'used', registered: 'Registered!', alreadyExists: 'Already exists (+1)',
       srcEmpty: 'Source cell is empty', tgtEmpty: 'Target cell is empty',
       autoFuzzy: '↓ Fuzzy', autoRange: '↓ Range',
+      signInBanner: 'Sign in to enable Auto Translate, Set, and Sheets sync.',
+      signInButton: 'Sign in with Google',
+      signedInToast: '✓ Signed in',
+      signInCancelled: 'Sign-in cancelled',
     },
     ja: {
       activeCell: 'アクティブセル', selectCell: 'セルを選択するとTM検索します',
@@ -68,6 +72,10 @@
       used: '使用', registered: '登録しました', alreadyExists: '既に存在 (+1)',
       srcEmpty: '原文セルが空です', tgtEmpty: '訳文セルが空です',
       autoFuzzy: '↓ Fuzzy', autoRange: '↓ 範囲',
+      signInBanner: 'Auto Translate・Set・シート同期を使うにはサインインしてください。',
+      signInButton: 'Google でサインイン',
+      signedInToast: '✓ サインインしました',
+      signInCancelled: 'サインインをキャンセルしました',
     },
   };
   function t(key) { return (I18N[settings.lang] && I18N[settings.lang][key]) || I18N.en[key] || key; }
@@ -460,8 +468,8 @@
     shadow.getElementById('btn-sign-in-banner').addEventListener('click', () => {
       msg('SIGN_IN').then(resp => {
         refreshAuthBanner();
-        if (resp && resp.signedIn) showToast('✓ Signed in');
-        else showToast('Sign-in cancelled');
+        if (resp && resp.signedIn) showToast(t('signedInToast'));
+        else showToast(t('signInCancelled'));
       });
     });
     refreshAuthBanner();
@@ -523,6 +531,9 @@
     set('lbl-empty', t('selectCell'));
     set('btn-auto-fuzzy', t('autoFuzzy'));
     set('btn-auto-range', t('autoRange'));
+    set('btn-sign-in-banner', t('signInButton'));
+    const bannerMsg = s.querySelector('#auth-banner .msg');
+    if (bannerMsg) bannerMsg.textContent = t('signInBanner');
   }
 
   function getShadow() {

@@ -56,6 +56,10 @@ const I18N = {
     srReplacedN: 'Replaced in {n} record(s)',
     danger: 'Danger Zone', clearTM: 'Clear TM', clearGloss: 'Clear Glossary',
     confirmClear: 'Delete all entries?', cancel: 'Cancel',
+    signIn: 'Sign in with Google', signOut: 'Sign out',
+    signedInStatus: '✓ Signed in', notSignedIn: 'Not signed in',
+    signedInToast: 'Signed in', signOutToast: 'Signed out',
+    signInCancelled: 'Sign-in cancelled',
   },
   ja: {
     tm: 'TM', glossary: '用語集', settings: '設定',
@@ -98,6 +102,10 @@ const I18N = {
     srReplacedN: '{n} 件を置換',
     danger: '危険な操作', clearTM: 'TMを全削除', clearGloss: '用語集を全削除',
     confirmClear: '全エントリを削除しますか？', cancel: 'キャンセル',
+    signIn: 'Google でサインイン', signOut: 'サインアウト',
+    signedInStatus: '✓ サインイン済み', notSignedIn: '未サインイン',
+    signedInToast: 'サインインしました', signOutToast: 'サインアウトしました',
+    signInCancelled: 'サインインをキャンセルしました',
   },
 };
 
@@ -166,6 +174,11 @@ function applyLang() {
   set('h-danger', t('danger'));
   set('btn-clear-tm', t('clearTM'));
   set('btn-clear-gloss', t('clearGloss'));
+  // Auth
+  set('btn-sign-in', t('signIn'));
+  set('btn-sign-out', t('signOut'));
+  // Status text is set by refreshAuthUI; re-call so language change re-renders.
+  if (typeof refreshAuthUI === 'function') refreshAuthUI();
 }
 
 // ============================================================
@@ -1307,12 +1320,12 @@ function refreshAuthUI() {
   const outBtn = document.getElementById('btn-sign-out');
   chrome.runtime.sendMessage({ type: 'AUTH_STATUS' }, (resp) => {
     if (resp && resp.signedIn) {
-      status.textContent = '✓ Signed in';
+      status.textContent = t('signedInStatus');
       status.style.color = '#137333';
       inBtn.style.display = 'none';
       outBtn.style.display = '';
     } else {
-      status.textContent = 'Not signed in';
+      status.textContent = t('notSignedIn');
       status.style.color = '#5f6368';
       inBtn.style.display = '';
       outBtn.style.display = 'none';
@@ -1323,14 +1336,14 @@ function refreshAuthUI() {
 document.getElementById('btn-sign-in').addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'SIGN_IN' }, (resp) => {
     refreshAuthUI();
-    if (resp && resp.signedIn) showToast('Signed in');
-    else showToast('Sign-in cancelled');
+    if (resp && resp.signedIn) showToast(t('signedInToast'));
+    else showToast(t('signInCancelled'));
   });
 });
 document.getElementById('btn-sign-out').addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'SIGN_OUT' }, () => {
     refreshAuthUI();
-    showToast('Signed out');
+    showToast(t('signOutToast'));
   });
 });
 
