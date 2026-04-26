@@ -42,7 +42,10 @@ const I18N = {
     qcNumbers: 'Numbers', qcAllCaps: 'ALL CAPS', qcGlossary: 'Glossary',
     runQc: 'Run QC',
     qcClean: 'No issues found.',
-    qcCount: '{n} issue(s) across {rows} row(s)',
+    qcCount: '{rows} / {total} rows flagged',
+    qcScanning: 'Scanning… {done} / {total} rows  ·  flagged {flagged}',
+    qcRendering: 'Rendering results…',
+    qcRendered: 'rendered {n}',
     sr: 'Search & Replace',
     srDesc: 'Tags: source: trans: context: created-by: regex: <field>:* (replace whole field).',
     srFromPh: 'From — text or source:foo / regex:bar / source:*',
@@ -81,7 +84,10 @@ const I18N = {
     qcNumbers: '数値', qcAllCaps: '全大文字', qcGlossary: '用語',
     runQc: 'QC実行',
     qcClean: '問題は見つかりませんでした。',
-    qcCount: '{rows}行 / {n}件の問題',
+    qcCount: '問題あり {rows} / {total} 行',
+    qcScanning: 'スキャン中… {done} / {total} 行  ·  問題 {flagged} 行',
+    qcRendering: '結果を描画中…',
+    qcRendered: '描画 {n} 行',
     sr: '検索 & 置換',
     srDesc: 'タグ: source: trans: context: created-by: regex: <field>:* （フィールド全体置換）',
     srFromPh: '検索 — テキスト or source:foo / regex:bar / source:*',
@@ -1168,11 +1174,14 @@ async function runQC() {
         flagged.push({ recIdx: i, rec, issues });
         totalIssues += issues.length;
       }
-      // Update progress and yield. The text shows the running issue
-      // count too so the user gets two signals at once.
+      // Progress text uses row counts only — same unit on both sides
+      // of the slash, no mixing rows with issues.
       const pct = Math.round((end / total) * 100);
       progressBar.style.width = pct + '%';
-      progressText.textContent = `スキャン中… ${end} / ${total}` + (flagged.length ? `  (${flagged.length}行 問題あり)` : '');
+      progressText.textContent = t('qcScanning')
+        .replace('{done}', end)
+        .replace('{total}', total)
+        .replace('{flagged}', flagged.length);
       await _yield();
     }
 
@@ -1182,7 +1191,7 @@ async function runQC() {
     }
 
     // Cap visible rows — 9000+ DOM nodes makes the panel unusable.
-    progressText.textContent = '結果を描画中…';
+    progressText.textContent = t('qcRendering');
     await _yield();
 
     const frag = document.createDocumentFragment();
@@ -1200,9 +1209,9 @@ async function runQC() {
     results.appendChild(frag);
 
     summary.textContent = t('qcCount')
-      .replace('{n}', totalIssues)
-      .replace('{rows}', flagged.length)
-      + (flagged.length > visible ? '  ·  rendered ' + visible : '');
+        .replace('{rows}', flagged.length)
+        .replace('{total}', total)
+      + (flagged.length > visible ? '  ·  ' + t('qcRendered').replace('{n}', visible) : '');
   } finally {
     progress.style.display = 'none';
     btn.disabled = false;
