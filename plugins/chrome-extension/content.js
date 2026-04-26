@@ -894,9 +894,26 @@
         div.addEventListener('mouseleave', () => {
           div.classList.remove('hover-left', 'hover-right');
         });
+        // Track press position so a drag-to-select doesn't get treated
+        // as a click-to-insert. The card click is the primary insert UX
+        // (left half = ↓ insert, right half = → insert), but the placed
+        // target preview is also useful as a thing to copy text from —
+        // and a copy starts with a drag-select, which without this check
+        // would land in the click handler and move the cursor away.
+        let downX = 0, downY = 0;
+        div.addEventListener('mousedown', (e) => {
+          downX = e.clientX; downY = e.clientY;
+        });
         div.addEventListener('click', (e) => {
           if (e.target.classList.contains('btn-del-tm')) return;
           if (inRef(e.target)) return;
+          // Drag distance > a few pixels → treat as a selection gesture.
+          if (Math.abs(e.clientX - downX) > 3 || Math.abs(e.clientY - downY) > 3) return;
+          // Even a stationary click can complete a prior selection (the
+          // user double-clicked a word, then single-clicked to confirm).
+          // If a selection survived in either the shadow root or the
+          // window, leave it alone so the user can copy it.
+          if (getShadowSelectionText(s)) return;
           const rect = div.getBoundingClientRect();
           const isRight = (e.clientX - rect.left) > rect.width / 2;
           div.classList.add('inserted');
