@@ -7,12 +7,13 @@
  *   glossary         — { id (auto), term, translation, notes, cmp }
  *   rules            — { id (auto), source_pattern, target_template, enabled }
  *   settings         — { key, value }
- *   authorized_files — { spreadsheetId, name, authorizedAt }   (v3+)
+ *   authorized_files — { spreadsheetId, name, authorizedAt }
  *
- * v3 added authorized_files: per-spreadsheet OAuth grants from the
- * Google Picker flow. Felix only allows Sheets API calls against
- * spreadsheets the user explicitly picked, satisfying the drive.file
- * scope's "files the app has been granted access to" semantics.
+ * v3 introduced authorized_files for the short-lived drive.file +
+ * Google Picker authorization model. That model was rolled back when
+ * MV3 turned out to forbid the remote scripts Picker requires; the
+ * store is kept (no destructive downgrade) but is no longer read or
+ * written by the runtime.
  */
 
 const DB_NAME = 'FelixTM';

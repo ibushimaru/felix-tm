@@ -712,12 +712,6 @@ async function readSheetRange(srcId, tgtId) {
     sendBg('SHEETS_API_READ_BATCH', { spreadsheetId: info.spreadsheetId, range: `${prefix}${tgtRangeRaw}` }),
   ]);
 
-  if ((srcResp && srcResp.error === 'NOT_AUTHORIZED') || (tgtResp && tgtResp.error === 'NOT_AUTHORIZED')) {
-    showToast('Felix doesn’t have access to this spreadsheet yet. Opening Picker…');
-    sendBg('PICKER_AUTHORIZE_FILE', { spreadsheetId: info.spreadsheetId });
-    return null;
-  }
-
   return { srcValues: srcResp?.values || [], tgtValues: tgtResp?.values || [] };
 }
 
@@ -1330,35 +1324,6 @@ function refreshAuthUI() {
   });
 }
 
-function refreshConnectedSheets() {
-  const list = document.getElementById('connected-list');
-  chrome.runtime.sendMessage({ type: 'AUTHORIZED_FILES_LIST' }, (resp) => {
-    const files = (resp && resp.files) || [];
-    if (!files.length) {
-      list.innerHTML = '<div style="color:#9aa0a6;text-align:center;padding:8px;font-size:12px">No spreadsheets authorized yet.</div>';
-      return;
-    }
-    list.innerHTML = files.map(f => {
-      const name = (f.name || f.spreadsheetId).replace(/[<>&"]/g, c =>
-        ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-      const id = f.spreadsheetId.replace(/"/g, '&quot;');
-      return ''
-        + '<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;border-bottom:1px solid #f1f3f4">'
-        + '  <div style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + id + '">' + name + '</div>'
-        + '  <button class="btn" data-revoke="' + id + '" style="padding:2px 8px;font-size:11px">Revoke</button>'
-        + '</div>';
-    }).join('');
-    list.querySelectorAll('[data-revoke]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const ssId = btn.getAttribute('data-revoke');
-        chrome.runtime.sendMessage({ type: 'AUTHORIZED_FILE_FORGET', data: { spreadsheetId: ssId } }, () => {
-          refreshConnectedSheets();
-        });
-      });
-    });
-  });
-}
-
 document.getElementById('btn-sign-in').addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'SIGN_IN' }, (resp) => {
     refreshAuthUI();
@@ -1369,24 +1334,14 @@ document.getElementById('btn-sign-in').addEventListener('click', () => {
 document.getElementById('btn-sign-out').addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'SIGN_OUT' }, () => {
     refreshAuthUI();
-    refreshConnectedSheets();
     showToast('Signed out');
   });
 });
-document.getElementById('btn-pick-sheet').addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'PICKER_AUTHORIZE_FILE', data: {} });
-});
 
-// Refresh Connected sheets whenever auth state changes (Picker grant,
-// sign-out, etc.) so the list stays accurate without a panel reload.
 chrome.runtime.onMessage.addListener((m) => {
-  if (m && m.type === 'AUTH_CHANGED') {
-    refreshAuthUI();
-    refreshConnectedSheets();
-  }
+  if (m && m.type === 'AUTH_CHANGED') refreshAuthUI();
 });
 
 // Init
 init();
 refreshAuthUI();
-refreshConnectedSheets();
