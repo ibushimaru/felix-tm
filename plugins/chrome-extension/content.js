@@ -1577,7 +1577,14 @@
         s.getElementById('cell-ref').textContent = ref ? `(${ref})` : '';
       }
 
-      if (value) {
+      // Outside the source/target pair, the previous results have nothing
+      // to do with where the cursor is now — replace them with the
+      // placeholder so a stray click on a metadata column doesn't leave
+      // stale matches sitting in the panel.
+      if (!isSourceColumn() && !isTargetColumn()) {
+        const rs = s.getElementById('results');
+        if (rs) rs.innerHTML = `<div class="empty">${t('selectCell')}</div>`;
+      } else if (value) {
         doSearch(value);
       } else if (isTargetColumn()) {
         // Empty target cell: search using the row's source. Cache first,
