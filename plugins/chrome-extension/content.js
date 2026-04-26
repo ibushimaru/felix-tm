@@ -86,6 +86,7 @@
       emptyRange: 'Empty range',
       readingSheet: 'Reading sheet…',
       loadingSource: 'Reading source row…',
+      emptySourceRow: 'Source row is empty',
       copiedPrefix: 'Copied: ',
       readSourceFailed: 'Could not read source row',
       undoCellsTpl: 'Undo: {n} cells',
@@ -130,6 +131,7 @@
       emptyRange: '範囲が空です',
       readingSheet: 'シートを読み込み中…',
       loadingSource: '原文行を読み込み中…',
+      emptySourceRow: '原文行が空です',
       copiedPrefix: 'コピー: ',
       readSourceFailed: '原文行を読み込めませんでした',
       undoCellsTpl: '元に戻す: {n} セル',
@@ -680,9 +682,18 @@
       if (!ssId) return;
       const srcCol = settings.sourceCol || 'A';
       const range = sheetRef(`${srcCol}${rowNum}`);
-      const resp = await msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range });
-      const val = resp && resp.value ? resp.value : '';
-      if (val) _sourceCache[rowNum] = val;
+      let val = '';
+      try {
+        const resp = await msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range });
+        val = (resp && resp.value) ? resp.value : '';
+      } catch (_) {
+        val = '';
+      }
+      // Always cache, even when empty, so a fresh selection on the same
+      // row goes straight to the "empty source row" message instead of
+      // re-fetching forever. Use `in _sourceCache` to distinguish "we
+      // tried and got nothing" from "we never tried".
+      _sourceCache[rowNum] = val;
       // Re-run only if the user is still on the row that triggered this
       // fetch (otherwise the result would clobber a more recent cell).
       const curRef = getCellRef();
@@ -785,9 +796,18 @@
         const ref = getCellRef();
         const rowMatch = ref ? ref.match(/(\d+)/i) : null;
         const rowNum = rowMatch ? rowMatch[1] : null;
-        const cachedSource = rowNum ? _sourceCache[rowNum] : null;
-        if (cachedSource) {
-          searchQuery = cachedSource;
+        if (rowNum && rowNum in _sourceCache) {
+          const cached = _sourceCache[rowNum];
+          if (cached) {
+            searchQuery = cached;
+          } else {
+            // Already fetched and the source row is genuinely empty —
+            // don't refetch, just say so (otherwise the panel sits on
+            // "Reading source row…" forever).
+            const rs = s.getElementById('results');
+            if (rs) rs.innerHTML = `<div class="empty">${t('emptySourceRow')}</div>`;
+            return;
+          }
         } else if (rowNum) {
           fetchSourceForRow(rowNum);
           const rs = s.getElementById('results');
@@ -1526,19 +1546,22 @@
         doSearch(value);
       } else if (isTargetColumn()) {
         // Empty target cell: search using the row's source. Cache first,
-        // then fall back to a Sheets read for the row (same fallback as
-        // doSearch's onTarget branch).
+        // then fall back to a Sheets read for the row.
         const refMatch2 = ref ? ref.match(/(\d+)/i) : null;
         const rowNum2 = refMatch2 ? refMatch2[1] : null;
-        const cached = rowNum2 ? _sourceCache[rowNum2] : null;
-        if (cached) {
-          doSearch(cached);
+        if (rowNum2 && rowNum2 in _sourceCache) {
+          const cached = _sourceCache[rowNum2];
+          if (cached) {
+            doSearch(cached);
+          } else {
+            const rs = s.getElementById('results');
+            if (rs) rs.innerHTML = `<div class="empty">${t('emptySourceRow')}</div>`;
+          }
         } else if (rowNum2) {
           fetchSourceForRow(rowNum2);
           const rs = s.getElementById('results');
           if (rs) rs.innerHTML = `<div class="empty">${t('loadingSource')}</div>`;
         } else {
-          // No row info, clear results
           const rs = s.getElementById('results');
           if (rs) rs.innerHTML = `<div class="empty">${t('selectCell')}</div>`;
         }
