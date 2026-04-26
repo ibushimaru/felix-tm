@@ -40,6 +40,22 @@ input:focus { outline: none; border-color: #1a73e8; }
 .qc-toggle[data-on="false"] { color: #9aa0a6; border-color: #dadce0; }
 .qc-toggle[data-on="false"]:hover { background: #f8f9fa; color: #5f6368; }
 
+/* QC issue spans — colored marker per issue type with hover tooltip.
+   Background tints stay light so the surrounding text remains readable;
+   the tooltip on hover carries the actual diagnostic message.        */
+.qc-mark { padding: 0 2px; border-radius: 2px; cursor: help; position: relative; }
+.qc-mark[data-type="number"] { background: #fce8e6; color: #d93025; font-weight: 600; }
+.qc-mark[data-type="allcaps"] { background: #fef7e0; color: #e8710a; font-weight: 600; }
+.qc-mark[data-type="glossary"] { text-decoration: underline; text-decoration-color: #1a73e8; text-decoration-thickness: 2px; text-underline-offset: 2px; color: #1a73e8; }
+.qc-mark::after {
+  content: attr(data-tip); display: none; position: absolute;
+  bottom: 100%; left: 0; transform: translateY(-4px);
+  background: #202124; color: #fff; padding: 4px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 400; white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 10; pointer-events: none;
+}
+.qc-mark:hover::after { display: block; }
+
 .match { background: #f8f9fa; border: 1px solid #e8eaed; border-radius: 6px; padding: 8px 10px; margin-bottom: 4px; transition: all 0.1s; }
 .match:hover { border-color: #1a73e8; background: #e8f0fe; }
 .match-source { color: #5f6368; font-size: 14px; margin-top: 2px; word-break: break-all; }

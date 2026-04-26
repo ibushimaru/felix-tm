@@ -1036,74 +1036,94 @@ function wireQcToggle(id) {
 }
 
 const QC_RENDER_CAP = 200;
-const QC_COLORS = {
-  number:   { bg: '#fce8e6', fg: '#d93025', label: 'NUM' },
-  allcaps:  { bg: '#fef7e0', fg: '#e8710a', label: 'CAPS' },
-  glossary: { bg: '#e8f0fe', fg: '#1a73e8', label: 'GLOSS' },
-};
 
-// Wrap every literal occurrence of any string in `needles` (case- and
-// width-insensitive via the engine's cmpLen folding) inside a <mark>.
-// Used to point at the offending span in source/target so a 9000-row
-// QC report doesn't reduce to opaque badges.
-function highlightSpans(text, needles, fg, bg) {
-  if (!text || !needles || !needles.length) return escHtml(text);
-  const escaped = needles
-    .filter(n => n && n.length)
-    .map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  if (!escaped.length) return escHtml(text);
-  const re = new RegExp('(' + escaped.join('|') + ')', 'gi');
-  let out = '', last = 0, m;
-  while ((m = re.exec(text)) !== null) {
-    out += escHtml(text.slice(last, m.index));
-    out += '<mark style="background:' + bg + ';color:' + fg + ';padding:0 2px;border-radius:2px;font-weight:600">' + escHtml(m[0]) + '</mark>';
-    last = m.index + m[0].length;
-    if (!m[0].length) re.lastIndex++;
+// Build a per-side list of {start, end, type, tip} ranges for an
+// issue list. cmpLen-folding ensures full-width / case variants in
+// source/target still find the literal needle from the engine.
+function _findAllOccurrences(text, needle) {
+  if (!text || !needle) return [];
+  const folded = FelixEngine.cmpLen(text);
+  const target = FelixEngine.cmpLen(needle);
+  const out = [];
+  let pos = 0;
+  while (true) {
+    const idx = folded.indexOf(target, pos);
+    if (idx === -1) break;
+    out.push({ start: idx, end: idx + needle.length });
+    pos = idx + Math.max(1, needle.length);
   }
-  out += escHtml(text.slice(last));
+  return out;
+}
+
+function _collectRanges(text, issues, side) {
+  const ranges = [];
+  for (const x of issues) {
+    if (x.type === 'number') {
+      // Highlight on the side where the digit actually lives — that's
+      // where "this didn't make it across" reads naturally. The other
+      // side is where the gap is (no span to highlight).
+      const wantSide = x.side === 'target' ? 'source' : 'target';
+      if (side !== wantSide) continue;
+      const tip = x.side === 'target'
+        ? `数値 ${x.value} が訳文に欠落`
+        : `数値 ${x.value} が原文に無いのに訳文にある`;
+      for (const o of _findAllOccurrences(text, x.value)) {
+        ranges.push({ ...o, type: 'number', tip });
+      }
+    } else if (x.type === 'allcaps') {
+      // CAPS issue is per definition: source has the word, target lacks
+      // it — so we mark it on source.
+      if (side !== 'source') continue;
+      for (const o of _findAllOccurrences(text, x.word)) {
+        ranges.push({ ...o, type: 'allcaps', tip: `CAPS: 「${x.word}」 を訳文にもそのまま残す想定` });
+      }
+    } else if (x.type === 'glossary') {
+      // Glossary mark on source-side term, tooltip carries the
+      // expected translation that isn't appearing in target.
+      if (side !== 'source') continue;
+      for (const o of _findAllOccurrences(text, x.term)) {
+        ranges.push({ ...o, type: 'glossary', tip: `用語: ${x.term} → ${x.translation}（訳文に欠落）` });
+      }
+    }
+  }
+  // Sort and drop overlaps (keep the earlier-starting one — usually
+  // glossary terms are longer than number/caps so this is fine).
+  ranges.sort((a, b) => a.start - b.start || b.end - a.end);
+  const kept = [];
+  let lastEnd = 0;
+  for (const r of ranges) {
+    if (r.start < lastEnd) continue;
+    kept.push(r);
+    lastEnd = r.end;
+  }
+  return kept;
+}
+
+function _renderWithRanges(text, ranges) {
+  if (!text) return '';
+  if (!ranges.length) return escHtml(text);
+  let out = '', cursor = 0;
+  for (const r of ranges) {
+    if (r.start > cursor) out += escHtml(text.slice(cursor, r.start));
+    out += '<span class="qc-mark" data-type="' + r.type + '" data-tip="' + escHtml(r.tip) + '">' + escHtml(text.slice(r.start, r.end)) + '</span>';
+    cursor = r.end;
+  }
+  if (cursor < text.length) out += escHtml(text.slice(cursor));
   return out;
 }
 
 function buildIssueCard(rec, recIdx, issues) {
-  const srcNeedles = [];
-  const tgtNeedles = [];
-  let srcStyle = QC_COLORS.allcaps, tgtStyle = QC_COLORS.allcaps;
-  for (const x of issues) {
-    if (x.type === 'number') {
-      // Highlight on the side where the digit actually lives — that's
-      // where the eye sees "this didn't make it across" rather than
-      // staring at a vacuum on the missing side.
-      if (x.side === 'target') { srcNeedles.push(x.value); srcStyle = QC_COLORS.number; }
-      else { tgtNeedles.push(x.value); tgtStyle = QC_COLORS.number; }
-    } else if (x.type === 'allcaps') {
-      srcNeedles.push(x.word);
-      srcStyle = QC_COLORS.allcaps;
-    } else if (x.type === 'glossary') {
-      srcNeedles.push(x.term);
-      srcStyle = QC_COLORS.glossary;
-    }
-  }
-  const tagsHtml = issues.map(x => {
-    const c = QC_COLORS[x.type] || { bg: '#f1f3f4', fg: '#5f6368', label: x.type };
-    let body;
-    if (x.type === 'number') body = '#' + x.value + (x.side === 'target' ? ' → missing' : ' → extra');
-    else if (x.type === 'allcaps') body = x.word;
-    else if (x.type === 'glossary') body = x.term + ' → ' + x.translation;
-    else body = JSON.stringify(x);
-    return '<span style="display:inline-block;background:' + c.bg + ';color:' + c.fg + ';padding:1px 6px;border-radius:10px;font-size:11px;margin-right:4px;margin-bottom:2px;font-weight:600">' + escHtml(c.label) + ': ' + escHtml(body) + '</span>';
-  }).join('');
+  const srcRanges = _collectRanges(rec.source || '', issues, 'source');
+  const tgtRanges = _collectRanges(rec.target || '', issues, 'target');
   const div = document.createElement('div');
   div.className = 'match';
-  div.style.cursor = 'pointer';
   div.dataset.tmidx = String(recIdx);
   div.innerHTML =
-    '<div style="margin-bottom:4px">' + tagsHtml + '</div>' +
-    '<div class="match-source" style="line-height:1.5">' + highlightSpans(rec.source || '', srcNeedles, srcStyle.fg, srcStyle.bg) + '</div>' +
-    '<div class="match-target" style="line-height:1.5">' + highlightSpans(rec.target || '', tgtNeedles, tgtStyle.fg, tgtStyle.bg) + '</div>';
+    '<div class="match-source" style="line-height:1.6">' + _renderWithRanges(rec.source || '', srcRanges) + '</div>' +
+    '<div class="match-target" style="line-height:1.6">' + _renderWithRanges(rec.target || '', tgtRanges) + '</div>';
   return div;
 }
 
-let _qcDelegationWired = false;
 function runQC() {
   const opts = {
     numbers: toggleOn('qc-numbers'),
@@ -1147,17 +1167,6 @@ function runQC() {
     frag.appendChild(more);
   }
   results.appendChild(frag);
-
-  // Single delegated click handler — wired once, survives re-renders.
-  if (!_qcDelegationWired) {
-    results.addEventListener('click', e => {
-      const card = e.target.closest('[data-tmidx]');
-      if (!card) return;
-      const idx = parseInt(card.dataset.tmidx, 10);
-      if (Number.isFinite(idx)) jumpToTMRow(idx);
-    });
-    _qcDelegationWired = true;
-  }
 
   summary.textContent = t('qcCount')
     .replace('{n}', totalIssues)
