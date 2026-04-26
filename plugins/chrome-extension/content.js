@@ -65,6 +65,37 @@
       signInButton: 'Sign in with Google',
       signedInToast: '✓ Signed in',
       signInCancelled: 'Sign-in cancelled',
+      // Tooltips
+      tipManage: 'Side panel (TM / Glossary / Rules)',
+      tipUndo: 'Undo (also restores an Auto Translate batch in one step)',
+      tipAutoFuzzy: 'Translate downward from the active row. Continues while exact matches plus numbers/glossary fill the row; stops on the first uncovered diff. Overwrites existing target.',
+      tipAutoRange: 'Translate empty cells in the selection (exact matches only). Does not overwrite existing target.',
+      tipSet: "Register the active row's source + target to TM (⌘⇧U)",
+      tipModeTranslate: 'Look up target translations from source',
+      tipModeReview: 'Look up source from target (reverse / check)',
+      tipMinScore: 'Minimum match score for candidates',
+      tipConcordance: 'Substring search inside the TM',
+      tipRegex: 'Toggle regex mode',
+      // Concordance placeholder
+      phConcordance: 'Concordance',
+      // Toasts
+      nothingToUndo: 'Nothing to undo',
+      noTmLoaded: 'No TM loaded',
+      selectCellFirst: 'Select a cell first',
+      selectRangeFirst: 'Select a range first',
+      emptyRange: 'Empty range',
+      readingSheet: 'Reading sheet…',
+      copiedPrefix: 'Copied: ',
+      undoCellsTpl: 'Undo: {n} cells',
+      undoRangePrefix: 'Undo: ',
+      unsupportedSelection: 'Unsupported selection: {ref}',
+      writingCellsTpl: 'Writing {n} cells…',
+      errorPrefix: 'Error: ',
+      searchPrefix: 'Search: ',
+      toGlossary: 'To glossary: ',
+      toTerm: 'To term: ',
+      toTranslation: 'To translation: ',
+      invalidRegex: 'Invalid regex',
     },
     ja: {
       activeCell: 'アクティブセル', selectCell: 'セルを選択するとTM検索します',
@@ -76,6 +107,37 @@
       signInButton: 'Google でサインイン',
       signedInToast: '✓ サインインしました',
       signInCancelled: 'サインインをキャンセルしました',
+      // Tooltips
+      tipManage: 'サイドパネル（TM・用語集・ルール管理）',
+      tipUndo: '元に戻す（Auto Translate の一括挿入も 1 回で復元）',
+      tipAutoFuzzy: '現在行から下方向へ連続翻訳。完全一致＋数値／用語集で埋められる行まで続行、埋められない差分が出たら停止／既存訳文は上書き',
+      tipAutoRange: '選択範囲の空セルだけ翻訳（完全一致のみ）／既存訳文は上書きしない',
+      tipSet: '現在行の原文＋訳文を TM に登録（⌘⇧U）',
+      tipModeTranslate: '原文を見て訳文候補を探す',
+      tipModeReview: '訳文を見て原文候補を探す（逆引き・チェック用）',
+      tipMinScore: '候補を出す最低マッチ率',
+      tipConcordance: 'TM 内を文字列検索（部分一致）',
+      tipRegex: '正規表現モードに切り替え',
+      // Concordance placeholder
+      phConcordance: 'コンコーダンス',
+      // Toasts
+      nothingToUndo: '元に戻す操作がありません',
+      noTmLoaded: 'TM が読み込まれていません',
+      selectCellFirst: 'セルを選択してください',
+      selectRangeFirst: '範囲を選択してください',
+      emptyRange: '範囲が空です',
+      readingSheet: 'シートを読み込み中…',
+      copiedPrefix: 'コピー: ',
+      undoCellsTpl: '元に戻す: {n} セル',
+      undoRangePrefix: '元に戻す: ',
+      unsupportedSelection: '未対応の選択: {ref}',
+      writingCellsTpl: '{n} セル書き込み中…',
+      errorPrefix: 'エラー: ',
+      searchPrefix: '検索: ',
+      toGlossary: '用語集へ: ',
+      toTerm: '用語へ: ',
+      toTranslation: '訳語へ: ',
+      invalidRegex: '無効な正規表現',
     },
   };
   function t(key) { return (I18N[settings.lang] && I18N[settings.lang][key]) || I18N.en[key] || key; }
@@ -333,7 +395,7 @@
         <h1>Felix TM</h1>
         <span>
           <span class="badge" id="badge">TM: 0</span>
-          <button class="btn-close has-tip-below" id="btn-manage" data-tip="サイドパネル（TM・用語集・ルール管理）">⚙</button>
+          <button class="btn-close has-tip-below" id="btn-manage" data-tip="">⚙</button>
           <button class="btn-close" id="btn-min" aria-label="Minimize">−</button>
           <button class="btn-close" id="btn-close" aria-label="Close">✕</button>
         </span>
@@ -344,29 +406,29 @@
           <button class="btn" id="btn-sign-in-banner">Sign in with Google</button>
         </div>
         <div class="action-bar">
-          <button class="btn has-tip-below" id="btn-undo" data-tip="元に戻す（Auto Translate の一括挿入も 1 回で復元）" style="padding:6px 8px;color:#5f6368">↩</button>
+          <button class="btn has-tip-below" id="btn-undo" data-tip="" style="padding:6px 8px;color:#5f6368">↩</button>
           <span class="auto-label" id="lbl-auto">Auto:</span>
-          <button class="btn has-tip-below" id="btn-auto-fuzzy" data-tip="現在行から下方向へ連続翻訳。完全一致＋数値／用語集で埋められる行まで続行、埋められない差分が出たら停止／既存訳文は上書き">↓ Fuzzy</button>
-          <button class="btn has-tip-below" id="btn-auto-range" data-tip="選択範囲の空セルだけ翻訳（完全一致のみ）／既存訳文は上書きしない">↓ 範囲</button>
+          <button class="btn has-tip-below" id="btn-auto-fuzzy" data-tip="">↓ Fuzzy</button>
+          <button class="btn has-tip-below" id="btn-auto-range" data-tip="">↓ Range</button>
           <span style="flex:1"></span>
-          <button class="btn has-tip-below" id="btn-set" data-tip="現在行の原文＋訳文を TM に登録（⌘⇧U）">Set</button>
+          <button class="btn has-tip-below" id="btn-set" data-tip="">Set</button>
         </div>
         <div class="cell-label"><span id="lbl-cell">Active Cell</span> <span id="cell-ref"></span></div>
         <div class="cell-preview" id="cell-value">—</div>
         <div class="settings-row">
           <div class="mode-toggle" id="mode-toggle">
-            <span class="mode-btn mode-active has-tip" data-mode="translate" id="mode-translate" data-tip="原文を見て訳文候補を探す">Translate</span>
-            <span class="mode-btn has-tip" data-mode="review" id="mode-review" data-tip="訳文を見て原文候補を探す（逆引き・チェック用）">Review</span>
+            <span class="mode-btn mode-active has-tip" data-mode="translate" id="mode-translate" data-tip="">Translate</span>
+            <span class="mode-btn has-tip" data-mode="review" id="mode-review" data-tip="">Review</span>
           </div>
-          <span class="tip-wrap has-tip" data-tip="候補を出す最低マッチ率" style="width:60px"><select id="min-score" style="padding:4px;font-size:11px">
+          <span class="tip-wrap has-tip" id="min-score-wrap" data-tip="" style="width:60px"><select id="min-score" style="padding:4px;font-size:11px">
             <option value="0.5">50%</option><option value="0.6">60%</option>
             <option value="0.7" selected>70%</option><option value="0.8">80%</option>
             <option value="0.9">90%</option>
           </select></span>
         </div>
         <div class="conc-row">
-          <span class="tip-wrap has-tip" data-tip="TM 内を文字列検索（部分一致）" style="flex:1"><input class="conc-input" id="conc-query" placeholder="Concordance"></span>
-          <span class="regex-toggle has-tip" id="btn-regex" data-tip="正規表現モードに切り替え">.*</span>
+          <span class="tip-wrap has-tip" id="conc-query-wrap" data-tip="" style="flex:1"><input class="conc-input" id="conc-query" placeholder=""></span>
+          <span class="regex-toggle has-tip" id="btn-regex" data-tip="">.*</span>
         </div>
         <div id="results-wrap"><div id="results"><div class="empty" id="lbl-empty">Select a cell to search TM</div></div></div>
         <div id="toast-area"></div>
@@ -526,14 +588,30 @@
   function applyPanelLang() {
     const s = getShadow();
     if (!s) return;
-    const set = (id, text) => { const el = s.getElementById(id); if (el) el.textContent = text; };
-    set('lbl-cell', t('activeCell'));
-    set('lbl-empty', t('selectCell'));
-    set('btn-auto-fuzzy', t('autoFuzzy'));
-    set('btn-auto-range', t('autoRange'));
-    set('btn-sign-in-banner', t('signInButton'));
+    const setText = (id, text) => { const el = s.getElementById(id); if (el) el.textContent = text; };
+    const setTip  = (id, text) => { const el = s.getElementById(id); if (el) el.setAttribute('data-tip', text); };
+    const setPh   = (id, text) => { const el = s.getElementById(id); if (el) el.placeholder = text; };
+    // Labels
+    setText('lbl-cell', t('activeCell'));
+    setText('lbl-empty', t('selectCell'));
+    setText('btn-auto-fuzzy', t('autoFuzzy'));
+    setText('btn-auto-range', t('autoRange'));
+    setText('btn-sign-in-banner', t('signInButton'));
     const bannerMsg = s.querySelector('#auth-banner .msg');
     if (bannerMsg) bannerMsg.textContent = t('signInBanner');
+    // Tooltips (data-tip drives the ::after popover)
+    setTip('btn-manage', t('tipManage'));
+    setTip('btn-undo', t('tipUndo'));
+    setTip('btn-auto-fuzzy', t('tipAutoFuzzy'));
+    setTip('btn-auto-range', t('tipAutoRange'));
+    setTip('btn-set', t('tipSet'));
+    setTip('mode-translate', t('tipModeTranslate'));
+    setTip('mode-review', t('tipModeReview'));
+    setTip('min-score-wrap', t('tipMinScore'));
+    setTip('conc-query-wrap', t('tipConcordance'));
+    setTip('btn-regex', t('tipRegex'));
+    // Placeholders
+    setPh('conc-query', t('phConcordance'));
   }
 
   function getShadow() {
@@ -838,7 +916,7 @@
         if (!text) return;
         navigator.clipboard.writeText(text).then(() => {
           span.classList.add('gloss-copied');
-          showToast(`Copied: ${text}`);
+          showToast(t('copiedPrefix') + text);
           setTimeout(() => span.classList.remove('gloss-copied'), 500);
         }).catch(() => {});
       });
@@ -866,7 +944,7 @@
           const registered = span.classList.contains('diff-uncovered-present');
           const mode = registered ? 'browse' : 'add';
           msg('OPEN_GLOSSARY_WITH_ACTION', { term, mode });
-          showToast(registered ? `検索: ${term}` : `用語集へ: ${term}`);
+          showToast((registered ? t('searchPrefix') : t('toGlossary')) + term);
         });
       });
     };
@@ -991,7 +1069,7 @@
     // mode: 'add' | 'browse'
     // prefillSide (only when mode === 'add'): 'term' | 'translation'
     msg('OPEN_GLOSSARY_WITH_ACTION', { term: text, mode, prefillSide });
-    showToast(mode === 'browse' ? `検索: ${text}` : (prefillSide === 'translation' ? `訳語へ: ${text}` : `用語へ: ${text}`));
+    showToast((mode === 'browse' ? t('searchPrefix') : (prefillSide === 'translation' ? t('toTranslation') : t('toTerm'))) + text);
   }
 
   // === Concordance Search ===
@@ -1005,7 +1083,7 @@
     // Validate regex if enabled
     if (concRegex) {
       try { new RegExp(query, 'i'); } catch (_) {
-        s.getElementById('results').innerHTML = `<div class="empty">Invalid regex</div>`;
+        s.getElementById('results').innerHTML = `<div class="empty">${t('invalidRegex')}</div>`;
         return;
       }
     }
@@ -1159,16 +1237,16 @@
 
   async function undoLastWrite() {
     const entry = _undoStack.pop();
-    if (!entry) { showToast('Nothing to undo'); return { reason: 'empty_stack' }; }
+    if (!entry) { showToast(t('nothingToUndo')); return { reason: 'empty_stack' }; }
     let result;
     if (entry.batch && entry.batch.length) {
       const updates = entry.batch.map(b => ({ range: b.range, value: b.oldValue }));
       await msg('SHEETS_API_BATCH_WRITE', { spreadsheetId: entry.ssId, updates });
-      showToast(`Undo: ${entry.batch.length} cells`);
+      showToast(t('undoCellsTpl').replace('{n}', String(entry.batch.length)));
       result = { kind: 'batch', restored: entry.batch.length, firstRange: entry.batch[0].range };
     } else {
       await msg('SHEETS_API_WRITE', { spreadsheetId: entry.ssId, range: entry.range, value: entry.oldValue });
-      showToast(`Undo: ${entry.range}`);
+      showToast(t('undoRangePrefix') + entry.range);
       result = { kind: 'single', range: entry.range };
     }
     // Refresh the panel so the card that triggered the now-undone insert
@@ -1192,16 +1270,16 @@
 
   /** Translate from the current row downward; stop at first fuzzy. */
   async function autoTranslateToFuzzy() {
-    if (!tmData.length) { showToast('No TM loaded'); return; }
+    if (!tmData.length) { showToast(t('noTmLoaded')); return; }
     const ref = getCellRef();
-    if (!ref) { showToast('Select a cell first'); return; }
+    if (!ref) { showToast(t('selectCellFirst')); return; }
 
     // Accept a concrete cell (A2, A2:A5), a column-only ref (A:A, A2:A), or
     // even a rectangular selection — we always walk down from the anchor row
     // in settings.sourceCol. If no row is given (whole-column select), start
     // from row 1.
     const parsed = FelixEngine.parseA1(ref);
-    if (!parsed) { showToast(`Unsupported selection: ${ref}`); return; }
+    if (!parsed) { showToast(t('unsupportedSelection').replace('{ref}', ref)); return; }
     const startRow = parsed.row || 1;
     const srcCol = settings.sourceCol || 'A';
     const tgtCol = settings.targetCol || 'B';
@@ -1211,7 +1289,7 @@
     const BATCH = 500;
     const srcRange = sheetRef(`${srcCol}${startRow}:${srcCol}${startRow + BATCH - 1}`);
     const tgtRange = sheetRef(`${tgtCol}${startRow}:${tgtCol}${startRow + BATCH - 1}`);
-    showToast('Reading sheet…');
+    showToast(t('readingSheet'));
     const [srcResp, tgtResp] = await Promise.all([
       msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: srcRange }),
       msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: tgtRange }),
@@ -1235,18 +1313,18 @@
    * preserved.
    */
   async function autoTranslateSelection() {
-    if (!tmData.length) { showToast('No TM loaded'); return; }
+    if (!tmData.length) { showToast(t('noTmLoaded')); return; }
     const ref = getCellRef();
-    if (!ref) { showToast('Select a range first'); return; }
+    if (!ref) { showToast(t('selectRangeFirst')); return; }
 
     // Accept both row-qualified refs (A2, A2:A5, A2:B5) and column-only refs
     // (A:A, A:B, A2:A — row missing on one side). For column-only selections
     // we read an unbounded range and let the actual data length decide endRow.
     const parsed = FelixEngine.parseA1(ref);
-    if (!parsed) { showToast(`Unsupported selection: ${ref}`); return; }
+    if (!parsed) { showToast(t('unsupportedSelection').replace('{ref}', ref)); return; }
     const startRow = parsed.row || 1;
     const explicitEndRow = parsed.row2 || null;
-    if (explicitEndRow != null && explicitEndRow < startRow) { showToast('Empty range'); return; }
+    if (explicitEndRow != null && explicitEndRow < startRow) { showToast(t('emptyRange')); return; }
 
     const srcCol = settings.sourceCol || 'A';
     const tgtCol = settings.targetCol || 'B';
@@ -1261,7 +1339,7 @@
     const tgtRange = sheetRef(explicitEndRow
       ? `${tgtCol}${startRow}:${tgtCol}${explicitEndRow}`
       : `${tgtCol}${startRow}:${tgtCol}`);
-    showToast('Reading sheet…');
+    showToast(t('readingSheet'));
     const [srcResp, tgtResp] = await Promise.all([
       msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: srcRange }),
       msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: tgtRange }),
@@ -1295,9 +1373,9 @@
       FelixEngine.buildPlanActions(plan, { tgtCol, sheetName, startRow });
 
     if (updates.length) {
-      showToast(`Writing ${updates.length} cells…`);
+      showToast(t('writingCellsTpl').replace('{n}', String(updates.length)));
       const resp = await msg('SHEETS_API_BATCH_WRITE', { spreadsheetId: ssId, updates });
-      if (resp && resp.error) { showToast(`Error: ${resp.error}`); return; }
+      if (resp && resp.error) { showToast(t('errorPrefix') + resp.error); return; }
       pushUndo({ ssId, batch: undoEntries });
     }
 

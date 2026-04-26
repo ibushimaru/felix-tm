@@ -996,6 +996,20 @@ glossDropZone.addEventListener('dragleave', () => { glossDropZone.style.borderCo
 glossDropZone.addEventListener('drop', e => { e.preventDefault(); glossDropZone.style.borderColor = '#dadce0'; handleGlossaryFile(e.dataTransfer.files[0]); });
 glossFileInput.addEventListener('change', () => { if (glossFileInput.files[0]) handleGlossaryFile(glossFileInput.files[0]); });
 document.getElementById('btn-save-settings').addEventListener('click', () => saveSettingsUI());
+
+// Language switches without a Save click. Persist + broadcast so the
+// in-page overlay re-applies its labels too. Other settings still go
+// through Save because they involve numeric ranges and column letters
+// the user is mid-editing.
+document.getElementById('set-lang').addEventListener('change', async (e) => {
+  settings.lang = e.target.value;
+  await sendBg('SETTINGS_SAVE', settings);
+  applyLang();
+  chrome.runtime.sendMessage({
+    type: 'BROADCAST',
+    payload: { type: 'SETTINGS_CHANGED' },
+  }).catch(() => {});
+});
 document.getElementById('btn-clear-tm').addEventListener('click', () => clearAllTM());
 document.getElementById('btn-clear-gloss').addEventListener('click', () => clearAllGlossary());
 
