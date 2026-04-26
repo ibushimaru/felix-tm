@@ -1,0 +1,18 @@
+term	translation	notes
+HP	HP	preserve verbatim
+STR	STR	preserve verbatim
+DEX	DEX	preserve verbatim
+damage	ダメージ
+Block	ブロック
+Energy	エネルギー
+card	カード
+deck	デッキ
+turn	ターン
+Vulnerable	脆弱	status
+Weak	弱体	status
+hand	手札
+enemy	敵
+all	全体
+combat	戦闘
+Exhaust	除外
+Rest	休憩

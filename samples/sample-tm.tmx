@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tmx version="1.4">
+  <header creationtool="felix-tm" creationtoolversion="0.1.0" datatype="plaintext" segtype="sentence" adminlang="EN" srclang="EN" o-tmf="felix-tm"/>
+  <body>
+    <tu>
+      <prop type="x-context">UI button</prop>
+      <tuv xml:lang="en"><seg>End Turn</seg></tuv>
+      <tuv xml:lang="ja"><seg>ターン終了</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">UI button</prop>
+      <tuv xml:lang="en"><seg>Draw a card</seg></tuv>
+      <tuv xml:lang="ja"><seg>カードを引く</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">UI button</prop>
+      <tuv xml:lang="en"><seg>Edit Deck</seg></tuv>
+      <tuv xml:lang="ja"><seg>デッキを編集</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">notification</prop>
+      <tuv xml:lang="en"><seg>Deck saved</seg></tuv>
+      <tuv xml:lang="ja"><seg>デッキを保存しました</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">notification</prop>
+      <tuv xml:lang="en"><seg>Failed to save deck</seg></tuv>
+      <tuv xml:lang="ja"><seg>デッキの保存に失敗しました</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Deal 10 damage</seg></tuv>
+      <tuv xml:lang="ja"><seg>10点のダメージを与える</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Deal 15 damage</seg></tuv>
+      <tuv xml:lang="ja"><seg>15点のダメージを与える</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Deal 20 damage</seg></tuv>
+      <tuv xml:lang="ja"><seg>20点のダメージを与える</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Gain 5 Block</seg></tuv>
+      <tuv xml:lang="ja"><seg>5点のブロックを得る</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Gain 8 Block</seg></tuv>
+      <tuv xml:lang="ja"><seg>8点のブロックを得る</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Draw 2 cards</seg></tuv>
+      <tuv xml:lang="ja"><seg>カードを2枚引く</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Draw 3 cards</seg></tuv>
+      <tuv xml:lang="ja"><seg>カードを3枚引く</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Gain 1 Energy</seg></tuv>
+      <tuv xml:lang="ja"><seg>エネルギーを1得る</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Gain 2 Energy</seg></tuv>
+      <tuv xml:lang="ja"><seg>エネルギーを2得る</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Gain 1 STR for 2 turns</seg></tuv>
+      <tuv xml:lang="ja"><seg>2ターンの間、STRが1上がる</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Gain 1 STR for 3 turns</seg></tuv>
+      <tuv xml:lang="ja"><seg>3ターンの間、STRが1上がる</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Gain 1 DEX for 2 turns</seg></tuv>
+      <tuv xml:lang="ja"><seg>2ターンの間、DEXが1上がる</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Apply Vulnerable to enemy for 2 turns</seg></tuv>
+      <tuv xml:lang="ja"><seg>敵に2ターンの間、脆弱を付与する</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Apply Vulnerable to enemy for 3 turns</seg></tuv>
+      <tuv xml:lang="ja"><seg>敵に3ターンの間、脆弱を付与する</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Apply Weak to enemy for 2 turns</seg></tuv>
+      <tuv xml:lang="ja"><seg>敵に2ターンの間、弱体を付与する</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Deal 5 damage to all enemies</seg></tuv>
+      <tuv xml:lang="ja"><seg>敵全体に5点のダメージを与える</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Deal 10 damage to all enemies</seg></tuv>
+      <tuv xml:lang="ja"><seg>敵全体に10点のダメージを与える</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">card text</prop>
+      <tuv xml:lang="en"><seg>Discard your hand</seg></tuv>
+      <tuv xml:lang="ja"><seg>手札を全て捨てる</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">relic description</prop>
+      <tuv xml:lang="en"><seg>At the start of combat, draw 1 card</seg></tuv>
+      <tuv xml:lang="ja"><seg>戦闘開始時にカードを1枚引く</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">relic description</prop>
+      <tuv xml:lang="en"><seg>At the start of combat, gain 1 Energy</seg></tuv>
+      <tuv xml:lang="ja"><seg>戦闘開始時にエネルギーを1得る</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">relic description</prop>
+      <tuv xml:lang="en"><seg>Triggers when HP drops to 50 or below</seg></tuv>
+      <tuv xml:lang="ja"><seg>HPが50以下になると発動する</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">tooltip</prop>
+      <tuv xml:lang="en"><seg>Click to show details</seg></tuv>
+      <tuv xml:lang="ja"><seg>クリックして詳細を表示</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">tooltip</prop>
+      <tuv xml:lang="en"><seg>Right-click to Exhaust</seg></tuv>
+      <tuv xml:lang="ja"><seg>右クリックで除外</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">error message</prop>
+      <tuv xml:lang="en"><seg>Not enough Energy</seg></tuv>
+      <tuv xml:lang="ja"><seg>エネルギーが足りません</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">menu</prop>
+      <tuv xml:lang="en"><seg>Map</seg></tuv>
+      <tuv xml:lang="ja"><seg>マップ</seg></tuv>
+    </tu>
+    <tu>
+      <prop type="x-context">menu</prop>
+      <tuv xml:lang="en"><seg>Rest</seg></tuv>
+      <tuv xml:lang="ja"><seg>休憩する</seg></tuv>
+    </tu>
+  </body>
+</tmx>
