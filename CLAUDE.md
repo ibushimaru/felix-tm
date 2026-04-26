@@ -59,6 +59,22 @@ instead of asking the user to open `chrome://extensions/` each time. See
 any page on docs.google.com force-reload the extension — not a vulnerability
 we want to distribute.
 
+## Loading the Chrome extension during development
+
+**Always load `plugins/chrome-extension/` directly** as an unpacked
+extension via `chrome://extensions/` → "Load unpacked". This is the
+live source — every edit takes effect after one reload of the
+extension card (and a `Cmd+R` on the Sheets tab to re-inject the
+content script).
+
+**Never load `dist/felix-tm-v0.1.0/` for development.** That directory
+is a frozen snapshot produced by `python3 scripts/build_extension.py`
+and is meant exclusively for tester/release distribution. It will
+*not* update when source files change, so reloading from `dist/`
+silently leaves the user testing stale code. If a tester needs a
+zip, run the build script — but the developer should never be looking
+at `dist/`.
+
 ## Logic tests (no browser)
 
 `plugins/chrome-extension/tests/` holds Node unit tests for the pure
