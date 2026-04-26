@@ -232,7 +232,7 @@ The Web Store now requires a structured privacy disclosure. Answers:
 | Question | Answer |
 |---|---|
 | Single purpose | "Translation memory and glossary lookup for translators working in Google Sheets." |
-| Personally identifiable information | Yes — email address. |
+| Personally identifiable information | No. |
 | Health information | No. |
 | Financial / payment information | No. |
 | Authentication information | Yes — OAuth token (stored in `chrome.identity` cache, not persisted by us). |

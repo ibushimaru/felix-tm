@@ -54,18 +54,16 @@ Google requires the demo to:
 - The OAuth consent screen appears, listing:
   - "Felix TM wants to access your Google Account"
   - **See, edit, create, and delete all your Google Sheets spreadsheets**
-  - **Associate you with your personal info on Google**
-- Slow scroll to make both scopes readable.
+- Pause briefly so the single requested scope is readable.
 - Click "Continue" / "Allow".
-- The popup closes, side panel updates to "Signed in as <email>".
+- The popup closes, side panel updates to "✓ Signed in".
 
 **Narration:**
-> Sign-in opens Google's standard consent screen. Felix TM requests two
-> scopes: spreadsheets — to read source cells and write target cells —
-> and userinfo email, so the side panel can show which account is
-> connected. The consent dialog is served from accounts.google.com, as
-> the URL bar shows. After granting, the side panel confirms the
-> connected account.
+> Sign-in opens Google's standard consent screen. Felix TM requests
+> exactly one scope: spreadsheets — to read source cells and write
+> target cells. No identity scope, no email, nothing else. The consent
+> dialog is served from accounts.google.com, as the URL bar shows.
+> After granting, the side panel shows the connected state.
 
 ---
 
@@ -109,7 +107,7 @@ Google requires the demo to:
 
 **Visual:**
 - Open the Settings tab in the side panel.
-- Show the "Signed in as <email>" line + "Sign out" button.
+- Show the "✓ Signed in" line + "Sign out" button.
 - Click "Sign out". Side panel returns to "Not signed in".
 - Open Chrome DevTools → Application → IndexedDB → FelixTM. Show the
   stores: `tm`, `glossary`, `rules`, `settings`. Briefly highlight an

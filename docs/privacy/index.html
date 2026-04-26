@@ -81,16 +81,6 @@
   entry to your TM, and (b) the spreadsheet itself.
 </p>
 
-<h3>3. Your Google account email</h3>
-<p>
-  After sign-in, Felix TM calls
-  <code>oauth2.googleapis.com/oauth2/v3/userinfo</code> once to retrieve
-  your account email address. This is shown in the side panel
-  ("Signed in as <em>you@example.com</em>") so you can confirm which
-  account is connected. The email is held only in the side panel's
-  in-memory state and is never transmitted off-device.
-</p>
-
 <h2>OAuth scopes Felix TM requests</h2>
 <table class="scope-table">
   <thead>
@@ -107,15 +97,15 @@
         background.
       </td>
     </tr>
-    <tr>
-      <td><code>https://www.googleapis.com/auth/userinfo.email</code></td>
-      <td>
-        Display your signed-in email in the side panel so you can verify
-        which account is active.
-      </td>
-    </tr>
   </tbody>
 </table>
+<p>
+  Felix TM does not request the <code>userinfo.email</code> scope.
+  After sign-in, the side panel shows only "✓ Signed in" — no email
+  address is fetched, displayed, or stored. To confirm which Google
+  account is connected, sign out and sign back in; Google's account
+  chooser will show the available accounts.
+</p>
 
 <h2>Limited Use compliance</h2>
 <p>
@@ -224,15 +214,6 @@
   (b) spreadsheet 自体への書き込み。
 </p>
 
-<h3>3. Google アカウントのメールアドレス</h3>
-<p>
-  サインイン後、Felix TM は <code>oauth2.googleapis.com/oauth2/v3/userinfo</code>
-  を 1 回呼び出し、アカウントのメールアドレスを取得します。これはサイドパネルに
-  「Signed in as <em>you@example.com</em>」として表示され、どのアカウントが
-  接続されているかを確認するためだけに使用されます。メールアドレスはサイドパネルの
-  メモリ内状態にのみ保持され、デバイス外へ送信されることはありません。
-</p>
-
 <h2>Felix TM が要求する OAuth スコープ</h2>
 <table class="scope-table">
   <thead>
@@ -248,15 +229,15 @@
         バックグラウンドで読み取ることはありません。
       </td>
     </tr>
-    <tr>
-      <td><code>https://www.googleapis.com/auth/userinfo.email</code></td>
-      <td>
-        サインイン中のメールアドレスをサイドパネルに表示し、
-        どのアカウントが有効かを確認できるようにします。
-      </td>
-    </tr>
   </tbody>
 </table>
+<p>
+  Felix TM は <code>userinfo.email</code> スコープを要求しません。
+  サインイン後、サイドパネルには「✓ Signed in」とだけ表示され、
+  メールアドレスの取得・表示・保存は一切行いません。接続中の Google
+  アカウントを確認したい場合は、いったんサインアウトしてから再度
+  サインインしてください。Google のアカウント選択画面が表示されます。
+</p>
 
 <h2>Limited Use ポリシーへの準拠</h2>
 <p>

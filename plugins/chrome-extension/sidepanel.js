@@ -1307,9 +1307,7 @@ function refreshAuthUI() {
   const outBtn = document.getElementById('btn-sign-out');
   chrome.runtime.sendMessage({ type: 'AUTH_STATUS' }, (resp) => {
     if (resp && resp.signedIn) {
-      status.textContent = resp.email
-        ? 'Signed in as ' + resp.email
-        : 'Signed in';
+      status.textContent = '✓ Signed in';
       status.style.color = '#137333';
       inBtn.style.display = 'none';
       outBtn.style.display = '';

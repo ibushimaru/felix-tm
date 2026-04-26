@@ -60,7 +60,7 @@ Use it as a final pre-submission audit.
 - [ ] `name`: **Felix TM** (currently set)
 - [ ] `version`: matches the build artifact (currently `0.1.0`)
 - [ ] `description`: matches Web Store short description
-- [ ] `oauth2.scopes`: `spreadsheets`, `userinfo.email` (post-revert ✓)
+- [ ] `oauth2.scopes`: `spreadsheets` only (no `userinfo.email`, no `drive.file`)
 - [ ] `oauth2.client_id`: matches the verified OAuth client in Cloud Console
 
 ### GitHub repository

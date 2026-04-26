@@ -25,8 +25,7 @@ form is opened, paste in the matching answer below.
 **Vendor:** Veriscio (sole proprietor: Ibushimaru)
 **App type:** Chrome browser extension (Manifest V3)
 **Architecture:** Client-side only — no backend service operated by the vendor.
-**Restricted scope used:** `https://www.googleapis.com/auth/spreadsheets`
-**Other scope:** `https://www.googleapis.com/auth/userinfo.email` (non-sensitive)
+**Restricted scope used:** `https://www.googleapis.com/auth/spreadsheets` (only scope requested)
 **Estimated user count at first review:** < 100 (private beta)
 **Source code location:** Public on GitHub — `https://github.com/ibushimaru/felix-tm`
 
@@ -37,7 +36,6 @@ form is opened, paste in the matching answer below.
 | Data category | In scope? | Where stored | How protected |
 |---|---|---|---|
 | User OAuth access token | Yes | Chrome's `chrome.identity` token cache | Managed by Chrome; Felix TM never persists it to disk |
-| User email | Yes | In-memory side panel state | Discarded on tab close |
 | Spreadsheet cell values (transient) | Yes | In-memory during matching | Discarded after each match cycle; never written to disk |
 | Translation memory entries | Yes (user-created) | Browser IndexedDB (`FelixTM` database) | Browser-managed sandbox; per-origin isolated |
 | Glossary entries | Yes (user-created) | Browser IndexedDB | Same |

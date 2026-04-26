@@ -33,7 +33,11 @@ source files arrive there.
 | Scope | Sensitivity | Why needed |
 |---|---|---|
 | `https://www.googleapis.com/auth/spreadsheets` | **Restricted** | Read source-language cells and write target-language cells in the spreadsheet the user has open. |
-| `https://www.googleapis.com/auth/userinfo.email` | Non-sensitive | Display the signed-in account email in the side panel so the user can verify which account is connected. |
+
+This is the **only** scope Felix TM requests. We do not request
+`userinfo.email` or any other identity scope — the side panel shows
+only a binary "signed in / not signed in" state and does not display
+or store the user's email address.
 
 ---
 
@@ -94,9 +98,8 @@ Policy:
   operate. Felix TM has no backend.
 - **No data transfer to third parties.** Felix TM has no analytics, no
   third-party SDKs, no remote logging, no telemetry. The only network
-  destinations are `sheets.googleapis.com`, `oauth2.googleapis.com`, and
-  `www.googleapis.com/oauth2/v3/userinfo` — all Google endpoints, called
-  directly from the user's browser.
+  destinations are `sheets.googleapis.com` and `oauth2.googleapis.com`
+  — both Google endpoints, called directly from the user's browser.
 - **No human review of user data.** Spreadsheet content never reaches a
   human operator at Veriscio.
 - **No advertising use.** Felix TM displays no ads.
@@ -116,7 +119,6 @@ Policy:
 | Placement rules | Browser IndexedDB | Until user deletes |
 | User settings (column letters, threshold) | Browser IndexedDB | Until user deletes |
 | OAuth token | `chrome.identity` cache (managed by Chrome) | Until user signs out / Chrome evicts |
-| Email address | In-memory side panel state only | Until tab closed |
 | Spreadsheet cell values | Transient, in-memory during matching only | Discarded after each match |
 
 **No data persists outside the user's browser.** Veriscio does not
@@ -134,7 +136,7 @@ To evaluate Felix TM, a Google reviewer can:
 2. Open any Google Sheets document.
 3. Click the Felix TM side-panel icon.
 4. Click "Sign in with Google" in the side panel — the consent screen
-   will appear, requesting `spreadsheets` and `userinfo.email`.
+   will appear, requesting only the `spreadsheets` scope.
 5. Move the active cell among rows in the sheet — fuzzy matches against
    any sample TM data the reviewer imports will appear in real time.
 6. Use the "Set" or "Auto Translate" buttons to write a chosen

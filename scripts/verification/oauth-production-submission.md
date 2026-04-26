@@ -13,7 +13,7 @@ already in `manifest.json`).
 - [x] Homepage live at `https://ibushimaru.github.io/felix-tm/`
 - [x] GitHub Pages enabled (see `github-pages-setup.md`)
 - [ ] Demo video uploaded as Unlisted to YouTube; URL saved
-- [x] `manifest.json` scope is `spreadsheets` + `userinfo.email` (no `drive.file`)
+- [x] `manifest.json` scope is `spreadsheets` only (no `userinfo.email`, no `drive.file`)
 - [x] `scope-justification.md` ready to paste
 - [x] `casa-tier2-draft.md` ready to paste
 
@@ -43,13 +43,13 @@ Click **Save and continue**.
 
 ### 3. Verify scopes
 
-In **Scopes**, ensure exactly these two are listed:
+In **Scopes**, ensure exactly one scope is listed:
 
 - `https://www.googleapis.com/auth/spreadsheets` (Restricted)
-- `https://www.googleapis.com/auth/userinfo.email`
 
-Remove any others (especially `drive.file` if it's still there from the
-earlier Picker experiment). Save.
+Remove any others (especially `userinfo.email` from the earlier
+"show signed-in account" UX, and `drive.file` from the earlier Picker
+experiment). Save.
 
 ### 4. Verify test users (will be ignored after publish)
 

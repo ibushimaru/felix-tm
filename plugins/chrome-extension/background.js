@@ -331,16 +331,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // === Auth (sign-in / sign-out / status) ===
 
   // Returns the current sign-in state. interactive=false so we
-  // don't pop a consent dialog for a status check.
+  // don't pop a consent dialog for a status check. We deliberately
+  // do not fetch the user's email — Felix TM does not request the
+  // userinfo.email scope, so there is no identity to show beyond
+  // "signed in / not signed in".
   if (msg.type === 'AUTH_STATUS') {
     chrome.identity.getAuthToken({ interactive: false }, (token) => {
-      if (!token) { sendResponse({ signedIn: false }); return; }
-      // Token in hand → fetch the email so the UI can show "Connected as <user>".
-      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { 'Authorization': 'Bearer ' + token },
-      }).then(r => r.json()).then(info => {
-        sendResponse({ signedIn: true, email: info.email || '' });
-      }).catch(() => sendResponse({ signedIn: true, email: '' }));
+      sendResponse({ signedIn: !!token });
     });
     return true;
   }
@@ -352,11 +349,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ signedIn: false, error: chrome.runtime.lastError?.message || 'No token' });
         return;
       }
-      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { 'Authorization': 'Bearer ' + token },
-      }).then(r => r.json()).then(info => {
-        sendResponse({ signedIn: true, email: info.email || '' });
-      }).catch(() => sendResponse({ signedIn: true, email: '' }));
+      sendResponse({ signedIn: true });
     });
     return true;
   }
