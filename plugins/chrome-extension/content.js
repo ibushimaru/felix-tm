@@ -1744,9 +1744,8 @@
     if (e.data.type === 'FELIX_TM_DEV_RELOAD') msg('DEV_RELOAD');
   }, { signal });
 
-  // === Show panel on load ===
-  setTimeout(() => {
-    showPanel();
-  }, 2000);
+  // The panel mounts on demand via TOGGLE_PANEL (extension icon click).
+  // Auto-mount on every Sheets page load was intrusive — even reading
+  // an unrelated team sheet popped the overlay over the cell area.
 
 })();
