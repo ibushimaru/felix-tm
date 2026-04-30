@@ -41,7 +41,6 @@ chrome.action.onClicked.addListener((tab) => {
 // Right-click on icon: offer to open the side panel.
 // Icon click still toggles the in-page overlay (chrome.action.onClicked above).
 chrome.runtime.onInstalled.addListener((details) => {
-  console.log('[FelixTM bg] onInstalled', details && details.reason);
   // create() throws on re-install if the id already exists, so guard with removeAll.
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
@@ -88,19 +87,27 @@ function openSidePanel(windowId) {
   });
 }
 
+// Boundary validators for Sheets API params. Defense in depth: every
+// SHEETS_API_* handler runs these before constructing a URL, so a buggy
+// caller (or a future regression elsewhere in the code) can't smuggle
+// path-traversal or a foreign spreadsheetId past us.
+const SS_ID_RE = /^[a-zA-Z0-9_-]{20,}$/;
+// A1-style ranges may carry a sheet name with arbitrary chars (CJK,
+// spaces, single-quotes), so we accept any non-empty string but reject
+// anything containing a slash or `..` segment that could escape the
+// /values/ path component.
+function validRange(r) {
+  return typeof r === 'string' && r.length > 0 && r.length < 200
+      && !r.includes('/') && !r.includes('..');
+}
+function validSpreadsheetId(id) { return typeof id === 'string' && SS_ID_RE.test(id); }
+
 // Message routing
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // Reject messages from other extensions (defense in depth — only ours
+  // should be able to drive sign-in, sheet writes, undo, etc.).
+  if (sender.id !== chrome.runtime.id) return;
 
-  // Dev-only: reload the whole extension. Triggered by an in-page
-  // window.postMessage → content.js bridge so Claude in Chrome (a separate
-  // extension) can request a reload without externally_connectable. Remove
-  // this handler before publishing.
-  if (msg.type === 'DEV_RELOAD') {
-    console.log('[FelixTM] DEV_RELOAD requested — reloading in 50ms');
-    sendResponse({ ok: true });
-    setTimeout(() => chrome.runtime.reload(), 50);
-    return true;
-  }
 
   // Open the Chrome side panel (requested by ⚙ in the in-page overlay).
   // Must be called synchronously in response to a user gesture.
@@ -155,6 +162,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Sheets API write via chrome.identity token
   if (msg.type === 'SHEETS_API_WRITE') {
     const d = msg.data || msg; // support both { type, data: {...} } and flat format
+    if (!validSpreadsheetId(d.spreadsheetId) || !validRange(d.range)) {
+      sendResponse({ error: 'Invalid spreadsheetId or range' });
+      return true;
+    }
     chrome.identity.getAuthToken({ interactive: true }, (token) => {
       if (!token) {
         sendResponse({ error: chrome.runtime.lastError?.message || 'No token' });
@@ -182,6 +193,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const d = msg.data || msg;
     const updates = Array.isArray(d.updates) ? d.updates : [];
     if (!updates.length) { sendResponse({ updatedCells: 0 }); return; }
+    if (!validSpreadsheetId(d.spreadsheetId) || !updates.every(u => validRange(u.range))) {
+      sendResponse({ error: 'Invalid spreadsheetId or range' });
+      return true;
+    }
     chrome.identity.getAuthToken({ interactive: true }, (token) => {
       if (!token) {
         sendResponse({ error: chrome.runtime.lastError?.message || 'No token' });
@@ -204,6 +219,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Sheets API batch read (single column)
   if (msg.type === 'SHEETS_API_READ_BATCH') {
     const d = msg.data || msg;
+    if (!validSpreadsheetId(d.spreadsheetId) || !validRange(d.range)) {
+      sendResponse({ values: [] });
+      return true;
+    }
     chrome.identity.getAuthToken({ interactive: false }, (token) => {
       void chrome.runtime.lastError;
       if (!token) { sendResponse({ values: [] }); return; }
@@ -222,6 +241,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Sheets API read (from content script directly)
   if (msg.type === 'SHEETS_API_READ_DIRECT') {
     const d = msg.data || msg;
+    if (!validSpreadsheetId(d.spreadsheetId) || !validRange(d.range)) {
+      sendResponse({ value: '' });
+      return true;
+    }
     chrome.identity.getAuthToken({ interactive: false }, (token) => {
       void chrome.runtime.lastError;
       if (!token) { sendResponse({ value: '' }); return; }
@@ -282,6 +305,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Sheets API write with rich text formatting (bold/color on specific ranges)
   if (msg.type === 'SHEETS_API_WRITE_FORMATTED') {
     const d = msg.data || msg;
+    if (!validSpreadsheetId(d.spreadsheetId) || !validRange(d.range)) {
+      sendResponse({ error: 'Invalid spreadsheetId or range' });
+      return true;
+    }
     chrome.identity.getAuthToken({ interactive: true }, (token) => {
       if (!token) { sendResponse({ error: 'No token' }); return; }
 

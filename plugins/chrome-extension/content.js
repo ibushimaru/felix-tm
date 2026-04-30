@@ -1642,6 +1642,7 @@
 
   // === Listen for messages from background/side panel ===
   chrome.runtime.onMessage.addListener((m, sender, sendResponse) => {
+    if (sender.id !== chrome.runtime.id) return;
     if (m.type === 'PING') { sendResponse({ pong: true }); return; }
     if (m.type === 'TOGGLE_PANEL') {
       if (panelVisible) {
@@ -1685,7 +1686,8 @@
 
   // === Sync with data changes (from manage page, via broadcast) ===
   // IndexedDB has no onChanged event, so manage page broadcasts DATA_CHANGED
-  chrome.runtime.onMessage.addListener((m2) => {
+  chrome.runtime.onMessage.addListener((m2, sender) => {
+    if (sender.id !== chrome.runtime.id) return;
     if (m2.type === 'DATA_CHANGED') {
       // Re-fetch all three in parallel, then run a single doSearch so
       // the card picks up TM, glossary, and rule changes atomically.
@@ -1733,16 +1735,6 @@
       });
     }
   });
-
-  // === Dev bridge: hot-reload the extension from the page ===
-  // Only FELIX_TM_DEV_RELOAD — functional verification is the user's job,
-  // logic verification is what the Node unit tests are for. Registered with
-  // { signal } so a re-injected newer instance cleanly tears down this
-  // listener via __felixTMCleanup. Remove before publishing.
-  window.addEventListener('message', (e) => {
-    if (e.source !== window || !e.data) return;
-    if (e.data.type === 'FELIX_TM_DEV_RELOAD') msg('DEV_RELOAD');
-  }, { signal });
 
   // The panel mounts on demand via TOGGLE_PANEL (extension icon click).
   // Auto-mount on every Sheets page load was intrusive — even reading

@@ -43,21 +43,12 @@ GitHub Actions: Windows / macOS / Linux × Python 3.10-3.13 (12 jobs)
 
 ## Pre-release cleanup checklist
 
-Items intentionally added for development that MUST be removed or gated
-before the Chrome extension is published:
+The DEV_RELOAD bridge has been removed. The `felix-tm-reload` skill still
+exists under `.claude/skills/` but will silently fail against any build
+without the bridge — which is the desired post-publish behavior.
 
-- `DEV_RELOAD` message handler in `plugins/chrome-extension/background.js`
-- The `FELIX_TM_DEV_RELOAD` postMessage listener in
-  `plugins/chrome-extension/content.js`
-- The companion skill at `.claude/skills/felix-tm-reload/` is dev-only and
-  can stay — it will silently fail against a release build once the
-  bridge is removed, which is the desired behavior.
-
-The bridge exists so Claude can reload the extension after editing source,
-instead of asking the user to open `chrome://extensions/` each time. See
-`.claude/skills/felix-tm-reload/SKILL.md`. Shipping the bridge would let
-any page on docs.google.com force-reload the extension — not a vulnerability
-we want to distribute.
+If a future dev-only bridge is added (e.g. a fresh hot-reload mechanism),
+record it here so it gets stripped before the next submission.
 
 ## Loading the Chrome extension during development
 

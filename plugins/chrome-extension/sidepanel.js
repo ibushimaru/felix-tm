@@ -288,7 +288,8 @@ async function init() {
   });
 
   // Listen for data changes from content script (via broadcast)
-  chrome.runtime.onMessage.addListener((msg) => {
+  chrome.runtime.onMessage.addListener((msg, sender) => {
+    if (sender.id !== chrome.runtime.id) return;
     if (msg.type === 'DATA_CHANGED') {
       // Reload from DB
       sendBg('TM_LOAD').then(data => { tmData = data || []; updateStats(); renderTMList(); });
@@ -1361,7 +1362,8 @@ document.getElementById('btn-sign-out').addEventListener('click', () => {
   });
 });
 
-chrome.runtime.onMessage.addListener((m) => {
+chrome.runtime.onMessage.addListener((m, sender) => {
+  if (sender.id !== chrome.runtime.id) return;
   if (m && m.type === 'AUTH_CHANGED') refreshAuthUI();
 });
 

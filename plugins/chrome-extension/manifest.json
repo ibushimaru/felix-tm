@@ -15,7 +15,7 @@
   "host_permissions": [
     "https://docs.google.com/spreadsheets/*",
     "https://sheets.googleapis.com/*",
-    "https://www.googleapis.com/*"
+    "https://oauth2.googleapis.com/*"
   ],
   "oauth2": {
     "client_id": "429083959906-70usbck7jmid93l2f76671ig0jpk7jdg.apps.googleusercontent.com",
@@ -41,16 +41,6 @@
   "side_panel": {
     "default_path": "sidepanel.html"
   },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "felix-engine.js"
-      ],
-      "matches": [
-        "https://docs.google.com/*"
-      ]
-    }
-  ],
   "action": {
     "default_title": "Felix TM",
     "default_icon": {

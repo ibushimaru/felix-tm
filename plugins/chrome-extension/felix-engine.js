@@ -470,7 +470,7 @@ var FelixEngine = (() => {
     let cursor = 0;
     for (const r of regions) {
       if (r.start > cursor) html += esc(sourceText.substring(cursor, r.start));
-      html += `<span class="gloss_match" data-tip="${esc(r.translation)}">${esc(sourceText.substring(r.start, r.end))}</span>`;
+      html += `<span class="gloss_match" data-tip="${escA(r.translation)}">${esc(sourceText.substring(r.start, r.end))}</span>`;
       cursor = r.end;
     }
     if (cursor < sourceText.length) html += esc(sourceText.substring(cursor));
@@ -574,7 +574,7 @@ var FelixEngine = (() => {
         if (prevG) html += '</span>';
         if (prevU) html += '</span>';
         if (u) html += `<span class="${u.cls}">`;
-        if (g) html += `<span class="gloss_match" data-tip="${esc(g.translation)}">`;
+        if (g) html += `<span class="gloss_match" data-tip="${escA(g.translation)}">`;
       }
       html += esc(text[i]);
       prevG = g; prevU = u;
@@ -786,7 +786,7 @@ var FelixEngine = (() => {
       if (gRegion !== inGloss) {
         if (curType) { queryHtml += '</span>'; curType = null; }
         if (inGloss) queryHtml += '</span>';
-        if (gRegion) queryHtml += `<span class="gloss_match" data-tip="${esc(gRegion.translation)}">`;
+        if (gRegion) queryHtml += `<span class="gloss_match" data-tip="${escA(gRegion.translation)}">`;
         inGloss = gRegion;
       }
       // Diff type change
@@ -808,6 +808,11 @@ var FelixEngine = (() => {
 
   function esc(s) {
     return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  // Attribute-context escape: also handles `"` so a glossary entry
+  // containing a double-quote can't break out of `data-tip="…"`.
+  function escA(s) {
+    return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   // === Concordance Search (substring match in source or target) ===
@@ -2578,7 +2583,7 @@ var FelixEngine = (() => {
            glossaryPlacement, numberPlacement, rulePlacement, nonNumericDiffs,
            markGlossaryInSource, editDistance, bagDistance,
            fuzzyScore, edScore, diffHighlight, tokenize,
-           containsCJK, addEntry, addGlossaryEntry, parseA1, esc,
+           containsCJK, addEntry, addGlossaryEntry, parseA1, esc, escA,
            markUncoveredHtml, renderQueryCellWithUncovered,
            uncoveredRegionsForText,
            findDiffRegions, unverifiedRegions, buildCellFormatRuns,
