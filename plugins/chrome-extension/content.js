@@ -29,6 +29,7 @@
                     shortcutGet: 'Cmd+Shift+J', shortcutSet: 'Cmd+Shift+U' };
   let lastCellValue = '';
   let lastCellRef = '';
+  let _lastSheetName = '';
   let panelVisible = false;
   let panelMode = 'translate'; // 'translate' | 'review'
   let concRegex = false;
@@ -80,6 +81,8 @@
       phConcordance: 'Concordance',
       // Toasts
       nothingToUndo: 'Nothing to undo',
+      undoSpreadsheetChanged: 'Cannot undo — different spreadsheet now active',
+      writeNeedsSourceOrTarget: 'Click a source or target cell first',
       noTmLoaded: 'No TM loaded',
       selectCellFirst: 'Select a cell first',
       selectRangeFirst: 'Select a range first',
@@ -125,6 +128,8 @@
       phConcordance: 'コンコーダンス',
       // Toasts
       nothingToUndo: '元に戻す操作がありません',
+      undoSpreadsheetChanged: '別のスプレッドシートに移動したため、元に戻せません',
+      writeNeedsSourceOrTarget: '原文または訳文セルを選択してください',
       noTmLoaded: 'TM が読み込まれていません',
       selectCellFirst: 'セルを選択してください',
       selectRangeFirst: '範囲を選択してください',
@@ -1344,6 +1349,14 @@
     const ref = getCellRef();
     const match = ref ? ref.match(/([A-Z]+)(\d+)/i) : null;
     if (!match) return;
+    // Anchor row only on source/target columns. A stray click on a
+    // metadata column (D, E, …) used to still write to B<row>; if the
+    // user had focus on column F when they clicked a match card, we
+    // would silently overwrite the unrelated B cell. Bail with a toast.
+    if (!isSourceColumn() && !isTargetColumn()) {
+      showToast(t('writeNeedsSourceOrTarget'));
+      return;
+    }
 
     const rowNum = parseInt(match[2]);
     const targetRef = (settings.targetCol || 'B') + rowNum;
@@ -1373,6 +1386,15 @@
   async function undoLastWrite() {
     const entry = _undoStack.pop();
     if (!entry) { showToast(t('nothingToUndo')); return { reason: 'empty_stack' }; }
+    // Bail if the user has switched to a different spreadsheet since the
+    // entry was recorded — applying the undo against the wrong sheet
+    // would silently overwrite unrelated cells.
+    const curSs = getSpreadsheetId();
+    if (entry.ssId && curSs && entry.ssId !== curSs) {
+      _undoStack.push(entry);
+      showToast(t('undoSpreadsheetChanged'));
+      return { reason: 'spreadsheet_changed' };
+    }
     let result;
     if (entry.batch && entry.batch.length) {
       const updates = entry.batch.map(b => ({ range: b.range, value: b.oldValue }));
@@ -1557,6 +1579,15 @@
 
     const value = getCellValue();
     const ref = getCellRef();
+
+    // Sheet tab changed → drop the row-source cache. Row 5 on Sheet "JP"
+    // is a different cell than row 5 on Sheet "EN", but the cache keys
+    // by row number alone, so a tab switch would replay stale rows.
+    const sheetName = getActiveSheetName();
+    if (sheetName !== _lastSheetName) {
+      _lastSheetName = sheetName;
+      _sourceCache = {};
+    }
 
     if (value !== lastCellValue || ref !== lastCellRef) {
       lastCellValue = value;

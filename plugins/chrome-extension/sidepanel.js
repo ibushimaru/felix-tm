@@ -800,7 +800,17 @@ function importTMX(xml) {
   // multi-language TUs, and TUV inline tags. Carries metadata
   // (createdBy/modifiedBy/created/modified/refcount/context) onto
   // each addEntry call so audit info survives a round-trip.
-  const { records } = FelixEngine.parseTmx(xml);
+  let records;
+  try {
+    ({ records } = FelixEngine.parseTmx(xml));
+  } catch (e) {
+    showToast('TMX parse failed: ' + (e && e.message || 'malformed XML'));
+    return;
+  }
+  if (!records || !records.length) {
+    showToast('No entries found in TMX');
+    return;
+  }
   let added = 0, dups = 0;
   for (const r of records) {
     if (!r.source || !r.target) continue;
