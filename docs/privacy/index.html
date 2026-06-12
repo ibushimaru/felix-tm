@@ -28,15 +28,16 @@
 <a href="../" class="nav-back">← Felix TM home</a>
 
 <h1>Privacy Policy</h1>
-<p class="meta">Last updated: 2026-04-27</p>
+<p class="meta">Last updated: 2026-06-13</p>
 
 <p class="lang-switch"><a href="#ja">日本語版はこちら →</a></p>
 
 <p>
-  Felix TM is a Chrome extension that provides translation memory (TM) and
-  glossary lookup for translators working in Google Sheets. This document
-  explains exactly what data Felix TM accesses, where it is stored, and how
-  it is used.
+  Felix TM provides translation memory (TM) and glossary lookup for
+  translators working in spreadsheets. It ships as a Chrome extension for
+  Google Sheets and as an Office add-in for Excel. This document explains
+  exactly what data Felix TM accesses, where it is stored, and how it is
+  used.
 </p>
 
 <h2>Who we are</h2>
@@ -81,7 +82,21 @@
   entry to your TM, and (b) the spreadsheet itself.
 </p>
 
-<h2>OAuth scopes Felix TM requests</h2>
+<h3>3. Excel workbook content (Excel add-in)</h3>
+<p>
+  The Excel add-in runs entirely inside Excel's task pane and
+  <strong>requires no sign-in</strong>. It reads the cells you select and
+  the configured source/target columns of the workbook you have open,
+  through the official Office JavaScript API, and writes a translation
+  only when you explicitly insert one. Your workbook content never leaves
+  Excel. The add-in makes no network calls of its own; its static files
+  (HTML/JS) are delivered by GitHub Pages like any website, subject to
+  GitHub's standard server logs (see
+  <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>) —
+  those requests contain no spreadsheet or TM data.
+</p>
+
+<h2>OAuth scopes Felix TM requests (Chrome extension only)</h2>
 <table class="scope-table">
   <thead>
     <tr><th>Scope</th><th>Why Felix TM needs it</th></tr>
@@ -162,14 +177,16 @@
 <hr class="section-break" id="ja">
 
 <h1>プライバシーポリシー</h1>
-<p class="meta">最終更新日: 2026-04-27</p>
+<p class="meta">最終更新日: 2026-06-13</p>
 
 <p class="lang-switch"><a href="#top">↑ English version</a></p>
 
 <p>
-  Felix TM は、Google Sheets で作業する翻訳者向けに、翻訳メモリ (TM)
-  と用語集 (Glossary) の検索機能を提供する Chrome 拡張機能です。本ポリシーは、
-  Felix TM がアクセスするデータの種類、保管場所、利用方法を明確に説明します。
+  Felix TM は、スプレッドシートで作業する翻訳者向けに、翻訳メモリ (TM)
+  と用語集 (Glossary) の検索機能を提供するツールです。Google Sheets 向けの
+  Chrome 拡張機能と、Excel 向けの Office アドインの2形態で提供しています。
+  本ポリシーは、Felix TM がアクセスするデータの種類、保管場所、利用方法を
+  明確に説明します。
 </p>
 
 <h2>運営者</h2>
@@ -214,7 +231,20 @@
   (b) spreadsheet 自体への書き込み。
 </p>
 
-<h2>Felix TM が要求する OAuth スコープ</h2>
+<h3>3. Excel ブックの内容（Excel アドイン）</h3>
+<p>
+  Excel アドインは Excel のタスクペイン内で完結して動作し、
+  <strong>サインインを必要としません</strong>。公式の Office JavaScript API
+  を通じて、選択中のセルと設定済みの原文/訳文列を読み取り、ユーザーが
+  明示的に挿入操作をしたときにのみ訳文を書き込みます。ブックの内容が
+  Excel の外に出ることはありません。アドイン自身は独自の通信を行わず、
+  静的ファイル（HTML/JS）が一般的な Web サイトと同様に GitHub Pages から
+  配信されるのみです（GitHub の標準的なサーバーログの対象になります。
+  <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub のプライバシーステートメント</a>参照）。
+  これらのリクエストに spreadsheet や TM のデータは含まれません。
+</p>
+
+<h2>Felix TM が要求する OAuth スコープ（Chrome 拡張のみ）</h2>
 <table class="scope-table">
   <thead>
     <tr><th>スコープ</th><th>必要な理由</th></tr>

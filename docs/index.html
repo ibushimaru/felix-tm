@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Felix TM — Translation Memory for Google Sheets</title>
-<meta name="description" content="Felix TM is a Chrome extension that brings real-time translation memory and glossary lookup to Google Sheets. Free, local-first, open source.">
+<title>Felix TM — Translation Memory for Google Sheets &amp; Excel</title>
+<meta name="description" content="Felix TM brings real-time translation memory and glossary lookup to Google Sheets and Excel. Free, local-first, open source.">
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -41,7 +41,7 @@
 
 <header>
   <h1>Felix TM</h1>
-  <p class="tagline">Translation Memory for Google Sheets — local-first, free, open source.</p>
+  <p class="tagline">Translation Memory for Google Sheets &amp; Excel — local-first, free, open source.</p>
   <p class="lang"><a href="#ja">日本語</a></p>
 </header>
 
@@ -50,11 +50,12 @@
 <section>
   <h2>What it is</h2>
   <p>
-    Felix TM is a Chrome extension that brings translation memory (TM) and
-    glossary lookup directly into Google Sheets. As you move between cells,
-    Felix TM matches the source text against your private TM, surfaces fuzzy
-    matches in real time in a side panel, and writes approved translations
-    back into the target column with one click.
+    Felix TM brings translation memory (TM) and glossary lookup directly
+    into your spreadsheet — Google Sheets (Chrome extension) or Excel
+    (Office add-in). As you move between cells, Felix TM matches the
+    source text against your private TM, surfaces fuzzy matches in real
+    time with the differences highlighted, and writes approved
+    translations back into the target column with one click.
   </p>
   <p>
     Built for translators who work in spreadsheets — game localization,
@@ -62,8 +63,37 @@
     is a row.
   </p>
   <p>
+    <a class="cta" href="#install-excel">Get for Excel — free</a>
     <a class="cta disabled" href="#">Add to Chrome — coming to the Web Store soon</a>
     <a class="cta secondary" href="https://github.com/ibushimaru/felix-tm">View source on GitHub</a>
+  </p>
+</section>
+
+<section id="install-excel">
+  <h2>Install for Excel</h2>
+  <p>
+    Works in <strong>Excel on the web</strong> (free with a Microsoft
+    account) and desktop Excel. No installer, no account with us, no
+    server of ours — you upload a small manifest file and Excel loads
+    the pane from this site.
+  </p>
+  <ol>
+    <li>Download <a href="./addin/manifest.xml" download>manifest.xml</a> (right-click → save if it opens in the browser)</li>
+    <li>In Excel, open a workbook and go to
+      <strong>Home → Add-ins → More settings → My Add-ins →
+      Upload My Add-in</strong>, then pick the downloaded file</li>
+    <li>Click the <strong>Felix TM</strong> button at the right end of the
+      Home ribbon — the pane opens next to your sheet</li>
+  </ol>
+  <p>
+    Set your source/target columns in the pane's Settings tab, then either
+    register rows with <strong>Set</strong> or bulk-import existing
+    translations from the workbook or a TMX/TSV file.
+  </p>
+  <p style="font-size:14px;color:#5f6368">
+    The Excel add-in currently covers live search, insert, undo,
+    TM/glossary management and TMX/TSV import/export. Auto Translate and
+    QC (available in the Chrome extension) are coming next.
   </p>
 </section>
 
@@ -100,8 +130,9 @@
 <section>
   <h2>Privacy at a glance</h2>
   <ul>
-    <li>Your TM and glossary stay in your browser. Felix TM has no server.</li>
-    <li>The <code>spreadsheets</code> OAuth scope is used only when you take an explicit action (Auto Translate, Import, etc.).</li>
+    <li>Your TM and glossary stay in your browser's local storage (IndexedDB). Felix TM has no server, so your data never leaves your machine — back it up with the built-in TMX/TSV export.</li>
+    <li>The Excel add-in requires no sign-in at all: it reads and writes only the workbook you have open, through the official Office API.</li>
+    <li>The Chrome extension uses the <code>spreadsheets</code> OAuth scope only when you take an explicit action (Auto Translate, Import, etc.).</li>
     <li>No analytics. No tracking. No third-party scripts.</li>
   </ul>
   <p>Full <a href="./privacy/">privacy policy</a>.</p>
@@ -124,9 +155,11 @@
 <section>
   <h2>Status</h2>
   <p>
-    Felix TM is currently in <strong>private beta</strong> while we complete
-    Google OAuth verification and Chrome Web Store review. If you are a
-    translator interested in early access, contact
+    The <strong>Excel add-in is available now</strong> — install it with
+    the <a href="#install-excel">three steps above</a>. The Chrome
+    extension for Google Sheets is in <strong>private beta</strong> while
+    Google OAuth verification and Chrome Web Store review complete; for
+    early access, contact
     <a href="mailto:ibushimaru@veriscio.com">ibushimaru@veriscio.com</a>.
   </p>
 </section>
@@ -137,7 +170,7 @@
 
 <header>
   <h1>Felix TM</h1>
-  <p class="tagline">Google Sheets のための翻訳メモリ — ローカル完結、無料、オープンソース。</p>
+  <p class="tagline">Google Sheets と Excel のための翻訳メモリ — ローカル完結、無料、オープンソース。</p>
   <p class="lang"><a href="#top">English ↑</a></p>
 </header>
 
@@ -146,18 +179,48 @@
 <section>
   <h2>製品概要</h2>
   <p>
-    Felix TM は、翻訳メモリ (TM) と用語集検索を Google Sheets 上に直接持ち込む
-    Chrome 拡張機能です。セル間を移動するたびに、原文を非公開の TM と照合し、
-    あいまい一致候補をサイドパネルにリアルタイムで表示。承認した訳文をワンクリックで
-    訳文列に書き戻します。
+    Felix TM は、翻訳メモリ (TM) と用語集検索をスプレッドシート上に直接
+    持ち込むツールです — Google Sheets（Chrome 拡張）と Excel（Office
+    アドイン）の両方に対応。セル間を移動するたびに、原文を非公開の TM と
+    照合し、あいまい一致候補を差分ハイライト付きでリアルタイム表示。
+    承認した訳文をワンクリックで訳文列に書き戻します。
   </p>
   <p>
     スプレッドシート上で作業する翻訳者向けに設計されています — ゲームローカリゼーション、
     UI 文字列、用語リスト、行単位での翻訳作業全般。
   </p>
   <p>
+    <a class="cta" href="#install-excel-ja">Excel 版を使う — 無料</a>
     <a class="cta disabled" href="#">Chrome に追加 — Web Store 公開準備中</a>
     <a class="cta secondary" href="https://github.com/ibushimaru/felix-tm">GitHub でソースを見る</a>
+  </p>
+</section>
+
+<section id="install-excel-ja">
+  <h2>Excel へのインストール</h2>
+  <p>
+    <strong>Excel on the web</strong>（Microsoft アカウントがあれば無料）と
+    デスクトップ版 Excel で動作します。インストーラーも当方への
+    アカウント登録も不要 — 小さなマニフェストファイルをアップロード
+    するだけで、Excel がこのサイトからペインを読み込みます。
+  </p>
+  <ol>
+    <li><a href="./addin/manifest.xml" download>manifest.xml</a> をダウンロード（ブラウザで開いてしまう場合は右クリック→保存）</li>
+    <li>Excel でブックを開き、<strong>ホーム → アドイン → 詳細設定を表示 →
+      個人用アドインの管理 → マイ アドインをアップロード</strong> から
+      ダウンロードしたファイルを選択</li>
+    <li>ホームリボン右端の <strong>Felix TM</strong> ボタンをクリック —
+      シートの横にペインが開きます</li>
+  </ol>
+  <p>
+    ペインの設定タブで原文列・訳文列を指定し、<strong>Set</strong> で行を
+    登録するか、ブックや TMX/TSV ファイルから既存の翻訳を一括インポート
+    してください。
+  </p>
+  <p style="font-size:14px;color:#5f6368">
+    Excel 版は現在、ライブ検索・挿入・元に戻す・TM/用語集管理・TMX/TSV
+    入出力に対応しています。Auto Translate と QC（Chrome 拡張版で利用可）は
+    今後追加予定です。
   </p>
 </section>
 
@@ -194,8 +257,9 @@
 <section>
   <h2>プライバシーの要点</h2>
   <ul>
-    <li>TM・用語集はブラウザ内に留まります。Felix TM にサーバーはありません。</li>
-    <li><code>spreadsheets</code> OAuth スコープは、Auto Translate やインポート等の明示的操作時にのみ使用されます。</li>
+    <li>TM・用語集はブラウザのローカルストレージ（IndexedDB）に保存されます。Felix TM にサーバーはなく、データがあなたの PC を離れることはありません — バックアップには内蔵の TMX/TSV エクスポートをご利用ください。</li>
+    <li>Excel アドインはサインイン不要です。公式 Office API を通じて、開いているブックの読み書きのみを行います。</li>
+    <li>Chrome 拡張の <code>spreadsheets</code> OAuth スコープは、Auto Translate やインポート等の明示的操作時にのみ使用されます。</li>
     <li>アナリティクスなし。トラッキングなし。サードパーティスクリプトなし。</li>
   </ul>
   <p>詳細は <a href="./privacy/#ja">プライバシーポリシー</a> をご覧ください。</p>
@@ -216,9 +280,11 @@
 <section>
   <h2>現在のステータス</h2>
   <p>
-    Felix TM は現在 <strong>プライベートベータ</strong> 段階で、Google OAuth
-    verification と Chrome Web Store 審査の通過を進めています。早期アクセスを
-    ご希望の翻訳者の方は
+    <strong>Excel アドインは公開中です</strong> —
+    <a href="#install-excel-ja">上記の3ステップ</a>でインストールできます。
+    Google Sheets 向け Chrome 拡張は <strong>プライベートベータ</strong> 段階で、
+    Google OAuth verification と Chrome Web Store 審査の通過を進めています。
+    早期アクセスをご希望の翻訳者の方は
     <a href="mailto:ibushimaru@veriscio.com">ibushimaru@veriscio.com</a>
     までご連絡ください。
   </p>
