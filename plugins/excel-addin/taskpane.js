@@ -51,6 +51,7 @@ const I18N = {
     noMatch: 'No matches',
     used: 'used', registered: 'Registered!', alreadyExists: 'Already exists (+1)',
     srcEmpty: 'Source cell is empty', tgtEmpty: 'Target cell is empty',
+    btnSet: 'Set',
     tipUndo: 'Undo the last insert',
     tipSet: "Register the active row's source + target to TM",
     tipModeTranslate: 'Look up target translations from source',
@@ -114,6 +115,7 @@ const I18N = {
     noMatch: 'マッチなし',
     used: '使用', registered: '登録しました', alreadyExists: '既に存在 (+1)',
     srcEmpty: '原文セルが空です', tgtEmpty: '訳文セルが空です',
+    btnSet: '登録',
     tipUndo: '直前の挿入を元に戻す',
     tipSet: '現在行の原文＋訳文を TM に登録',
     tipModeTranslate: '原文を見て訳文候補を探す',
@@ -392,15 +394,25 @@ function updateCellPreview(sel) {
 
 /** Decide the search query for the current selection and render.
  *  This replaces content.js's _sourceCache + fetchSourceForRow dance:
- *  the row's counterpart cell is just one local read away. */
+ *  the row's counterpart cell is just one local read away.
+ *
+ *  The cell-reference label paints immediately, but the preview VALUE
+ *  paints only once the query is decided — on a target cell the
+ *  preview shows the row's SOURCE, and painting the target text first
+ *  (then overwriting it after the async read) flashed the wrong text. */
 async function routeSelection(sel) {
-  updateCellPreview(sel);
+  $('cell-ref').textContent = sel.ref ? `(${sel.ref})` : '';
 
   const onSource = isSourceCol(sel);
   const onTarget = isTargetCol(sel);
   // Outside the configured source/target pair the cell content has
   // nothing to do with TM lookup — clear instead of painting noise.
-  if (!onSource && !onTarget) { lastQuery = ''; paintEmpty('selectCell'); return; }
+  if (!onSource && !onTarget) {
+    $('cell-value').textContent = sel.value || '—';
+    lastQuery = '';
+    paintEmpty('selectCell');
+    return;
+  }
 
   if (panelMode === 'review') {
     // Review mode: reverse search using the target-side text.
@@ -409,6 +421,7 @@ async function routeSelection(sel) {
       const tgt = await readCellValue(sel.sheetName, (settings.targetCol || 'B') + sel.rowNum);
       query = tgt || sel.value;
     }
+    $('cell-value').textContent = query || '—';
     if (!query) { lastQuery = ''; paintEmpty('selectCell'); return; }
     renderSearch(query, true);
     return;
@@ -420,10 +433,16 @@ async function routeSelection(sel) {
   let query = sel.value;
   if (onTarget) {
     query = await readCellValue(sel.sheetName, (settings.sourceCol || 'A') + sel.rowNum);
-    if (!query) { lastQuery = ''; paintEmpty('emptySourceRow'); return; }
-    // Show the row's source in the preview — that's what we're matching.
-    $('cell-value').textContent = query;
+    if (!query) {
+      // Source row genuinely empty — the cell's own text is the only
+      // sensible preview content.
+      $('cell-value').textContent = sel.value || '—';
+      lastQuery = '';
+      paintEmpty('emptySourceRow');
+      return;
+    }
   }
+  $('cell-value').textContent = query || '—';
   if (!query) { lastQuery = ''; paintEmpty('selectCell'); return; }
   renderSearch(query, false);
 }
@@ -1462,6 +1481,7 @@ function applyLang() {
   // Search pane
   set('lbl-cell', t('activeCell'));
   set('lbl-empty', t('selectCell'));
+  set('btn-set', t('btnSet'));
   tip('btn-undo', t('tipUndo'));
   tip('btn-set', t('tipSet'));
   tip('mode-translate', t('tipModeTranslate'));
