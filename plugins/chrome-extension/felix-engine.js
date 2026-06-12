@@ -1066,14 +1066,41 @@ var FelixEngine = (() => {
     // Target must have the same count for reliable positional matching
     if (tNums.length !== sNums.length) return { placed: false };
 
-    // Position-based replacement: source[k] ↔ target[k]
-    // If source[k] ≠ query[k], replace target[k] with query[k]
+    // Pair source numbers with target numbers. Positional pairing
+    // (source[k] ↔ target[k]) breaks when the target language reorders
+    // the numbers — `ランダム4体の敵に120%のダメージ` carries [4, 120]
+    // but its English `Deals 120% damage to 4 random enemies` carries
+    // [120, 4], so a 4→5 query change would overwrite the 120. When the
+    // two sides hold the same multiset of values, pair equal values
+    // instead (occurrence order within a value); then the replaced
+    // target number always equals the source number that changed. Only
+    // when the multisets differ (e.g. the target localizes a number)
+    // fall back to positional pairing.
+    function pairByValue() {
+      const slots = new Map();
+      for (let t = 0; t < tNums.length; t++) {
+        const v = tNums[t].value;
+        if (!slots.has(v)) slots.set(v, []);
+        slots.get(v).push(t);
+      }
+      const pairing = new Array(sNums.length);
+      for (let k = 0; k < sNums.length; k++) {
+        const list = slots.get(sNums[k].value);
+        if (!list || !list.length) return null;
+        pairing[k] = list.shift();
+      }
+      return pairing;
+    }
+    const pairing = pairByValue();
+
+    // If source[k] ≠ query[k], replace the paired target number with query[k]
     const replacements = [];
     for (let k = 0; k < sNums.length; k++) {
       if (qNums[k].value !== sNums[k].value) {
+        const t = pairing ? pairing[k] : k;
         replacements.push({
-          tgtIdx: tNums[k].index,
-          tgtLen: tNums[k].length,
+          tgtIdx: tNums[t].index,
+          tgtLen: tNums[t].length,
           newValue: qNums[k].value,
         });
       }

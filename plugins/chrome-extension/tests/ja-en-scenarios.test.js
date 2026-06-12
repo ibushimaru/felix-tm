@@ -92,6 +92,37 @@ test('JA→EN: multiple number diffs land in matching positions on EN target', (
   assert.deepEqual(r.placements, ['数値']);
 });
 
+test('JA→EN: reordered numbers in target — the changed value is replaced, not the positional slot', () => {
+  // EN reorders the numbers: source carries [4, 120] but target carries
+  // [120, 4]. Positional pairing (source[k] ↔ target[k]) would overwrite
+  // the 120 with 5 and leave the 4 intact — and report covered:true, so
+  // the translator would be handed a verified-looking mistranslation.
+  // Pairing by value must pick the target-side 4.
+  const r = resolveWithPlacement(
+    'ランダム5体の敵に120%のダメージ',
+    'ランダム4体の敵に120%のダメージ',
+    'Deals 120% damage to 4 random enemies',
+    [],
+    [],
+  );
+  assert.equal(r.target, 'Deals 120% damage to 5 random enemies');
+  assert.deepEqual(r.placements, ['数値']);
+  assert.equal(r.covered, true);
+  assert.deepEqual(r.uncovered, []);
+});
+
+test('JA→EN: reordered numbers — both values changed, both land on the right slots', () => {
+  const r = resolveWithPlacement(
+    'ランダム3体の敵に150%のダメージ',
+    'ランダム4体の敵に120%のダメージ',
+    'Deals 120% damage to 4 random enemies',
+    [],
+    [],
+  );
+  assert.equal(r.target, 'Deals 150% damage to 3 random enemies');
+  assert.deepEqual(r.placements, ['数値']);
+});
+
 // -------------------- per-diff glossary (JA term → EN translation) --------------------
 
 test('JA→EN: per-diff glossary swaps the EN translation in target', () => {
