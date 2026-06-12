@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="./addin/icons/icon48.png">
 <title>Felix TM — Excel のための翻訳メモリ</title>
 <meta name="description" content="Felix TM は Excel にリアルタイムの翻訳メモリと用語集検索を持ち込むアドインです。ローカル完結・オープンソース。3ステップでインストール。">
 <style>
@@ -43,6 +44,7 @@
 <body>
 
 <header id="ja">
+  <img src="./addin/icons/icon128.png" alt="Felix TM" width="72" height="72" style="border-radius:16px">
   <h1>Felix TM</h1>
   <p class="tagline">Excel のための翻訳メモリ — ローカル完結、オープンソース。</p>
   <p><a class="cta" href="#install-excel-ja">Excel に追加 ↓</a></p>
@@ -73,18 +75,19 @@
     Excel にアップロードするだけで使い始められます。
   </p>
   <ol class="steps">
-    <li><a href="./addin/manifest.xml" download><strong>manifest.xml をダウンロード</strong></a>（ブラウザで開いてしまう場合は右クリック→「名前を付けてリンク先を保存」）</li>
+    <li><a href="./addin/manifest.xml" download><strong>manifest.xml をダウンロード</strong></a></li>
     <li>Excel でブックを開き、<strong>ホーム → アドイン → 詳細設定を表示 →
       個人用アドインの管理 → マイ アドインをアップロード</strong> から
       ダウンロードしたファイルを選択</li>
     <li>ホームリボン右端の <strong>Felix TM</strong> ボタンをクリック —
       シートの横にペインが開きます</li>
   </ol>
-  <p>
-    開いたら、ペインの設定タブで原文列・訳文列を指定し、<strong>Set</strong>
-    で行を登録するか、ブックや TMX/TSV ファイルから既存の翻訳を一括
-    インポートしてください。
-  </p>
+  <h3>初期設定</h3>
+  <ol class="steps">
+    <li>ペインの<strong>設定</strong>タブで、原文列（例: A）と訳文列（例: B）を指定して保存</li>
+    <li><strong>TM</strong> タブの「ブックからインポート」で既存の対訳を取り込み（TMX/TSV ファイルのドロップも可）</li>
+    <li>原文セルを選択すると候補が表示されます。カードをクリックで挿入、<strong>Set</strong> で現在行を TM に登録</li>
+  </ol>
 </section>
 
 <section>
@@ -160,6 +163,7 @@
 <hr class="sep" id="en">
 
 <header>
+  <img src="./addin/icons/icon128.png" alt="Felix TM" width="72" height="72" style="border-radius:16px">
   <h1>Felix TM</h1>
   <p class="tagline">Translation Memory for Excel — local-first, open source.</p>
   <p><a class="cta" href="#install-excel">Add to Excel ↓</a></p>
@@ -192,18 +196,19 @@
     Excel and you're ready to go.
   </p>
   <ol class="steps">
-    <li><a href="./addin/manifest.xml" download><strong>Download manifest.xml</strong></a> (right-click → "Save link as" if it opens in the browser)</li>
+    <li><a href="./addin/manifest.xml" download><strong>Download manifest.xml</strong></a></li>
     <li>In Excel, open a workbook and go to
       <strong>Home → Add-ins → More settings → My Add-ins →
       Upload My Add-in</strong>, then pick the downloaded file</li>
     <li>Click the <strong>Felix TM</strong> button at the right end of the
       Home ribbon — the pane opens next to your sheet</li>
   </ol>
-  <p>
-    Then set your source/target columns in the pane's Settings tab, and
-    either register rows with <strong>Set</strong> or bulk-import existing
-    translations from the workbook or a TMX/TSV file.
-  </p>
+  <h3>First-time setup</h3>
+  <ol class="steps">
+    <li>In the pane's <strong>Settings</strong> tab, set your source column (e.g. A) and target column (e.g. B), then save</li>
+    <li>In the <strong>TM</strong> tab, use "Import from Workbook" to pull in existing translations (or drop a TMX/TSV file)</li>
+    <li>Select a source cell to see candidates. Click a card to insert; <strong>Set</strong> registers the current row to the TM</li>
+  </ol>
 </section>
 
 <section>
