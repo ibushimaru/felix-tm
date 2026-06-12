@@ -90,6 +90,7 @@ const I18N = {
     wbImportDesc: 'Import from the active worksheet. Select a range to auto-fill.',
     glossWbImportDesc: 'Import from the active worksheet (term / translation columns).',
     badRange: 'Invalid range',
+    rowMismatch: 'Src and Tgt rows do not match: {a} / {b}',
     export: 'Export', exportTM: 'Export TM as TSV', exportTMX: 'Export TM as TMX',
     exportGloss: 'Export Glossary as TSV',
     save: 'Save', saved: 'Saved!',
@@ -154,6 +155,7 @@ const I18N = {
     wbImportDesc: '現在のワークシートからインポートします。シート上で範囲を選択すると自動入力されます。',
     glossWbImportDesc: '現在のワークシートからインポート（用語列／訳語列）。',
     badRange: '範囲指定が不正です',
+    rowMismatch: 'Src と Tgt の行が一致しません: {a} / {b}',
     export: 'エクスポート', exportTM: 'TMをTSVでエクスポート', exportTMX: 'TMをTMXでエクスポート',
     exportGloss: '用語集をTSVでエクスポート',
     save: '保存', saved: '保存しました',
@@ -1269,6 +1271,14 @@ async function readWorkbookRange(srcId, tgtId) {
   const src = parseColSpec($(srcId).value || 'A2:A');
   const tgt = parseColSpec($(tgtId).value || 'B2:B');
   if (!src || !tgt) { showToast(t('badRange'), 0, true); return null; }
+  // Rows are paired by index, so misaligned row spans silently register
+  // wrong pairs — refuse instead.
+  const srcSpan = src.endRow ? src.endRow - src.startRow : null;
+  const tgtSpan = tgt.endRow ? tgt.endRow - tgt.startRow : null;
+  if (src.startRow !== tgt.startRow || (srcSpan !== null && tgtSpan !== null && srcSpan !== tgtSpan)) {
+    showToast(t('rowMismatch').replace('{a}', $(srcId).value).replace('{b}', $(tgtId).value), 0, true);
+    return null;
+  }
 
   const result = await excelRun(async (ctx) => {
     const sheet = ctx.workbook.worksheets.getActiveWorksheet();
@@ -1331,7 +1341,9 @@ async function importGlossaryFromWorkbook() {
 }
 
 /** Reflect the current worksheet selection into the import range inputs.
- *  Two-column selections split into src/tgt; single column fills src. */
+ *  Two-column selections split into src/tgt. A single-column selection
+ *  fills src AND realigns the tgt field's rows (keeping its column) —
+ *  leaving a stale row span there pairs wrong rows on import. */
 function applySelectionToImportRanges(selRef) {
   const m = selRef.match(/^([A-Z]+)(\d*)(?::([A-Z]+)(\d*))?$/i);
   if (!m) return;
@@ -1348,6 +1360,14 @@ function applySelectionToImportRanges(selRef) {
       $(tgtId).value = `${col2}${row1}:${col2}${row2}`;
     } else {
       $(srcId).value = selRef;
+      const tgtEl = $(tgtId);
+      const tcolMatch = (tgtEl.value || '').match(/^([A-Za-z]+)/);
+      if (tcolMatch) {
+        const tcol = tcolMatch[1].toUpperCase();
+        tgtEl.value = selRef.includes(':')
+          ? `${tcol}${row1}:${tcol}${row2}`
+          : `${tcol}${row1}`;
+      }
     }
   }
 }
