@@ -31,6 +31,9 @@
   .steps { margin: 16px 0; }
   .steps li { margin: 10px 0; }
   .note { font-size: 14px; color: #5f6368; }
+  details { margin: 10px 0; border: 1px solid #e8eaed; border-radius: 8px; padding: 10px 14px; }
+  details summary { cursor: pointer; font-weight: 600; }
+  details[open] summary { margin-bottom: 8px; }
   code { background: #f1f3f4; padding: 1px 6px; border-radius: 3px; font-size: 0.9em; }
   footer { padding: 32px 24px 64px; text-align: center; font-size: 13px; color: #5f6368; border-top: 1px solid #e8eaed; }
   footer a { color: #1a73e8; text-decoration: none; margin: 0 8px; }
@@ -66,7 +69,7 @@
 </section>
 
 <section id="install-excel-ja">
-  <h2>インストール（3ステップ）</h2>
+  <h2>インストール</h2>
   <ol class="steps">
     <li><a href="./addin/manifest.xml" download><strong>manifest.xml をダウンロード</strong></a></li>
     <li>Excel でブックを開き、<strong>ホーム → アドイン → 詳細設定を表示 →
@@ -75,6 +78,24 @@
     <li>ホームリボン右端の <strong>Felix TM</strong> ボタンをクリック —
       シートの横にペインが開きます</li>
   </ol>
+  <p class="note">上記は Excel on the web の手順です。デスクトップ版は以下。</p>
+  <details>
+    <summary>Windows デスクトップ版</summary>
+    <ol class="steps">
+      <li>manifest.xml を任意のフォルダ（例: <code>C:\addins</code>）に置き、フォルダを右クリック → プロパティ → 共有 タブ → 共有 で自分のアカウントに共有し、表示されるネットワークパス（<code>\\PC名\addins</code>）を控える</li>
+      <li>Excel → ファイル → オプション → <strong>トラストセンター → トラストセンターの設定 → 信頼できるアドインカタログ</strong> にそのパスを追加し、「メニューに表示する」にチェック → Excel を再起動</li>
+      <li><strong>挿入 → アドイン → 個人用アドイン → 共有フォルダー</strong> タブから Felix TM を選択</li>
+    </ol>
+    <p class="note">Microsoft 365 または Office 2021 以降（WebView2 搭載版）。</p>
+  </details>
+  <details>
+    <summary>Mac デスクトップ版</summary>
+    <ol class="steps">
+      <li>manifest.xml を <code>~/Library/Containers/com.microsoft.Excel/Data/Documents/wef/</code> にコピー（<code>wef</code> フォルダがなければ作成）</li>
+      <li>Excel を再起動</li>
+      <li><strong>挿入 → アドイン → 個人用アドイン</strong> から Felix TM を選択</li>
+    </ol>
+  </details>
   <h3>初期設定</h3>
   <ol class="steps">
     <li>ペインの<strong>設定</strong>タブで、原文列（例: A）と訳文列（例: B）を指定して保存</li>
@@ -182,7 +203,7 @@
 </section>
 
 <section id="install-excel">
-  <h2>Install in 3 steps</h2>
+  <h2>Install</h2>
   <ol class="steps">
     <li><a href="./addin/manifest.xml" download><strong>Download manifest.xml</strong></a></li>
     <li>In Excel, open a workbook and go to
@@ -191,6 +212,24 @@
     <li>Click the <strong>Felix TM</strong> button at the right end of the
       Home ribbon — the pane opens next to your sheet</li>
   </ol>
+  <p class="note">The steps above are for Excel on the web. For desktop Excel:</p>
+  <details>
+    <summary>Windows desktop</summary>
+    <ol class="steps">
+      <li>Put manifest.xml in a folder (e.g. <code>C:\addins</code>), right-click the folder → Properties → Sharing → Share it with your own account, and note the network path (<code>\\PCNAME\addins</code>)</li>
+      <li>Excel → File → Options → <strong>Trust Center → Trust Center Settings → Trusted Add-in Catalogs</strong>: add that path, tick "Show in Menu", restart Excel</li>
+      <li><strong>Insert → Add-ins → My Add-ins → Shared Folder</strong> tab → Felix TM</li>
+    </ol>
+    <p class="note">Requires Microsoft 365 or Office 2021+ (WebView2).</p>
+  </details>
+  <details>
+    <summary>Mac desktop</summary>
+    <ol class="steps">
+      <li>Copy manifest.xml into <code>~/Library/Containers/com.microsoft.Excel/Data/Documents/wef/</code> (create the <code>wef</code> folder if missing)</li>
+      <li>Restart Excel</li>
+      <li><strong>Insert → Add-ins → My Add-ins</strong> → Felix TM</li>
+    </ol>
+  </details>
   <h3>First-time setup</h3>
   <ol class="steps">
     <li>In the pane's <strong>Settings</strong> tab, set your source column (e.g. A) and target column (e.g. B), then save</li>

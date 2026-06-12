@@ -68,6 +68,22 @@ cp manifest.xml ~/Library/Containers/com.microsoft.Excel/Data/Documents/wef/
 
 Excel を再起動 → 挿入 → アドイン → 自分のアドイン。
 
+## Windows 版デスクトップ Excel へのサイドロード（参考）
+
+Windows デスクトップは「共有フォルダーカタログ」方式:
+
+1. manifest.xml を任意のフォルダ（例 `C:\addins`）に置き、フォルダを
+   右クリック → プロパティ → 共有 → 自分のアカウントに共有して
+   ネットワークパス（`\\PC名\addins`）を控える
+2. Excel → ファイル → オプション → トラストセンター →
+   トラストセンターの設定 → 信頼できるアドインカタログ にそのパスを
+   追加し「メニューに表示する」にチェック → Excel 再起動
+3. 挿入 → アドイン → 個人用アドイン → 「共有フォルダー」タブ
+
+要件: Microsoft 365 / Office 2021 以降（WebView2）。旧 EdgeHTML/IE
+ベースの Office 2016/2019 は taskpane.js のモダン構文が動かないため
+対象外。
+
 ## データについて
 
 TM・用語集・設定は IndexedDB（ブラウザ／webview ローカル）に保存される。
