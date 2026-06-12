@@ -48,7 +48,7 @@
   <h1>Felix TM</h1>
   <p class="tagline">Excel のための翻訳メモリ — ローカル完結、オープンソース。</p>
   <p><a class="cta" href="#install-excel-ja">Excel に追加 ↓</a></p>
-  <p class="sub">Excel on the web / デスクトップ版対応 · アカウント登録不要 · データはあなたの PC から出ません</p>
+  <p class="sub">Excel on the web / デスクトップ版対応 · アカウント登録不要 · データは PC の外に出ません</p>
   <p class="lang"><a href="#en">English</a></p>
 </header>
 
@@ -71,8 +71,8 @@
 <section id="install-excel-ja">
   <h2>インストール（3ステップ）</h2>
   <p>
-    インストーラーも当方へのアカウント登録も不要です。小さな設定ファイルを
-    Excel にアップロードするだけで使い始められます。
+    設定ファイル（manifest.xml）をひとつ Excel に読み込ませるだけで
+    使えます。インストーラーはありません。
   </p>
   <ol class="steps">
     <li><a href="./addin/manifest.xml" download><strong>manifest.xml をダウンロード</strong></a></li>
@@ -126,7 +126,7 @@
 <section>
   <h2>プライバシーの要点</h2>
   <ul>
-    <li>TM・用語集はブラウザのローカル保存領域（IndexedDB）のみに保存。Felix TM にサーバーはなく、データがあなたの PC を離れることはありません。</li>
+    <li>TM・用語集はブラウザのローカル保存領域（IndexedDB）のみに保存。Felix TM にサーバーはなく、データが PC の外に出ることはありません。</li>
     <li>サインイン不要。公式 Office API を通じて、開いているブックの読み書きのみを行います。</li>
     <li>アナリティクスなし。トラッキングなし。サードパーティスクリプトなし。</li>
     <li>ブラウザのサイトデータを消去すると TM も消えます — バックアップには内蔵の TMX/TSV エクスポートをご利用ください。</li>
@@ -192,8 +192,8 @@
 <section id="install-excel">
   <h2>Install in 3 steps</h2>
   <p>
-    No installer, no account with us. You upload a small settings file to
-    Excel and you're ready to go.
+    One small settings file (manifest.xml) is all Excel needs — there is
+    no installer.
   </p>
   <ol class="steps">
     <li><a href="./addin/manifest.xml" download><strong>Download manifest.xml</strong></a></li>

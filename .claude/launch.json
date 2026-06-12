@@ -7,6 +7,13 @@
       "runtimeArgs": ["plugins/excel-addin/server.mjs"],
       "port": 3001,
       "autoPort": false
+    },
+    {
+      "name": "docs",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "3002", "-d", "docs"],
+      "port": 3002,
+      "autoPort": false
     }
   ]
 }
