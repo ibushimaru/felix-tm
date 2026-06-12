@@ -20,7 +20,7 @@
     font-display: swap;
   }
   :root { color-scheme: light; }
-  body { font-family: "Zen Kaku Gothic New", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "Hiragino Sans", "Yu Gothic UI", sans-serif; max-width: 760px; margin: 0 auto; padding: 32px 24px 80px; color: #202124; line-height: 1.65; }
+  body { font-family: "Zen Kaku Gothic New", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "Hiragino Sans", "Yu Gothic UI", sans-serif; max-width: 760px; margin: 0 auto; padding: 32px 24px 80px; color: #202124; line-height: 1.65; word-break: keep-all; overflow-wrap: anywhere; }
   h1 { font-size: 28px; margin: 0 0 4px; }
   h2 { font-size: 20px; margin: 32px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #e8eaed; }
   h3 { font-size: 16px; margin: 20px 0 6px; }
@@ -47,139 +47,139 @@
 <p class="lang-switch"><a href="#en">English version →</a></p>
 
 <p>
-  Felix TM は、スプレッドシートで作業する翻訳者向けに、翻訳メモリ (TM)
-  と用語集 (Glossary) の検索機能を提供するツールです。Google Sheets 向けの
-  Chrome 拡張機能と、Excel 向けの Office アドインの2形態で提供しています。
-  本ポリシーは、Felix TM がアクセスするデータの種類、保管場所、利用方法を
-  明確に説明します。
+  Felix TM は、<wbr>スプレッドシートで<wbr>作業する<wbr>翻訳者向けに、<wbr>翻訳メモリ (TM)
+  と<wbr>用語集 (Glossary) の<wbr>検索機能を<wbr>提供する<wbr>ツールです。<wbr>Google Sheets 向けの
+  Chrome 拡張機能と、<wbr>Excel 向けの Office アドインの<wbr>2形態で<wbr>提供しています。
+  本ポリシーは、<wbr>Felix TM が<wbr>アクセスする<wbr>データの<wbr>種類、<wbr>保管場所、<wbr>利用方<wbr>法を
+  明確に<wbr>説明します。
 </p>
 
 <h2>運営者</h2>
 <p>
-  Felix TM は、日本国内で活動する <strong>Veriscio (個人事業主: Ibushimaru)</strong>
-  が開発・運営しています。プライバシーに関するお問い合わせは
-  <a href="mailto:ibushimaru@veriscio.com">ibushimaru@veriscio.com</a> までお願いします。
+  Felix TM は、<wbr>日本国内で<wbr>活動する <strong>Veriscio (個人事業主: Ibushimaru)</strong>
+  が<wbr>開発・<wbr>運営しています。<wbr>プライバシーに<wbr>関する<wbr>お問い<wbr>合わせは
+  <a href="mailto:ibushimaru@veriscio.com">ibushimaru@veriscio.com</a> まで<wbr>お願いします。
 </p>
 
 <h2>要約</h2>
 <ul>
-  <li>翻訳メモリ・用語集のエントリは <strong>すべてご自身のブラウザ内 (IndexedDB)</strong> に保存され、当方のサーバーには一切送信されません。</li>
-  <li>Felix TM には <strong>バックエンドサーバーが存在しません</strong>。アナリティクス、利用状況追跡、サードパーティトラッカーは一切組み込まれていません。</li>
-  <li>サインインすると、Google が OAuth トークンをご自身のブラウザに発行します。Felix TM はそのトークンを <strong>ブラウザから Google の API に直接</strong> 使用して、開いている spreadsheet を読み書きします。</li>
-  <li>当方が spreadsheet の内容を閲覧・保存・送信することはありません。</li>
+  <li>翻訳メモリ・用語集の<wbr>エントリは <strong>すべて<wbr>ご自身の<wbr>ブラウザ内 (IndexedDB)</strong> に<wbr>保存され、<wbr>当方の<wbr>サーバーには<wbr>一切送信されません。</li>
+  <li>Felix TM には <strong>バックエンドサーバーが<wbr>存在しません</strong>。<wbr>アナリティクス、<wbr>利用状況追跡、<wbr>サードパーティトラッカーは<wbr>一切<wbr>組み込まれていません。</li>
+  <li>サインインすると、<wbr>Google が OAuth トークンを<wbr>ご自身の<wbr>ブラウザに<wbr>発行します。<wbr>Felix TM は<wbr>そのトークンを <strong>ブラウザから Google の API に<wbr>直接</strong> 使用して、<wbr>開いている spreadsheet を<wbr>読み<wbr>書きします。</li>
+  <li>当方が spreadsheet の<wbr>内容を<wbr>閲覧・保存・送信する<wbr>ことは<wbr>ありません。</li>
 </ul>
 
-<h2>Felix TM がアクセスするデータ</h2>
+<h2>Felix TM が<wbr>アクセスする<wbr>データ</h2>
 
-<h3>1. 翻訳メモリと用語集（ローカル保存のみ）</h3>
+<h3>1. 翻訳メモリと<wbr>用語集<wbr>（ローカル保存のみ）</h3>
 <p>
-  Felix TM 経由で作成される原文/訳文ペア、用語、プレースメントルール、
-  およびエントリ単位のメタデータ（メモ、プロジェクト名、クライアント名）は、
-  ブラウザのローカル <strong>IndexedDB</strong> に保存されます。これらのデータは:
+  Felix TM 経由で<wbr>作成される<wbr>原文/訳文ペア、<wbr>用語、<wbr>プレースメントルール、
+  および<wbr>エントリ単位の<wbr>メタデータ<wbr>（メモ、<wbr>プロジェクト名、<wbr>クライアント名）は、
+  ブラウザの<wbr>ローカル <strong>IndexedDB</strong> に<wbr>保存されます。<wbr>これらの<wbr>データは<wbr>:
 </p>
 <ul>
-  <li>お使いのコンピュータから外部に送信されることはありません。</li>
-  <li>Felix TM 自体によるデバイス間同期は行いません。</li>
-  <li>サイドパネルから TMX / TSV / XLSX 形式でいつでもエクスポート可能です。</li>
-  <li>拡張機能をアンインストールするか、ブラウザの拡張機能サイトデータをクリアすると削除されます。</li>
+  <li>お使いの<wbr>コンピュータから<wbr>外部に<wbr>送信される<wbr>ことは<wbr>ありません。</li>
+  <li>Felix TM 自体に<wbr>よる<wbr>デバイス間同期は<wbr>行いません。</li>
+  <li>サイドパネルから TMX / TSV / XLSX 形式で<wbr>いつでも<wbr>エクスポート可能です。</li>
+  <li>拡張機能を<wbr>アンインストールするか、<wbr>ブラウザの<wbr>拡張機能サイトデータを<wbr>クリアすると<wbr>削除されます。</li>
 </ul>
 
-<h3>2. Google Sheets の内容（Google に直接送信）</h3>
+<h3>2. Google Sheets の<wbr>内容<wbr>（Google に<wbr>直接送信）</h3>
 <p>
-  Auto Translate や Import from Sheet などの Sheets 連携機能を使用する際、
-  Felix TM は開いている spreadsheet を読み書きします。これらの API 呼び出しは、
+  Auto Translate や Import from Sheet などの Sheets 連携機能を<wbr>使用する<wbr>際、
+  Felix TM は<wbr>開いている spreadsheet を<wbr>読み<wbr>書きします。<wbr>これらの API 呼び出しは、
   ブラウザから <code>sheets.googleapis.com</code> へ直接送信され、
-  Google が発行した OAuth トークンで認証されます。セルの値はローカルの TM
-  と照合するためにブラウザのメモリを一時的に通過するだけで、
-  以下の場合を除き、どこにも保存されません:
-  (a) ユーザーが明示的に TM へエントリを追加した場合のローカル IndexedDB、
-  (b) spreadsheet 自体への書き込み。
+  Google が<wbr>発行した OAuth トークンで<wbr>認証されます。<wbr>セルの<wbr>値は<wbr>ローカルの TM
+  と<wbr>照合する<wbr>ために<wbr>ブラウザの<wbr>メモリを<wbr>一時的に<wbr>通過するだけで、
+  以下の<wbr>場合を<wbr>除き、<wbr>どこにも<wbr>保存されません:
+  (a) ユーザーが<wbr>明示的に TM へ<wbr>エントリを<wbr>追加した<wbr>場合の<wbr>ローカル IndexedDB、
+  (b) spreadsheet 自体への<wbr>書き込み。
 </p>
 
-<h3>3. Excel ブックの内容（Excel アドイン）</h3>
+<h3>3. Excel ブックの<wbr>内容<wbr>（Excel アドイン）</h3>
 <p>
-  Excel アドインは Excel のタスクペイン内で完結して動作し、
-  <strong>サインインを必要としません</strong>。公式の Office JavaScript API
-  を通じて、選択中のセルと設定済みの原文/訳文列を読み取り、ユーザーが
-  明示的に挿入操作をしたときにのみ訳文を書き込みます。ブックの内容が
-  Excel の外に出ることはありません。アドイン自身は独自の通信を行わず、
-  静的ファイル（HTML/JS）が一般的な Web サイトと同様に GitHub Pages から
-  配信されるのみです（GitHub の標準的なサーバーログの対象になります。
-  <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub のプライバシーステートメント</a>参照）。
-  これらのリクエストに spreadsheet や TM のデータは含まれません。
+  Excel アドインは Excel の<wbr>タスクペイン内で<wbr>完結して<wbr>動作し、
+  <strong>サインインを<wbr>必要としません</strong>。<wbr>公式の Office JavaScript API
+  を<wbr>通じて、<wbr>選択中の<wbr>セルと<wbr>設定済みの<wbr>原文/訳文列を<wbr>読み取り、<wbr>ユーザーが
+  明示的に<wbr>挿入操作を<wbr>した<wbr>ときに<wbr>のみ<wbr>訳文を<wbr>書き込みます。<wbr>ブックの<wbr>内容が
+  Excel の<wbr>外に<wbr>出る<wbr>ことは<wbr>ありません。<wbr>アドイン自身は<wbr>独自の<wbr>通信を<wbr>行わず、
+  静的ファイル<wbr>（HTML/JS）が<wbr>一般的な Web サイトと<wbr>同様に GitHub Pages から
+  配信される<wbr>のみです<wbr>（GitHub の<wbr>標準的な<wbr>サーバーログの<wbr>対象に<wbr>なります。
+  <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub の<wbr>プライバシーステートメント</a>参照）。
+  これらの<wbr>リクエストに spreadsheet や TM の<wbr>データは<wbr>含まれません。
 </p>
 
-<h2>Felix TM が要求する OAuth スコープ（Chrome 拡張のみ）</h2>
+<h2>Felix TM が<wbr>要求する OAuth スコープ<wbr>（Chrome 拡張のみ）</h2>
 <table class="scope-table">
   <thead>
-    <tr><th>スコープ</th><th>必要な理由</th></tr>
+    <tr><th>スコープ</th><th>必要な<wbr>理由</th></tr>
   </thead>
   <tbody>
     <tr>
       <td><code>https://www.googleapis.com/auth/spreadsheets</code></td>
       <td>
-        開いている Google Sheets の原文セルを読み取り、訳文セルに書き込みます。
-        Auto Translate、Import from Sheet、セル書き込みボタンに必要です。
-        Felix TM はユーザーが明示的に操作した場合にのみ読み書きを行い、
-        バックグラウンドで読み取ることはありません。
+        開いている Google Sheets の<wbr>原文セルを<wbr>読み取り、<wbr>訳文セルに<wbr>書き込みます。
+        Auto Translate、Import from Sheet、<wbr>セル<wbr>書き込みボタンに<wbr>必要です。
+        Felix TM は<wbr>ユーザーが<wbr>明示的に<wbr>操作した<wbr>場合に<wbr>のみ<wbr>読み<wbr>書きを<wbr>行い、
+        バック<wbr>グラウンドで<wbr>読み取る<wbr>ことは<wbr>ありません。
       </td>
     </tr>
   </tbody>
 </table>
 <p>
-  Felix TM は <code>userinfo.email</code> スコープを要求しません。
-  サインイン後、サイドパネルには「✓ Signed in」とだけ表示され、
-  メールアドレスの取得・表示・保存は一切行いません。接続中の Google
-  アカウントを確認したい場合は、いったんサインアウトしてから再度
-  サインインしてください。Google のアカウント選択画面が表示されます。
+  Felix TM は <code>userinfo.email</code> スコープを<wbr>要求しません。
+  サインイン後、<wbr>サイドパネルには<wbr>「✓ Signed in」とだけ<wbr>表示され、
+  メールアドレスの<wbr>取得・表示・保存は<wbr>一切<wbr>行いません。<wbr>接続中の Google
+  アカウントを<wbr>確認したい<wbr>場合は、<wbr>いったんサインアウトしてから<wbr>再度
+  サインインしてください。<wbr>Google の<wbr>アカウント選択画面が<wbr>表示されます。
 </p>
 
-<h2>Limited Use ポリシーへの準拠</h2>
+<h2>Limited Use ポリシーへの<wbr>準拠</h2>
 <p>
-  Felix TM が Google API から受け取る情報の取り扱いは、
+  Felix TM が Google API から<wbr>受け取る<wbr>情報の<wbr>取り扱いは、
   <a href="https://developers.google.com/terms/api-services-user-data-policy#limited-use">Google API サービス ユーザーデータポリシー</a>、
-  特に <strong>Limited Use</strong> 要件に準拠します。具体的には:
+  特に <strong>Limited Use</strong> 要件に<wbr>準拠します。<wbr>具体的には<wbr>:
 </p>
 <ul>
-  <li><code>spreadsheets</code> スコープでアクセスする spreadsheet の内容は、<strong>動作中の拡張機能内でユーザー向けの翻訳メモリ機能（マッチング、書き戻し、インポート）を提供する目的のみ</strong>に使用します。</li>
-  <li>このデータを第三者へ転送することは、ユーザー向け機能の提供・改善に必要な場合、適用される法令を遵守する場合、またはユーザーの事前同意を得た合併・買収・資産売却の場合を除き、<strong>行いません</strong>。</li>
-  <li>このデータを広告配信に <strong>使用しません</strong>。</li>
-  <li>ユーザーの明示的同意、セキュリティ上の必要性、適用法令への準拠、または法令に従った内部運用のための集計データを除き、人間がこのデータを閲覧することを <strong>許可しません</strong>。</li>
-  <li>このデータを汎用的な AI / ML モデルの開発・改善・学習に <strong>使用しません</strong>。マッチングはすべて、ブラウザ内でローカルに動作する決定論的アルゴリズムにより実行されます。</li>
+  <li><code>spreadsheets</code> スコープで<wbr>アクセスする spreadsheet の<wbr>内容は、<strong>動作中の<wbr>拡張機能内で<wbr>ユーザー向けの<wbr>翻訳メモリ機能<wbr>（マッチング、<wbr>書き戻し、<wbr>インポート）を<wbr>提供する<wbr>目的のみ</strong>に<wbr>使用します。</li>
+  <li>この<wbr>データを<wbr>第三者へ<wbr>転送する<wbr>ことは、<wbr>ユーザー向け機能の<wbr>提供・改善に<wbr>必要な<wbr>場合、<wbr>適用される<wbr>法令を<wbr>遵守する<wbr>場合、<wbr>または<wbr>ユーザーの<wbr>事前同意を<wbr>得た合併・買収・資産売却の<wbr>場合を<wbr>除き、<strong>行いません</strong>。</li>
+  <li>この<wbr>データを<wbr>広告配信に <strong>使用しません</strong>。</li>
+  <li>ユーザーの<wbr>明示的同意、<wbr>セキュリティ上の<wbr>必要性、<wbr>適用法令への<wbr>準拠、<wbr>または<wbr>法令に<wbr>従った<wbr>内部<wbr>運用の<wbr>ための<wbr>集計データを<wbr>除き、<wbr>人間が<wbr>この<wbr>データを<wbr>閲覧する<wbr>ことを <strong>許可しません</strong>。</li>
+  <li>この<wbr>データを<wbr>汎用的な AI / ML モデルの<wbr>開発・改善・学習に <strong>使用しません</strong>。<wbr>マッチングは<wbr>すべて、<wbr>ブラウザ内で<wbr>ローカルに<wbr>動作する<wbr>決定論的アルゴリズムに<wbr>より<wbr>実行されます。</li>
 </ul>
 
 <h2>収集 <em>しない</em> データ</h2>
 <ul>
-  <li>アナリティクス、テレメトリ、クラッシュレポートなし。</li>
+  <li>アナリティクス、<wbr>テレメトリ、<wbr>クラッシュレポートなし。</li>
   <li>広告識別子なし。</li>
   <li>サードパーティトラッカーなし。</li>
-  <li>翻訳作業のリモートログなし。</li>
+  <li>翻訳作業の<wbr>リモートログなし。</li>
 </ul>
 
-<h2>お子様について</h2>
+<h2>お子様に<wbr>ついて</h2>
 <p>
-  Felix TM は翻訳者向けの業務用ツールであり、13 歳未満を対象としていません。
-  当方は意図的に児童からデータを収集することはありません。
+  Felix TM は<wbr>翻訳者向けの<wbr>業務用ツールであり、<wbr>13 歳未満を<wbr>対象と<wbr>していません。
+  当方は<wbr>意図的に<wbr>児童から<wbr>データを<wbr>収集する<wbr>ことは<wbr>ありません。
 </p>
 
-<h2>ユーザーの選択</h2>
+<h2>ユーザーの<wbr>選択</h2>
 <ul>
-  <li>設定タブからいつでも <strong>サインアウト</strong> できます。これにより OAuth トークンが取り消され、ブラウザの identity キャッシュから削除されます。</li>
-  <li><a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a> から <strong>アクセス権限を完全に取り消す</strong> ことができます。</li>
-  <li>拡張機能をアンインストールするか、<code>chrome://settings/cookies</code> で拡張機能のサイトデータを削除することで <strong>ローカルデータを削除</strong> できます。</li>
-  <li>削除前に、いつでも <strong>TM を TMX / TSV / XLSX 形式でエクスポート</strong> できます。</li>
+  <li>設定タブから<wbr>いつでも <strong>サインアウト</strong> できます。<wbr>これに<wbr>より OAuth トークンが<wbr>取り消され、<wbr>ブラウザの identity キャッシュから<wbr>削除されます。</li>
+  <li><a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a> から <strong>アクセス権限を<wbr>完全に<wbr>取り消す</strong> ことができます。</li>
+  <li>拡張機能を<wbr>アンインストールするか、<code>chrome://settings/cookies</code> で<wbr>拡張機能の<wbr>サイトデータを<wbr>削除する<wbr>ことで <strong>ローカルデータを<wbr>削除</strong> できます。</li>
+  <li>削除前に、<wbr>いつでも <strong>TM を TMX / TSV / XLSX 形式で<wbr>エクスポート</strong> できます。</li>
 </ul>
 
-<h2>本ポリシーの変更</h2>
+<h2>本ポリシーの<wbr>変更</h2>
 <p>
-  Felix TM のデータ取り扱いに変更がある場合、本ページと上部の「最終更新日」を
-  更新します。新たなデータ収集や新しいサードパーティ連携など重要な変更の場合は、
-  拡張機能のサイドパネル内にも通知を表示します。
+  Felix TM の<wbr>データ取り扱いに<wbr>変更が<wbr>ある<wbr>場合、<wbr>本ページと<wbr>上部の<wbr>「最終更新日」を
+  更新します。<wbr>新たな<wbr>データ収集や<wbr>新しい<wbr>サードパーティ連携など<wbr>重要な<wbr>変更の<wbr>場合は、
+  拡張機能の<wbr>サイドパネル内にも<wbr>通知を<wbr>表示します。
 </p>
 
-<h2>お問い合わせ</h2>
+<h2>お問い<wbr>合わせ</h2>
 <p>
-  ご質問・ご要望:
+  ご質問・<wbr>ご要望:
   <a href="mailto:ibushimaru@veriscio.com">ibushimaru@veriscio.com</a><br>
   ソースコード・課題管理: <a href="https://github.com/ibushimaru/felix-tm">github.com/ibushimaru/felix-tm</a>
 </p>
@@ -189,7 +189,7 @@
 <h1>Privacy Policy</h1>
 <p class="meta">Last updated: 2026-06-13</p>
 
-<p class="lang-switch"><a href="#top">↑ 日本語版はこちら</a></p>
+<p class="lang-switch"><a href="#top">↑ 日本語版は<wbr>こちら</a></p>
 
 <p>
   Felix TM provides translation memory (TM) and glossary lookup for

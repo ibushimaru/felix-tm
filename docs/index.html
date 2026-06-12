@@ -27,7 +27,7 @@
   }
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
-  body { font-family: "Zen Kaku Gothic New", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "Hiragino Sans", "Yu Gothic UI", sans-serif; margin: 0; color: #202124; line-height: 1.6; background: #fff; }
+  body { font-family: "Zen Kaku Gothic New", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "Hiragino Sans", "Yu Gothic UI", sans-serif; margin: 0; color: #202124; line-height: 1.6; background: #fff; word-break: keep-all; overflow-wrap: anywhere; }
   .wrap { max-width: 880px; margin: 0 auto; padding: 24px; }
   header { padding: 56px 24px 40px; text-align: center; }
   header h1 { font-size: 40px; margin: 0 0 8px; letter-spacing: -0.5px; }
@@ -74,8 +74,8 @@
 <header id="ja">
   <img src="./addin/icons/icon128.png" alt="Felix TM" width="72" height="72" style="border-radius:16px">
   <h1>Felix TM</h1>
-  <p class="tagline">Excel のための翻訳メモリ — ローカル完結、オープンソース。</p>
-  <p class="sub">Excel on the web / デスクトップ版対応 · アカウント登録不要 · データはローカル保存</p>
+  <p class="tagline">Excel の<wbr>ための<wbr>翻訳メモリ — ローカル完結、<wbr>オープンソース。</p>
+  <p class="sub">Excel on the web / デスクトップ版対応 · アカウント登録不要 · データは<wbr>ローカル保存</p>
   <p class="lang"><a href="#en">English</a></p>
 </header>
 
@@ -84,34 +84,34 @@
 <section>
   <h2>Felix TM とは</h2>
   <p>
-    Felix TM は、翻訳メモリ (TM) と用語集検索を Excel に直接持ち込む
-    アドインです。セル間を移動するたびに、原文を非公開の TM と照合し、
-    あいまい一致候補を<strong>差分ハイライト付き</strong>でリアルタイム表示。
-    承認した訳文はワンクリックで訳文列に書き込まれます。
+    Felix TM は、<wbr>翻訳メモリ (TM) と<wbr>用語集検索を Excel に<wbr>直接持ち込む
+    アドインです。<wbr>セル間を<wbr>移動する<wbr>たびに、<wbr>原文を<wbr>非公開の TM と<wbr>照合し、
+    あいまい<wbr>一致候補を<strong>差分ハイライト付き</strong>で<wbr>リアルタイム表示。
+    承認した<wbr>訳文は<wbr>ワンクリックで<wbr>訳文列に<wbr>書き込まれます。
   </p>
   <p>
-    スプレッドシートで作業する翻訳者のために設計されています —
-    ゲームローカリゼーション、UI 文字列、用語リスト、行単位での翻訳作業全般。
+    スプレッドシートで<wbr>作業する<wbr>翻訳者の<wbr>ために<wbr>設計されています —
+    ゲームローカリゼーション、<wbr>UI 文字列、<wbr>用語リスト、<wbr>行単位での<wbr>翻訳作業全般。
   </p>
 </section>
 
 <section id="install-excel-ja">
   <h2>インストール</h2>
   <ol class="steps">
-    <li><a href="./addin/manifest.xml" download><strong>manifest.xml をダウンロード</strong></a></li>
-    <li>Excel でブックを開き、<strong>ホーム → アドイン → 詳細設定を表示 →
-      個人用アドインの管理 → マイ アドインをアップロード</strong> から
-      ダウンロードしたファイルを選択</li>
-    <li>ホームリボン右端の <strong>Felix TM</strong> ボタンをクリック —
-      シートの横にペインが開きます</li>
+    <li><a href="./addin/manifest.xml" download><strong>manifest.xml を<wbr>ダウンロード</strong></a></li>
+    <li>Excel で<wbr>ブックを<wbr>開き、<strong>ホーム → アドイン → 詳細設定を<wbr>表示 →
+      個人用アドインの<wbr>管理 → マイ アドインを<wbr>アップロード</strong> から
+      ダウンロードした<wbr>ファイルを<wbr>選択</li>
+    <li>ホームリボン右端の <strong>Felix TM</strong> ボタンを<wbr>クリック —
+      シートの<wbr>横に<wbr>ペインが<wbr>開きます</li>
   </ol>
-  <p class="note">上記は Excel on the web の手順です。デスクトップ版は以下。</p>
+  <p class="note">上記は Excel on the web の<wbr>手順です。<wbr>デスクトップ版は<wbr>以下。</p>
   <details>
     <summary>Windows デスクトップ版</summary>
     <ol class="steps">
-      <li><a href="./addin/install-windows.bat" download><strong>install-windows.bat</strong> をダウンロード</a></li>
-      <li>ダブルクリックで実行（警告が出た場合は「詳細情報」→「実行」）</li>
-      <li>Excel を再起動し、<strong>ホーム → アドイン → 開発者向けアドイン</strong> から Felix TM をクリック</li>
+      <li><a href="./addin/install-windows.bat" download><strong>install-windows.bat</strong> を<wbr>ダウンロード</a></li>
+      <li>ダブルクリックで<wbr>実行<wbr>（警告が<wbr>出た<wbr>場合は<wbr>「詳細情報」<wbr>→<wbr>「実行」）</li>
+      <li>Excel を<wbr>再起動し、<strong>ホーム → アドイン → 開発者向けアドイン</strong> から Felix TM を<wbr>クリック</li>
     </ol>
     <p class="note">削除は <a href="./addin/uninstall-windows.bat" download>uninstall-windows.bat</a>。
       Microsoft 365 または Office 2021 以降。</p>
@@ -119,87 +119,87 @@
   <details>
     <summary>Mac デスクトップ版</summary>
     <ol class="steps">
-      <li><strong>ターミナル</strong>を開く（⌘+Space で「ターミナル」を検索）</li>
-      <li>次の1行を貼り付けて Enter:
+      <li><strong>ターミナル</strong>を<wbr>開く<wbr>（⌘+Space で<wbr>「ターミナル」を<wbr>検索）</li>
+      <li>次の<wbr>1行を<wbr>貼り付けて Enter:
         <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/install-mac.sh | sh</code><button class="copy-btn" title="コピー" aria-label="コピー"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div></li>
-      <li>Excel を再起動し、<strong>挿入 → アドイン → 個人用アドイン</strong> から Felix TM を開く</li>
+      <li>Excel を<wbr>再起動し、<strong>挿入 → アドイン → 個人用アドイン</strong> から Felix TM を<wbr>開く</li>
     </ol>
     <p class="note" style="margin-bottom:2px">削除:</p>
     <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/uninstall-mac.sh | sh</code><button class="copy-btn" title="コピー" aria-label="コピー"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
   </details>
   <h3>初期設定</h3>
   <ol class="steps">
-    <li>設定タブの <strong>原文 A → 訳文 B</strong> チップをクリックし、シート上で該当する列のセルをクリックして指定</li>
-    <li><strong>TM</strong> タブの「ブックからインポート」で既存の対訳を取り込み（TMX/TSV ファイルのドロップも可）</li>
-    <li>原文セルを選択すると候補が表示されます。カードをクリックで挿入、<strong>Set</strong> で現在行を TM に登録</li>
+    <li>設定タブの <strong>原文 A → 訳文 B</strong> チップを<wbr>クリックし、<wbr>シート上で<wbr>該当する列の<wbr>セルを<wbr>クリックして<wbr>指定</li>
+    <li><strong>TM</strong> タブの<wbr>「ブックから<wbr>インポート」で<wbr>既存の<wbr>対訳を<wbr>取り込み<wbr>（TMX/TSV ファイルの<wbr>ドロップも<wbr>可）</li>
+    <li>原文セルを<wbr>選択すると<wbr>候補が<wbr>表示されます。<wbr>カードを<wbr>クリックで<wbr>挿入、<strong>Set</strong> で<wbr>現在行を TM に<wbr>登録</li>
   </ol>
 </section>
 
 <section>
-  <h2>主な機能</h2>
+  <h2>主な<wbr>機能</h2>
   <div class="features">
     <div class="feature">
-      <h3>リアルタイムあいまい一致</h3>
-      <p>レーベンシュタイン距離 + バッグ距離の事前フィルタによる高速検索。セルを選ぶだけで候補を瞬時に表示。元 Felix CAT アルゴリズムの忠実な移植。</p>
+      <h3>リアルタイムあいまい<wbr>一致</h3>
+      <p>レーベンシュタイン距離 + バッグ距離の<wbr>事前フィルタに<wbr>よる<wbr>高速検索。<wbr>セルを<wbr>選ぶだけで<wbr>候補を<wbr>瞬時に<wbr>表示。<wbr>元 Felix CAT アルゴリズムの<wbr>忠実な<wbr>移植。</p>
     </div>
     <div class="feature">
-      <h3>差分の可視化</h3>
-      <p>TM との違いを色で表示 — 自動置換された語、要確認の差分、未カバー箇所。何を信用してよく、どこを見るべきかが一目で分かります。</p>
+      <h3>差分の<wbr>可視化</h3>
+      <p>TM との<wbr>違いを<wbr>色で<wbr>表示 — 自動置換された<wbr>語、<wbr>要確認の<wbr>差分、<wbr>未カバー箇所。<wbr>何を<wbr>信用して<wbr>よく、<wbr>どこを<wbr>見るべきかが<wbr>一目で<wbr>分かります。</p>
     </div>
     <div class="feature">
       <h3>用語集</h3>
-      <p>原文中の登録用語に下線表示、クリックで訳語をコピー。あいまい一致の数値・用語は自動で差し替え（要確認マーク付き）。</p>
+      <p>原文中の<wbr>登録用語に<wbr>下線表示、<wbr>クリックで<wbr>訳語を<wbr>コピー。<wbr>あいまい<wbr>一致の<wbr>数値・用語は<wbr>自動で<wbr>差し替え<wbr>（要確認マーク<wbr>付き）。</p>
     </div>
     <div class="feature">
       <h3>コンコーダンス検索</h3>
-      <p>TM 内の部分一致検索（正規表現対応）。「この言い回し、前にどう訳したっけ？」に即答します。</p>
+      <p>TM 内の<wbr>部分<wbr>一致検索<wbr>（正規表現対応）。<wbr>「この<wbr>言い回し、<wbr>前に<wbr>どう<wbr>訳したっけ？」に<wbr>即答します。</p>
     </div>
     <div class="feature">
       <h3>TMX / TSV 入出力</h3>
-      <p>標準フォーマットでのインポート・エクスポート。既存の TM を持ち込み、他ツールとも共有。バックアップにも。</p>
+      <p>標準フォーマットでの<wbr>インポート・エクスポート。<wbr>既存の TM を<wbr>持ち込み、<wbr>他ツールとも<wbr>共有。<wbr>バックアップにも。</p>
     </div>
     <div class="feature">
-      <h3>ローカル完結・プライバシー</h3>
-      <p>TM はブラウザの保存領域（IndexedDB）内のみ。サーバーなし、サインイン不要、アナリティクスなし、外部送信なし。</p>
+      <h3>ローカル完結・<wbr>プライバシー</h3>
+      <p>TM は<wbr>ブラウザの<wbr>保存領域<wbr>（IndexedDB）<wbr>内のみ。<wbr>サーバーなし、<wbr>サインイン不要、<wbr>アナリティクスなし、<wbr>外部<wbr>送信なし。</p>
     </div>
   </div>
   <p class="note" style="margin-top:16px">
-    今後の予定: Auto Translate（範囲一括翻訳）と QC チェック — Google Sheets 版で実装済みの機能を順次移植します。
+    今後の<wbr>予定: Auto Translate<wbr>（範囲一括翻訳）と QC チェック — Google Sheets 版で<wbr>実装済みの<wbr>機能を<wbr>順次移植します。
   </p>
 </section>
 
 <section>
-  <h2>プライバシーの要点</h2>
+  <h2>プライバシーの<wbr>要点</h2>
   <ul>
-    <li>TM・用語集はブラウザのローカル保存領域（IndexedDB）に保存されます。Felix TM にサーバーはありません。</li>
-    <li>サインイン不要。公式 Office API を通じて、開いているブックの読み書きのみを行います。</li>
-    <li>アナリティクスなし。トラッキングなし。サードパーティスクリプトなし。</li>
-    <li>ブラウザのサイトデータを消去すると TM も消えます — バックアップには内蔵の TMX/TSV エクスポートをご利用ください。</li>
+    <li>TM・用語集は<wbr>ブラウザの<wbr>ローカル保存領域<wbr>（IndexedDB）に<wbr>保存されます。<wbr>Felix TM に<wbr>サーバーは<wbr>ありません。</li>
+    <li>サインイン不要。<wbr>公式 Office API を<wbr>通じて、<wbr>開いている<wbr>ブックの<wbr>読み<wbr>書きのみを<wbr>行います。</li>
+    <li>アナリティクスなし。<wbr>トラッキングなし。<wbr>サードパーティスクリプトなし。</li>
+    <li>ブラウザの<wbr>サイトデータを<wbr>消去すると TM も<wbr>消えます — バックアップには<wbr>内蔵の TMX/TSV エクスポートを<wbr>ご利用ください。</li>
   </ul>
-  <p>詳細は <a href="./privacy/">プライバシーポリシー</a> をご覧ください。</p>
+  <p>詳細は <a href="./privacy/">プライバシーポリシー</a> を<wbr>ご覧ください。</p>
 </section>
 
 <section>
-  <h2>Google Sheets 版（ベータ）</h2>
+  <h2>Google Sheets 版<wbr>（ベータ）</h2>
   <p>
-    同じエンジンを Google Sheets に持ち込む Chrome 拡張版もあります。
-    Auto Translate・QC チェック・検索＆置換まで含むフル機能版ですが、
-    現在 Google OAuth verification と Chrome Web Store 審査の通過待ちです。
-    早期アクセスをご希望の方は
+    同じ<wbr>エンジンを Google Sheets に<wbr>持ち込む Chrome 拡張版も<wbr>あります。
+    Auto Translate・QC チェック・検索＆置換まで<wbr>含むフル機能版ですが、
+    現在 Google OAuth verification と Chrome Web Store 審査の<wbr>通過待ちです。
+    早期アクセスを<wbr>ご希望の<wbr>方は
     <a href="mailto:ibushimaru@veriscio.com">ibushimaru@veriscio.com</a>
-    までご連絡ください。
+    まで<wbr>ご連絡ください。
   </p>
 </section>
 
 <section>
-  <h2>Felix CAT との関係</h2>
+  <h2>Felix CAT との<wbr>関係</h2>
   <div class="lineage">
-    Felix TM は、Ryan Ginstrom 氏が制作し MIT ライセンスでオープンソース公開した
-    Windows 専用翻訳メモリツール <strong>Felix CAT</strong> から着想を得ており、
-    マッチングアルゴリズムを共有しています。Felix TM は独立したプロジェクトであり
-    — Excel・Google Sheets と現代の Web 環境を対象に Python と JavaScript で
-    一から再実装したものです — Ginstrom 氏および元 Felix CAT 製品とは
-    関係を持ちません。本プロジェクトを可能にしたアルゴリズムへの感謝を申し上げます。
+    Felix TM は、<wbr>Ryan Ginstrom 氏が<wbr>制作し MIT ライセンスで<wbr>オープンソース公開した
+    Windows 専用翻訳メモリツール <strong>Felix CAT</strong> から<wbr>着想を<wbr>得ており、
+    マッチングアルゴリズムを<wbr>共有しています。<wbr>Felix TM は<wbr>独立した<wbr>プロジェクトで<wbr>あり
+    — Excel・Google Sheets と<wbr>現代の Web 環境を<wbr>対象に Python と JavaScript で
+    一から<wbr>再実装した<wbr>ものです — Ginstrom 氏および<wbr>元 Felix CAT 製品とは
+    関係を<wbr>持ちません。<wbr>本プロジェクトを<wbr>可能に<wbr>したアルゴリズムへの<wbr>感謝を<wbr>申し上げます。
   </div>
 </section>
 
