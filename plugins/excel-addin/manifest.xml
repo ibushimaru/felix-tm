@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Felix TM — Excel task pane add-in (dev manifest).
+
+  This manifest points at the local dev server (https://localhost:3000,
+  started with `npm start` in this directory). Sideload it into Excel on
+  the web via ホーム → アドイン → 詳細設定 → マイアドインをアップロード,
+  or into desktop Excel (Mac) by copying it into
+  ~/Library/Containers/com.microsoft.Excel/Data/Documents/wef/.
+
+  A release build will need a hosted SourceLocation; keep this file
+  dev-only.
+-->
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+           xsi:type="TaskPaneApp">
+  <Id>9ef5b4ad-75d5-4ad8-99a1-4f5dc3678e81</Id>
+  <Version>0.1.0</Version>
+  <ProviderName>ibushimaru</ProviderName>
+  <DefaultLocale>ja-JP</DefaultLocale>
+  <DisplayName DefaultValue="Felix TM"/>
+  <Description DefaultValue="Translation Memory for Excel — real-time fuzzy matching"/>
+  <IconUrl DefaultValue="https://localhost:3000/icons/icon48.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:3000/icons/icon128.png"/>
+  <SupportUrl DefaultValue="https://github.com/ibushimaru/felix-tm"/>
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="ExcelApi" MinVersion="1.1"/>
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:3000/taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+        <DesktopFormFactor>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="FelixTM.Group1">
+                <Label resid="FelixTM.GroupLabel"/>
+                <Icon>
+                  <bt:Image size="16" resid="FelixTM.Icon16"/>
+                  <bt:Image size="32" resid="FelixTM.Icon32"/>
+                  <bt:Image size="80" resid="FelixTM.Icon80"/>
+                </Icon>
+                <Control xsi:type="Button" id="FelixTM.TaskpaneButton">
+                  <Label resid="FelixTM.TaskpaneButton.Label"/>
+                  <Supertip>
+                    <Title resid="FelixTM.TaskpaneButton.Label"/>
+                    <Description resid="FelixTM.TaskpaneButton.Tooltip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="FelixTM.Icon16"/>
+                    <bt:Image size="32" resid="FelixTM.Icon32"/>
+                    <bt:Image size="80" resid="FelixTM.Icon80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>FelixTM.Taskpane</TaskpaneId>
+                    <SourceLocation resid="FelixTM.Taskpane.Url"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="FelixTM.Icon16" DefaultValue="https://localhost:3000/icons/icon16.png"/>
+        <bt:Image id="FelixTM.Icon32" DefaultValue="https://localhost:3000/icons/icon48.png"/>
+        <bt:Image id="FelixTM.Icon80" DefaultValue="https://localhost:3000/icons/icon128.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="FelixTM.Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="FelixTM.GroupLabel" DefaultValue="Felix TM"/>
+        <bt:String id="FelixTM.TaskpaneButton.Label" DefaultValue="Felix TM"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="FelixTM.TaskpaneButton.Tooltip" DefaultValue="Open the Felix TM task pane"/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

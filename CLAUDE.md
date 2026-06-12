@@ -66,6 +66,15 @@ silently leaves the user testing stale code. If a tester needs a
 zip, run the build script — but the developer should never be looking
 at `dist/`.
 
+## Excel add-in (plugins/excel-addin/)
+
+Office.js task-pane port of the Chrome extension. `felix-engine.js` and
+`db.js` are NOT copied — the dev server (`npm start` in that directory)
+serves them straight from `plugins/chrome-extension/`, which stays the
+single source of truth for shared logic. Excel-specific glue lives in
+`taskpane.js`; sideload instructions are in `plugins/excel-addin/README.md`.
+One-time setup: `npx office-addin-dev-certs install` (HTTPS dev certs).
+
 ## Logic tests (no browser)
 
 `plugins/chrome-extension/tests/` holds Node unit tests for the pure

@@ -1,0 +1,11 @@
+{
+  "name": "felix-tm-excel-addin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Felix TM — Excel task pane add-in (dev harness)",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "certs": "npx office-addin-dev-certs install"
+  }
+}

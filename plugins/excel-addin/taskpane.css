@@ -1,0 +1,131 @@
+/* === Semantic colour system — one hue, one meaning ===
+   Carried over from the Chrome extension panel: the pane's job is to
+   show the translator the DIFF and let them decide, so colour is
+   reserved for decision-bearing signals:
+     --accent  (blue)   操作できるUI: タブ/ボタン/リンク/フォーカス/クリック可能な用語集ヒット
+     --safe    (green)  そのまま流用してよい: 100%一致部分・高スコア・挿入済み
+     --verify  (amber)  ツールが手を入れた／差分。あなたの確認が要る: 自動置換語・置換可能な差分・中スコア
+     --danger  (red)    信用するな・対応せよ: 未処理の差分・エラー・破壊操作・低スコア
+   Neutrals (--fg/--muted/--faint/--border…) carry no meaning — pure chrome. */
+:root {
+  --fg: #202124; --muted: #5f6368; --faint: #9aa0a6;
+  --border: #dadce0; --border-sub: #e8eaed;
+  --surface: #fff; --surface-sub: #f8f9fa; --surface-sub2: #f1f3f4;
+  --accent: #1a73e8; --accent-bg: #e8f0fe;
+  --safe: #34a853; --safe-strong: #137333; --safe-bg: #e6f4ea;
+  --verify: #b06000; --verify-line: #f9ab00; --verify-bg: #feefc3;
+  --danger: #c5221f; --danger-line: #ea4335; --danger-bg: #fce8e6;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Hiragino Sans', sans-serif;
+  font-size: 13px; color: var(--fg); padding: 10px 12px; background: var(--surface);
+  width: 100%; min-width: 250px;
+}
+h3 { font-size: 14px; font-weight: 500; margin-bottom: 8px; color: var(--accent); }
+h3.danger-h { color: var(--danger-line); }
+
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border-sub);
+}
+.header h1 { font-size: 15px; font-weight: 600; }
+.badge { background: var(--border-sub); color: var(--muted); padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+
+.tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+.tab { padding: 7px 10px; cursor: pointer; font-size: 13px; color: var(--muted); border-bottom: 2px solid transparent; }
+.tab:hover { color: var(--fg); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.panel { display: none; }
+.panel.active { display: block; }
+
+input, select { width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; margin-bottom: 6px; }
+input:focus { outline: none; border-color: var(--accent); }
+.btn { padding: 7px 14px; border-radius: 4px; border: 1px solid var(--border); cursor: pointer; font-size: 12px; font-weight: 500; background: var(--surface); color: var(--accent); }
+.btn:hover { background: var(--surface-sub2); }
+.btn-primary { border-color: var(--accent); }
+.btn-block { width: 100%; }
+.btn-danger { color: var(--danger-line); border-color: var(--danger-line); }
+hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
+.desc { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.field-label { font-size: 11px; color: var(--muted); }
+.range-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+.range-row > span { font-size: 11px; color: var(--muted); min-width: 20px; }
+.range-row > input { flex: 1; margin-bottom: 0; }
+.drop-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 12px; text-align: center; color: var(--faint); cursor: pointer; margin-bottom: 8px; font-size: 11px; }
+.browse-list { max-height: 400px; overflow: auto; }
+.list-count { font-size: 11px; color: var(--faint); margin-top: 4px; }
+
+/* === Search pane (port of the overlay panel) === */
+.action-bar { display: flex; gap: 6px; align-items: center; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border-sub); }
+.cell-label { font-size: 10px; color: var(--faint); margin-bottom: 2px; }
+.cell-preview { background: var(--surface-sub2); border-radius: 4px; padding: 6px 10px; font-size: 12px; line-height: 1.4; color: #3c4043; margin-bottom: 8px; min-height: calc(1.4em + 12px); word-break: break-all; }
+.settings-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.settings-row select { width: 64px; margin-bottom: 0; }
+.mode-toggle { display: flex; border: 1px solid var(--border); border-radius: 4px; }
+.mode-btn { padding: 3px 8px; font-size: 10px; cursor: pointer; color: var(--muted); user-select: none; }
+.mode-btn:first-child { border-radius: 3px 0 0 3px; }
+.mode-btn:last-child  { border-radius: 0 3px 3px 0; }
+.mode-btn.mode-active { color: var(--accent); font-weight: 600; }
+.conc-row { display: flex; gap: 4px; margin-bottom: 6px; }
+.conc-input { flex: 1; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 11px; margin-bottom: 0; }
+.conc-input:focus { outline: none; border-color: var(--accent); }
+.conc-highlight { background: #fef7cd; border-radius: 2px; padding: 0 1px; }
+.regex-toggle { padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 11px; font-family: monospace; cursor: pointer; color: var(--faint); user-select: none; }
+.regex-toggle.active { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+
+/* Match cards */
+.match { background: var(--surface-sub); border: 1px solid var(--border-sub); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; transition: all 0.1s; position: relative; }
+.match:hover { border-color: var(--accent); }
+.match.inserted { border-color: var(--safe); opacity: 0.6; }
+.match.hover-left { cursor: pointer; border-color: var(--accent) !important; }
+.match.hover-right { cursor: text; border-color: var(--verify-line) !important; }
+/* Score badge: border-only traffic-light pill ("quality gauge"),
+   visually distinct from the inline diff fills sharing the same hues. */
+.score { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 600; color: var(--fg); }
+.score-high { background: var(--surface); border: 1px solid var(--safe); }
+.score-mid { background: var(--surface); border: 1px solid var(--verify-line); }
+.score-low { background: var(--surface); border: 1px solid var(--danger-line); }
+.match-source { color: var(--muted); font-size: 11px; margin-top: 3px; word-break: break-all; }
+.match-target { color: var(--fg); font-size: 12px; margin-top: 2px; word-break: break-all; }
+.match-meta { color: var(--faint); font-size: 10px; margin-top: 3px; }
+.empty { text-align: center; color: var(--faint); padding: 16px 8px; font-size: 12px; }
+
+/* Placement preview — placed-ins is the amber "the tool changed this,
+   glance before you trust it" mark; placed-unverified is the soft
+   "re-read me" range marker when an uncovered diff survived. */
+.placed-ins { color: var(--verify); text-decoration: underline dashed var(--verify-line); text-underline-offset: 2px; border-radius: 2px; padding: 0 1px; }
+.placed-unverified { border-bottom: 1px dotted var(--verify-line); }
+.diff-match { color: var(--safe-strong); }
+/* Uncovered-diff palette — background = who owns the gap (red: the tool
+   translated NOTHING here; amber: registered term that may have leaked
+   through), decoration = the edit to make (dashed under = ADD,
+   line-through = REMOVE). */
+.diff-uncovered-missing { background: var(--danger-bg); color: var(--danger); font-weight: 500; }
+.diff-uncovered-present { background: var(--verify-bg); color: var(--verify); font-weight: 500; }
+.diff-uncovered-add { text-decoration: underline dashed; text-underline-offset: 2px; }
+.diff-uncovered-remove { text-decoration: line-through; }
+.diff-sub { background: var(--verify-bg); color: var(--verify); }
+.diff-del { background: var(--danger-bg); color: var(--danger); text-decoration: underline dashed; text-underline-offset: 2px; }
+.diff-ins { background: var(--danger-bg); color: var(--danger); text-decoration: line-through; }
+.gloss_match { text-decoration: underline dotted; text-decoration-color: var(--accent); text-underline-offset: 2px; cursor: pointer; position: relative; }
+.gloss-copied { background: var(--safe-bg); transition: background 0.3s; }
+.match-placed { border-color: var(--verify-line); }
+.match-placed:hover { border-color: var(--verify); }
+.placed-badge { display: inline-block; background: var(--surface); color: var(--verify); border: 1px solid var(--verify-line); font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
+.match-ref { border-top: 1px dashed var(--border-sub); margin-top: 8px; padding-top: 6px; cursor: text; user-select: text; }
+.ref-row { color: var(--faint); font-size: 11px; margin-top: 2px; word-break: break-all; }
+.btn-del-tm:hover { color: var(--danger-line) !important; }
+
+/* Toast — success is safe-green; errors take the danger variant so a
+   failure never reads as a green "success" flash. */
+#global-toast { position: fixed; bottom: 8px; left: 8px; right: 8px; z-index: 100; display: none; }
+#global-toast > div { background: var(--safe-bg); color: var(--safe-strong); padding: 8px 12px; border-radius: 6px; font-size: 12px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.12); white-space: pre-line; line-height: 1.4; }
+#global-toast.toast-error > div { background: var(--danger-bg); color: var(--danger); }
+
+/* Right-click popover for glossary registration from a text selection. */
+#ctx-menu { position: fixed; z-index: 2147483647; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 180px; padding: 4px 0; font-size: 12px; color: var(--fg); user-select: none; }
+#ctx-menu .ctx-label { padding: 4px 12px; font-size: 10px; color: var(--faint); border-bottom: 1px solid var(--border-sub); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+#ctx-menu .ctx-item { padding: 7px 14px; cursor: pointer; white-space: nowrap; }
+#ctx-menu .ctx-item:hover { background: var(--surface-sub2); }
