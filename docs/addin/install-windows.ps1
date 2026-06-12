@@ -27,7 +27,3 @@ Write-Host ''
 Write-Host 'Felix TM を登録しました。'
 Write-Host 'Excel を再起動し、ホーム → アドイン → 開発者向けアドイン から'
 Write-Host 'Felix TM を開いてください。'
-Write-Host ''
-Write-Host 'アンインストールするには次の2行を実行:'
-Write-Host "  Remove-ItemProperty -Path '$key' -Name 'FelixTM'"
-Write-Host "  Remove-Item -Recurse -Force '$dir'"
