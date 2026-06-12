@@ -89,9 +89,9 @@ hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
 .cell-label { font-size: 10px; color: var(--faint); margin-bottom: 2px; }
 .cell-preview { background: var(--surface-sub2); border-radius: 4px; padding: 6px 10px; font-size: 12px; line-height: 1.4; color: #3c4043; margin-bottom: 8px; min-height: calc(1.4em + 12px); word-break: break-all; }
 .settings-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
-.settings-row select { width: 64px; margin-bottom: 0; }
-.mode-toggle { display: flex; border: 1px solid var(--border); border-radius: 4px; }
-.mode-btn { padding: 3px 8px; font-size: 10px; cursor: pointer; color: var(--muted); user-select: none; }
+.settings-row select { width: 64px; margin-bottom: 0; height: 26px; padding: 0 4px; font-size: 11px; }
+.mode-toggle { display: flex; border: 1px solid var(--border); border-radius: 4px; height: 26px; }
+.mode-btn { display: flex; align-items: center; padding: 0 10px; font-size: 11px; cursor: pointer; color: var(--muted); user-select: none; }
 .mode-btn:first-child { border-radius: 3px 0 0 3px; }
 .mode-btn:last-child  { border-radius: 0 3px 3px 0; }
 .mode-btn.mode-active { color: var(--accent); font-weight: 600; }
