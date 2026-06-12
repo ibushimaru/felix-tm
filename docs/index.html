@@ -82,11 +82,14 @@
   <details>
     <summary>Windows デスクトップ版</summary>
     <ol class="steps">
-      <li>manifest.xml を任意のフォルダ（例: <code>C:\addins</code>）に置き、フォルダを右クリック → プロパティ → 共有 タブ → 共有 で自分のアカウントに共有し、表示されるネットワークパス（<code>\\PC名\addins</code>）を控える</li>
-      <li>Excel → ファイル → オプション → <strong>トラストセンター → トラストセンターの設定 → 信頼できるアドインカタログ</strong> にそのパスを追加し、「メニューに表示する」にチェック → Excel を再起動</li>
-      <li><strong>挿入 → アドイン → 個人用アドイン → 共有フォルダー</strong> タブから Felix TM を選択</li>
+      <li>スタートメニューから <strong>PowerShell</strong> を開く</li>
+      <li>次の1行を貼り付けて Enter:<br>
+        <code>irm https://raw.githubusercontent.com/ibushimaru/felix-tm/main/docs/addin/install-windows.ps1 | iex</code></li>
+      <li>Excel を再起動 → ホームリボン右端に <strong>Felix TM</strong></li>
     </ol>
-    <p class="note">Microsoft 365 または Office 2021 以降（WebView2 搭載版）。</p>
+    <p class="note">管理者権限は不要です。スクリプトは manifest をダウンロードして現在ユーザーのレジストリ（Office の開発者用サイドロード領域）に登録するだけ —
+      <a href="./addin/install-windows.ps1">中身はこちら</a>。アンインストール用のコマンドは実行時に表示されます。
+      Microsoft 365 または Office 2021 以降。</p>
   </details>
   <details>
     <summary>Mac デスクトップ版</summary>
@@ -216,11 +219,14 @@
   <details>
     <summary>Windows desktop</summary>
     <ol class="steps">
-      <li>Put manifest.xml in a folder (e.g. <code>C:\addins</code>), right-click the folder → Properties → Sharing → Share it with your own account, and note the network path (<code>\\PCNAME\addins</code>)</li>
-      <li>Excel → File → Options → <strong>Trust Center → Trust Center Settings → Trusted Add-in Catalogs</strong>: add that path, tick "Show in Menu", restart Excel</li>
-      <li><strong>Insert → Add-ins → My Add-ins → Shared Folder</strong> tab → Felix TM</li>
+      <li>Open <strong>PowerShell</strong> from the Start menu</li>
+      <li>Paste this one line and press Enter:<br>
+        <code>irm https://raw.githubusercontent.com/ibushimaru/felix-tm/main/docs/addin/install-windows.ps1 | iex</code></li>
+      <li>Restart Excel — <strong>Felix TM</strong> appears at the right end of the Home ribbon</li>
     </ol>
-    <p class="note">Requires Microsoft 365 or Office 2021+ (WebView2).</p>
+    <p class="note">No admin rights needed. The script downloads the manifest and registers it in the current user's registry (Office's developer sideload area) —
+      <a href="./addin/install-windows.ps1">read it here</a>. The uninstall command is printed when it runs.
+      Requires Microsoft 365 or Office 2021+.</p>
   </details>
   <details>
     <summary>Mac desktop</summary>
