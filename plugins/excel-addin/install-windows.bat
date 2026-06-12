@@ -1,13 +1,11 @@
 @echo off
-rem Felix TM - Windows desktop installer
-rem Thin wrapper around install-windows.ps1 so double-click works; the
-rem actual install logic lives in the PowerShell script (single code
-rem path, loud errors, stops on the first failure).
+rem Felix TM - Windows installer (install-windows.ps1 のラッパー)
+rem 実体は PowerShell スクリプト側。失敗時はエラーが上に表示される。
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ibushimaru/felix-tm/main/docs/addin/install-windows.ps1 | iex"
 if errorlevel 1 (
   echo.
-  echo Install FAILED. Please report the error shown above:
+  echo インストールに失敗しました。上に表示されたエラーを添えてご連絡ください:
   echo https://github.com/ibushimaru/felix-tm/issues
 )
 pause

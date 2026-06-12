@@ -5,8 +5,11 @@
 # the same mechanism the official Office dev tooling uses. Current-user
 # only - no admin rights needed.
 #
-# Output messages are ASCII-only on purpose: Windows PowerShell 5.1
-# consoles on a legacy codepage garble UTF-8 Japanese.
+# Messages are Japanese: this script is delivered via `irm`, which
+# decodes the HTTP response as UTF-8 (charset header), so the console
+# codepage doesn't matter. Only running the *file* directly under
+# Windows PowerShell 5.1 would garble them (undocumented path, logic
+# still ASCII-safe).
 
 $ErrorActionPreference = 'Stop'
 
@@ -21,10 +24,9 @@ New-Item -Path $key -Force | Out-Null
 New-ItemProperty -Path $key -Name 'FelixTM' -Value $manifest -PropertyType String -Force | Out-Null
 
 Write-Host ''
-Write-Host 'Felix TM registered.'
-Write-Host 'Restart Excel, then look for the Felix TM button at the right end'
-Write-Host 'of the Home ribbon.'
+Write-Host 'Felix TM を登録しました。'
+Write-Host 'Excel を再起動すると、ホームタブの右端に Felix TM ボタンが表示されます。'
 Write-Host ''
-Write-Host 'To uninstall, run:'
+Write-Host 'アンインストールするには次の2行を実行:'
 Write-Host "  Remove-ItemProperty -Path '$key' -Name 'FelixTM'"
 Write-Host "  Remove-Item -Recurse -Force '$dir'"
