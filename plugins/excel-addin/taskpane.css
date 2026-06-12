@@ -120,12 +120,12 @@ hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
 .empty { text-align: center; color: var(--faint); padding: 16px 8px; font-size: 12px; }
 
 /* Placement preview — amber is reserved for "the tool substituted
-   THIS" (matching the 用語置換/数値置換 badge); the quiet dotted line
-   marks the untouched range when an unresolved diff survives. The loud
-   unresolved signal is the RED uncovered marks below — not a text-wide
-   colour. */
-.placed-ins { color: var(--verify); text-decoration: underline dashed var(--verify-line); text-underline-offset: 2px; border-radius: 2px; padding: 0 1px; }
-.placed-unverified { border-bottom: 1px dotted var(--verify-line); }
+   THIS" (matching the 用語置換/数値置換 badge). Unresolved-ness is
+   signalled by the RED uncovered marks (query preview + reference
+   rows); the old faint dotted range marker under the target line just
+   read as stray pixels and is retired. */
+.placed-ins { color: var(--verify); text-decoration: underline dotted var(--verify-line); text-underline-offset: 2px; border-radius: 2px; padding: 0 1px; }
+.placed-unverified { }
 .diff-match { color: var(--safe-strong); }
 /* Uncovered-diff palette — every unresolved diff is RED so it can never
    be confused with the amber "machine substituted" marks (an amber
@@ -135,17 +135,21 @@ hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
    to make (dashed under = ADD, line-through = REMOVE). */
 .diff-uncovered-missing { background: var(--danger-bg); color: var(--danger); font-weight: 500; }
 .diff-uncovered-present { background: var(--danger-bg); color: var(--danger); font-weight: 500; }
-.diff-uncovered-add { text-decoration: underline dashed; text-underline-offset: 2px; }
+.diff-uncovered-add { text-decoration: underline dotted; text-underline-offset: 2px; }
 .diff-uncovered-remove { text-decoration: line-through; }
 .diff-sub { background: var(--verify-bg); color: var(--verify); }
 /* Substitution provenance: the query / TM-source terms a substitution
    consumed get the same amber-dashed mark as the rewritten target text,
    so the whole triple reads as one linked set. Inside an applied span
    the glossary underline is dropped — the amber already says it. */
-.diff-applied { color: var(--verify); text-decoration: underline dashed var(--verify-line); text-underline-offset: 2px; }
+.diff-applied { color: var(--verify); text-decoration: underline dotted var(--verify-line); text-underline-offset: 2px; }
 .diff-applied .gloss_match { text-decoration: none; color: inherit; }
-.diff-del { background: var(--danger-bg); color: var(--danger); text-decoration: underline dashed; text-underline-offset: 2px; }
+.diff-del { background: var(--danger-bg); color: var(--danger); text-decoration: underline dotted; text-underline-offset: 2px; }
 .diff-ins { background: var(--danger-bg); color: var(--danger); text-decoration: line-through; }
+/* All pinpoint text marks share one underline style (dotted — dashed
+   marks on adjacent words merged into one line). Meaning lives in the
+   colour alone: blue = glossary info, amber = substituted, red =
+   unresolved. */
 .gloss_match { text-decoration: underline dotted; text-decoration-color: var(--accent); text-underline-offset: 2px; cursor: pointer; position: relative; }
 /* Instant hover tooltip showing the registered translation — same
    absolute-positioned ::after as the Chrome extension (no CSS anchor
