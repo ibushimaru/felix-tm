@@ -119,22 +119,22 @@ hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
 .match-meta { color: var(--faint); font-size: 10px; margin-top: 3px; }
 .empty { text-align: center; color: var(--faint); padding: 16px 8px; font-size: 12px; }
 
-/* Placement preview — two clearly separated colours so substituted vs
-   untouched text can't be confused:
-     placed-ins        amber  = the tool substituted THIS (check it)
-     placed-unverified red    = the tool did NOT touch this range and an
-                                unresolved diff is hiding somewhere in it
-   When every diff is covered, untouched text stays plain black — red
-   only appears while something is actually unresolved. */
+/* Placement preview — amber is reserved for "the tool substituted
+   THIS" (matching the 用語置換/数値置換 badge); the quiet dotted line
+   marks the untouched range when an unresolved diff survives. The loud
+   unresolved signal is the RED uncovered marks below — not a text-wide
+   colour. */
 .placed-ins { color: var(--verify); text-decoration: underline dashed var(--verify-line); text-underline-offset: 2px; border-radius: 2px; padding: 0 1px; }
-.placed-unverified { color: var(--danger); border-bottom: 1px dotted var(--danger-line); }
+.placed-unverified { border-bottom: 1px dotted var(--verify-line); }
 .diff-match { color: var(--safe-strong); }
-/* Uncovered-diff palette — background = who owns the gap (red: the tool
-   translated NOTHING here; amber: registered term that may have leaked
-   through), decoration = the edit to make (dashed under = ADD,
-   line-through = REMOVE). */
+/* Uncovered-diff palette — every unresolved diff is RED so it can never
+   be confused with the amber "machine substituted" marks (an amber
+   unresolved diff next to an amber substitution read as fully handled).
+   Glossary registration no longer changes the colour, only the click
+   action (registered → browse, missing → add). Decoration = the edit
+   to make (dashed under = ADD, line-through = REMOVE). */
 .diff-uncovered-missing { background: var(--danger-bg); color: var(--danger); font-weight: 500; }
-.diff-uncovered-present { background: var(--verify-bg); color: var(--verify); font-weight: 500; }
+.diff-uncovered-present { background: var(--danger-bg); color: var(--danger); font-weight: 500; }
 .diff-uncovered-add { text-decoration: underline dashed; text-underline-offset: 2px; }
 .diff-uncovered-remove { text-decoration: line-through; }
 .diff-sub { background: var(--verify-bg); color: var(--verify); }
