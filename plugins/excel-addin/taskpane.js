@@ -550,7 +550,7 @@ function renderSearch(searchQuery, isReverse) {
       const meta = m.refcount ? `${t('used')} ${m.refcount}x` : '';
       const tmIdx = typeof m.tmIdx === 'number' ? m.tmIdx : tmData.findIndex(e => e.source === m.source && e.target === m.target);
 
-      let srcHtml, memSrcHtml = '', tgtDisplay, insertTarget, placed = false;
+      let srcHtml, memSrcHtml = '', tgtDisplay, insertTarget, placed = false, badgeHtml = '';
       if (isReverse) {
         const diff = pct < 100 ? FelixEngine.diffHighlight(searchQuery, m.target) : null;
         srcHtml = diff ? diff.sourceHtml : esc(m.target);
@@ -578,8 +578,9 @@ function renderSearch(searchQuery, isReverse) {
           if (badges.length) {
             placed = true;
             insertTarget = placedTarget;
-            tgtDisplay = placedHighlightHtml(m.target, placedTarget, resolved.uncovered.length)
-              + `<span class="placed-badge">${badges.join('+')}置換</span>`;
+            tgtDisplay = placedHighlightHtml(m.target, placedTarget, resolved.uncovered.length);
+            // The badge sits next to the score pill, not in the text flow.
+            badgeHtml = `<span class="placed-badge">${badges.join('+')}置換</span>`;
           }
         }
       }
@@ -601,7 +602,7 @@ function renderSearch(searchQuery, isReverse) {
         }
       }
       return `<div class="match${placed ? ' match-placed' : ''}" data-idx="${i}" data-target="${escA(insertTarget)}" data-tm-idx="${tmIdx}">
-        <span class="score ${cls}">${pct}%</span>
+        <span class="score ${cls}">${pct}%</span>${badgeHtml}
         <span style="float:right;display:flex;align-items:center;gap:4px">
           ${i === 0 ? `<span style="font-size:10px;color:var(--faint)">${ms}ms</span>` : ''}
           <span class="btn-del-tm" data-del-idx="${tmIdx}" title="Delete from TM" style="font-size:11px;color:var(--border);cursor:pointer">✕</span>
