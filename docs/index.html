@@ -51,8 +51,9 @@
   .note { font-size: 14px; color: #5f6368; }
   .cmd { display: flex; align-items: center; gap: 10px; background: #f1f3f4; border-radius: 6px; padding: 8px 12px; margin: 6px 0 10px; }
   .cmd code { background: none; padding: 0; flex: 1; overflow-x: auto; white-space: nowrap; font-size: 13px; }
-  .copy-btn { flex-shrink: 0; padding: 4px 12px; border: 1px solid #dadce0; border-radius: 4px; background: #fff; color: #1a73e8; font-size: 12px; cursor: pointer; }
-  .copy-btn:hover { background: #e8f0fe; }
+  .copy-btn { flex-shrink: 0; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; padding: 0; border: none; border-radius: 4px; background: none; color: #5f6368; cursor: pointer; }
+  .copy-btn:hover { background: #e8eaed; color: #202124; }
+  .copy-btn.copied { color: #137333; }
   details { margin: 10px 0; border: 1px solid #e8eaed; border-radius: 8px; padding: 10px 14px; }
   details summary { cursor: pointer; font-weight: 600; }
   details[open] summary { margin-bottom: 8px; }
@@ -116,11 +117,11 @@
     <ol class="steps">
       <li><strong>ターミナル</strong>を開く（⌘+Space で「ターミナル」を検索）</li>
       <li>次の1行を貼り付けて Enter:
-        <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/install-mac.sh | sh</code><button class="copy-btn" data-done="✓ コピーしました">コピー</button></div></li>
+        <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/install-mac.sh | sh</code><button class="copy-btn" title="コピー" aria-label="コピー"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div></li>
       <li>Excel を再起動し、<strong>挿入 → アドイン → 個人用アドイン</strong> から Felix TM を開く</li>
     </ol>
     <p class="note" style="margin-bottom:2px">削除:</p>
-    <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/uninstall-mac.sh | sh</code><button class="copy-btn" data-done="✓ コピーしました">コピー</button></div>
+    <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/uninstall-mac.sh | sh</code><button class="copy-btn" title="コピー" aria-label="コピー"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
   </details>
   <h3>初期設定</h3>
   <ol class="steps">
@@ -254,11 +255,11 @@
     <ol class="steps">
       <li>Open <strong>Terminal</strong> (⌘+Space, type "Terminal")</li>
       <li>Paste this one line and press Enter:
-        <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/install-mac.sh | sh</code><button class="copy-btn" data-done="✓ Copied">Copy</button></div></li>
+        <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/install-mac.sh | sh</code><button class="copy-btn" title="Copy" aria-label="Copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div></li>
       <li>Restart Excel, then open Felix TM from <strong>Insert → Add-ins → My Add-ins</strong></li>
     </ol>
     <p class="note" style="margin-bottom:2px">To remove:</p>
-    <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/uninstall-mac.sh | sh</code><button class="copy-btn" data-done="✓ Copied">Copy</button></div>
+    <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/uninstall-mac.sh | sh</code><button class="copy-btn" title="Copy" aria-label="Copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
   </details>
   <h3>First-time setup</h3>
   <ol class="steps">
@@ -358,10 +359,11 @@ document.querySelectorAll('.cmd').forEach(function (box) {
   btn.addEventListener('click', function () {
     var text = box.querySelector('code').textContent;
     var done = function () {
-      var orig = btn.textContent;
-      btn.textContent = btn.dataset.done;
+      var orig = btn.innerHTML;
+      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+      btn.classList.add('copied');
       btn.disabled = true;
-      setTimeout(function () { btn.textContent = orig; btn.disabled = false; }, 1500);
+      setTimeout(function () { btn.innerHTML = orig; btn.classList.remove('copied'); btn.disabled = false; }, 1500);
     };
     var legacy = function () {
       var ta = document.createElement('textarea');
