@@ -17,7 +17,7 @@
 let tmData = [];
 let glossaryData = [];
 let rulesData = [];
-let settings = { sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en' };
+let settings = { sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en', uiScale: 1 };
 let panelMode = 'translate'; // 'translate' | 'review'
 let concRegex = false;
 // Last selection snapshot: { sheetName, selRef, ref, colLetter, rowNum, value }
@@ -85,6 +85,7 @@ const I18N = {
     danger: 'Danger Zone', clearTM: 'Clear TM', clearGloss: 'Clear Glossary',
     confirmClear: 'Delete all entries?', cancel: 'Cancel',
     lblSourceCol: 'Source Column', lblTargetCol: 'Target Column', lblMinScore: 'Default Min Score',
+    lblUiScale: 'UI scale',
   },
   ja: {
     // Tabs
@@ -138,6 +139,7 @@ const I18N = {
     danger: '危険な操作', clearTM: 'TMを全削除', clearGloss: '用語集を全削除',
     confirmClear: '全エントリを削除しますか？', cancel: 'キャンセル',
     lblSourceCol: '原文列', lblTargetCol: '訳文列', lblMinScore: '最低マッチ率',
+    lblUiScale: '表示倍率',
   },
 };
 function t(key) { return (I18N[settings.lang] && I18N[settings.lang][key]) || I18N.en[key] || key; }
@@ -712,9 +714,14 @@ function openCtxMenu(x, y, text) {
   });
 
   document.body.appendChild(menu);
+  // Clamp in visual pixels, then convert to layout pixels — the body
+  // may be zoomed (uiScale), and style.left/top of a child are applied
+  // pre-zoom while clientX/innerWidth/getBoundingClientRect are visual.
   const rect = menu.getBoundingClientRect();
-  menu.style.left = Math.max(4, Math.min(x, window.innerWidth - rect.width - 4)) + 'px';
-  menu.style.top = Math.max(4, Math.min(y, window.innerHeight - rect.height - 4)) + 'px';
+  const vx = Math.max(4, Math.min(x, window.innerWidth - rect.width - 4));
+  const vy = Math.max(4, Math.min(y, window.innerHeight - rect.height - 4));
+  menu.style.left = (vx / uiScale()) + 'px';
+  menu.style.top = (vy / uiScale()) + 'px';
 
   const abort = new AbortController();
   const dismiss = (ev) => {
@@ -1218,12 +1225,19 @@ function downloadText(text, filename) {
 
 // === Settings UI ===
 
+/** Pane-wide zoom. `zoom` is supported by both webviews Office uses
+ *  (WebView2 on Windows, WKWebView on Mac) and by every browser the
+ *  web version runs in. Windows panes render notably small at 100%. */
+function uiScale() { return parseFloat(settings.uiScale) || 1; }
+function applyUiScale() { document.body.style.zoom = String(uiScale()); }
+
 function loadSettingsUI() {
   $('set-lang').value = settings.lang || 'en';
   $('set-source-col').value = settings.sourceCol || 'A';
   $('set-target-col').value = settings.targetCol || 'B';
   $('set-min-score').value = String(settings.minScore || 0.7);
   $('min-score').value = String(settings.minScore || 0.7);
+  $('set-ui-scale').value = String(uiScale());
 }
 
 async function saveSettingsUI() {
@@ -1331,6 +1345,7 @@ function applyLang() {
   set('btn-export-gloss', t('exportGloss'));
   // Settings
   set('h-settings', t('settings'));
+  set('lbl-ui-scale', t('lblUiScale'));
   set('btn-save-settings', t('save'));
   set('h-danger', t('danger'));
   set('btn-clear-tm', t('clearTM'));
@@ -1370,6 +1385,7 @@ async function init(hasExcel) {
 
   updateStats();
   applyLang();
+  applyUiScale();
   loadSettingsUI();
   renderTMList();
   renderGlossaryList();
@@ -1450,6 +1466,13 @@ async function init(hasExcel) {
     settings.lang = e.target.value;
     await settingsSave(settings);
     applyLang();
+  });
+  // UI scale applies immediately — picking a size you then have to
+  // hunt for a Save button at the old size would be silly.
+  $('set-ui-scale').addEventListener('change', async (e) => {
+    settings.uiScale = parseFloat(e.target.value) || 1;
+    await settingsSave(settings);
+    applyUiScale();
   });
   $('btn-clear-tm').addEventListener('click', () => clearAllTM());
   $('btn-clear-gloss').addEventListener('click', () => clearAllGlossary());
