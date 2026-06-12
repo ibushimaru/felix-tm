@@ -714,14 +714,12 @@ function openCtxMenu(x, y, text) {
   });
 
   document.body.appendChild(menu);
-  // Clamp in visual pixels, then convert to layout pixels — the body
-  // may be zoomed (uiScale), and style.left/top of a child are applied
-  // pre-zoom while clientX/innerWidth/getBoundingClientRect are visual.
+  // The menu attaches to body, which sits OUTSIDE the zoomed
+  // #zoom-root — so click coordinates (visual px) map 1:1 onto its
+  // fixed position, no scale conversion needed.
   const rect = menu.getBoundingClientRect();
-  const vx = Math.max(4, Math.min(x, window.innerWidth - rect.width - 4));
-  const vy = Math.max(4, Math.min(y, window.innerHeight - rect.height - 4));
-  menu.style.left = (vx / uiScale()) + 'px';
-  menu.style.top = (vy / uiScale()) + 'px';
+  menu.style.left = Math.max(4, Math.min(x, window.innerWidth - rect.width - 4)) + 'px';
+  menu.style.top = Math.max(4, Math.min(y, window.innerHeight - rect.height - 4)) + 'px';
 
   const abort = new AbortController();
   const dismiss = (ev) => {
@@ -1231,12 +1229,12 @@ function downloadText(text, filename) {
  *  runs in. Windows panes render notably small at 100%. */
 function uiScale() { return parseFloat(settings.uiScale) || 1; }
 function applyUiScale() {
-  document.body.style.zoom = String(uiScale());
-  // The header is chrome, not content — counter-zoom it so the −/＋
-  // controls (and title/badge) stay the same size while everything
-  // below scales. Nested zooms multiply: s × 1/s = 1.
-  const header = document.querySelector('.header');
-  if (header) header.style.zoom = String(1 / uiScale());
+  // Zoom only the content wrapper, not body. Zooming body and
+  // counter-zooming the header looked right at first but the nested
+  // zoom made the header lay out against a doubled width (badge and
+  // buttons drifted / got clipped at high scale). With the header
+  // outside the zoomed subtree it needs no compensation at all.
+  $('zoom-root').style.zoom = String(uiScale());
   $('scale-label').textContent = Math.round(uiScale() * 100) + '%';
 }
 function nudgeUiScale(step) {
