@@ -1684,7 +1684,19 @@ var FelixEngine = (() => {
     return false;
   }
 
-  function resolveWithPlacement(query, tmSource, tmTarget, glossaryData, rulesData) {
+  /**
+   * opts.numbers / opts.glossary (default true) let the UI disable a
+   * substitution kind as a kill switch when it misbehaves. Disabling
+   * one degrades the card to a plain fuzzy match for that kind: the
+   * substitution isn't applied, and the reference-row diff highlight
+   * (placement-independent) is what surfaces the difference. Note that
+   * with numbers off, numeric diffs are NOT added to `uncovered` (they
+   * were never part of nonNumericDiffs), so `covered` may read true on
+   * a row whose numbers differ — Auto Translate planners must not be
+   * driven with numbers disabled without revisiting that.
+   */
+  function resolveWithPlacement(query, tmSource, tmTarget, glossaryData, rulesData, opts) {
+    const o = Object.assign({ numbers: true, glossary: true }, opts);
     let target = tmTarget;
     let remaining = nonNumericDiffs(query, tmSource, glossaryData);
     const placements = [];
@@ -1695,8 +1707,10 @@ var FelixEngine = (() => {
     // excluded from `remaining`). numberPlacement itself masks non-numeric
     // diff regions symmetrically so digits inside a diff (e.g. the 4 in
     // ランダム4体 aligned against 全体) don't inflate the count on one side.
-    const np = numberPlacement(query, tmSource, target, glossaryData, remaining);
-    if (np.placed) { target = np.target; placements.push('数値'); }
+    if (o.numbers) {
+      const np = numberPlacement(query, tmSource, target, glossaryData, remaining);
+      if (np.placed) { target = np.target; placements.push('数値'); }
+    }
 
     // Per-diff glossary coverage. Felix's glossaryPlacement is restricted to
     // a single contiguous hole, so it can't address rows with scattered
@@ -1707,7 +1721,7 @@ var FelixEngine = (() => {
     // carry registration flags so the UI can distinguish which side is
     // missing from the glossary (red) from which side is present but
     // blocked by a missing counterpart (yellow).
-    if (remaining.length) {
+    if (o.glossary && remaining.length) {
       const stillRemaining = [];
       let glossaryApplied = false;
       for (const d of remaining) {

@@ -17,7 +17,17 @@
 let tmData = [];
 let glossaryData = [];
 let rulesData = [];
-let settings = { sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en', uiScale: 1 };
+let settings = { sourceCol: 'A', targetCol: 'B', minScore: 0.7, lang: 'en', uiScale: 1,
+                 placeNumbers: true, placeGlossary: true };
+
+/** Substitution kill switches → engine opts. Default ON; `!== false`
+ *  keeps settings saved before these existed on the ON side. */
+function placementOpts() {
+  return {
+    numbers: settings.placeNumbers !== false,
+    glossary: settings.placeGlossary !== false,
+  };
+}
 let panelMode = 'translate'; // 'translate' | 'review'
 let concRegex = false;
 // Last selection snapshot: { sheetName, selRef, ref, colLetter, rowNum, value }
@@ -93,6 +103,8 @@ const I18N = {
     tipColChip: 'Click, then click a cell in that column on the sheet',
     lblCols: 'Source & target columns',
     descCols: 'Source = column to translate from. Target = where translations go. To change: click a chip, then a cell in that column.',
+    lblPlaceNumbers: 'Number substitution',
+    lblPlaceGlossary: 'Glossary substitution',
   },
   ja: {
     // Tabs
@@ -154,6 +166,8 @@ const I18N = {
     tipColChip: 'クリック後、シート上でその列のセルをクリック',
     lblCols: '原文列と訳文列',
     descCols: '原文＝翻訳元の列、訳文＝訳の書き込み先。変更: チップをクリック → シートでその列のセルをクリック',
+    lblPlaceNumbers: '数値置換',
+    lblPlaceGlossary: '用語置換',
   },
 };
 function t(key) { return (I18N[settings.lang] && I18N[settings.lang][key]) || I18N.en[key] || key; }
@@ -484,7 +498,7 @@ function renderSearch(searchQuery, isReverse) {
     const top = matches[0];
     if (Math.round(top.score * 100) < 100) {
       topResolved = FelixEngine.resolveWithPlacement(
-        searchQuery, top.source, top.target, glossaryData, rulesData);
+        searchQuery, top.source, top.target, glossaryData, rulesData, placementOpts());
     }
   }
   const topUncovered = topResolved ? topResolved.uncovered : [];
@@ -527,7 +541,7 @@ function renderSearch(searchQuery, isReverse) {
         // exactly what a click would write.
         if (!has100 && i === 0 && pct < 100) {
           const resolved = topResolved || FelixEngine.resolveWithPlacement(
-            searchQuery, m.source, m.target, glossaryData, rulesData);
+            searchQuery, m.source, m.target, glossaryData, rulesData, placementOpts());
           const placedTarget = resolved.target;
           const badges = resolved.placements;
           if (badges.length) {
@@ -1378,6 +1392,8 @@ function loadSettingsUI() {
   $('set-lang').value = settings.lang || 'en';
   $('set-min-score').value = String(settings.minScore || 0.7);
   $('min-score').value = String(settings.minScore || 0.7);
+  $('set-place-numbers').checked = settings.placeNumbers !== false;
+  $('set-place-glossary').checked = settings.placeGlossary !== false;
 }
 
 async function saveSettingsUI() {
@@ -1488,6 +1504,8 @@ function applyLang() {
   set('h-settings', t('settings'));
   set('lbl-cols', t('lblCols'));
   set('desc-cols', t('descCols'));
+  set('lbl-place-numbers', t('lblPlaceNumbers'));
+  set('lbl-place-glossary', t('lblPlaceGlossary'));
   tip('btn-scale-down', t('lblUiScale'));
   tip('btn-scale-up', t('lblUiScale'));
   set('btn-save-settings', t('save'));
@@ -1622,6 +1640,18 @@ async function init(hasExcel) {
   $('btn-scale-up').addEventListener('click', () => nudgeUiScale(0.1));
   $('col-src-chip').addEventListener('click', () => toggleColPick('source'));
   $('col-tgt-chip').addEventListener('click', () => toggleColPick('target'));
+  // Substitution kill switches apply immediately — they exist for
+  // "placement is misbehaving right now" moments.
+  $('set-place-numbers').addEventListener('change', async (e) => {
+    settings.placeNumbers = e.target.checked;
+    await settingsSave(settings);
+    rerunSearch();
+  });
+  $('set-place-glossary').addEventListener('change', async (e) => {
+    settings.placeGlossary = e.target.checked;
+    await settingsSave(settings);
+    rerunSearch();
+  });
   $('btn-clear-tm').addEventListener('click', () => clearAllTM());
   $('btn-clear-gloss').addEventListener('click', () => clearAllGlossary());
 

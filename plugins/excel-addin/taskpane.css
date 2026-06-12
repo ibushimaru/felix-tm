@@ -54,6 +54,8 @@ input:focus { outline: none; border-color: var(--accent); }
 hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
 .desc { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
 .field-label { font-size: 11px; color: var(--muted); }
+.check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 8px 0; cursor: pointer; }
+.check-row input { width: auto; margin: 0; }
 .range-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
 .range-row > span { font-size: 11px; color: var(--muted); min-width: 20px; }
 .range-row > input { flex: 1; margin-bottom: 0; }
