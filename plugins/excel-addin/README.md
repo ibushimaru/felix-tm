@@ -23,6 +23,21 @@ Chrome 拡張（`../chrome-extension/`）の Excel 移植版。マッチング�
 npx office-addin-dev-certs install
 ```
 
+**注意:** このコマンドはパスワード承認ダイアログを完了できないと
+「成功」と表示しつつ信頼設定が空のままになることがある
+（CA がキーチェーンに入るだけで trustRoot が付かない）。
+Chrome で `https://localhost:3000/taskpane.html` を開いて
+`NET::ERR_CERT_AUTHORITY_INVALID` が出る場合は、手動で信頼登録する:
+
+```bash
+security add-trusted-cert -r trustRoot \
+  -k ~/Library/Keychains/login.keychain-db \
+  ~/.office-addin-dev-certs/ca.crt
+```
+
+実行後 Chrome を完全再起動（Cmd+Q）。確認は
+`security dump-trust-settings`（エントリが出れば OK）。
+
 ## 開発サーバ起動
 
 ```bash
