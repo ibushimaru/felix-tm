@@ -138,6 +138,12 @@ hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
 .diff-uncovered-add { text-decoration: underline dashed; text-underline-offset: 2px; }
 .diff-uncovered-remove { text-decoration: line-through; }
 .diff-sub { background: var(--verify-bg); color: var(--verify); }
+/* Substitution provenance: the query / TM-source terms a substitution
+   consumed get the same amber-dashed mark as the rewritten target text,
+   so the whole triple reads as one linked set. Inside an applied span
+   the glossary underline is dropped — the amber already says it. */
+.diff-applied { color: var(--verify); text-decoration: underline dashed var(--verify-line); text-underline-offset: 2px; }
+.diff-applied .gloss_match { text-decoration: none; color: inherit; }
 .diff-del { background: var(--danger-bg); color: var(--danger); text-decoration: underline dashed; text-underline-offset: 2px; }
 .diff-ins { background: var(--danger-bg); color: var(--danger); text-decoration: line-through; }
 .gloss_match { text-decoration: underline dotted; text-decoration-color: var(--accent); text-underline-offset: 2px; cursor: pointer; position: relative; }

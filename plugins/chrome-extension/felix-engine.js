@@ -529,16 +529,40 @@ var FelixEngine = (() => {
   }
 
   /**
+   * Regions for diff pairs that a substitution consumed (the `applied`
+   * array from resolveWithPlacement). Rendered amber (diff-applied) so
+   * the query / TM-source terms that drove a substitution link visually
+   * with the rewritten target text and the 用語置換 badge.
+   */
+  function appliedRegionsForText(text, applied, side) {
+    if (!text || !applied || !applied.length) return [];
+    const regions = [];
+    for (const d of applied) {
+      const start = side === 'q' ? d.qStart : d.sStart;
+      const end = side === 'q' ? d.qEnd : d.sEnd;
+      if (typeof start !== 'number' || typeof end !== 'number') continue;
+      if (end <= start || start < 0 || end > text.length) continue;
+      regions.push({ start, end, cls: 'diff-applied' });
+    }
+    regions.sort((a, b) => a.start - b.start || a.end - b.end);
+    return regions;
+  }
+
+  /**
    * Render plain text with uncovered regions wrapped in the appropriate
    * class. Used for TM.source inside match-ref (no glossary underline
    * overlay needed). For query/cell rendering that also carries glossary
    * underlines, use renderQueryCellWithUncovered instead.
+   * `applied` (optional) additionally marks substitution-consumed pairs.
    */
-  function markUncoveredHtml(text, uncovered, side) {
-    const regions = uncoveredRegionsForText(text, uncovered, side);
+  function markUncoveredHtml(text, uncovered, side, applied) {
+    const regions = uncoveredRegionsForText(text, uncovered, side)
+      .concat(appliedRegionsForText(text, applied, side))
+      .sort((a, b) => a.start - b.start || a.end - b.end);
     if (!regions.length) return esc(text);
     let html = '', cursor = 0;
     for (const r of regions) {
+      if (r.start < cursor) continue; // overlap guard — shouldn't happen
       html += esc(text.substring(cursor, r.start));
       html += `<span class="${r.cls}">${esc(text.substring(r.start, r.end))}</span>`;
       cursor = r.end;
@@ -557,9 +581,11 @@ var FelixEngine = (() => {
    * Returns HTML, or null when neither layer has anything to add — callers
    * fall back to their existing plain-text rendering in that case.
    */
-  function renderQueryCellWithUncovered(text, glossHits, uncovered) {
+  function renderQueryCellWithUncovered(text, glossHits, uncovered, applied) {
     const glossRegions = glossHits && glossHits.length ? glossRegionsForText(text, glossHits) : [];
-    const uncRegions = uncoveredRegionsForText(text, uncovered, 'q');
+    const uncRegions = uncoveredRegionsForText(text, uncovered, 'q')
+      .concat(appliedRegionsForText(text, applied, 'q'))
+      .sort((a, b) => a.start - b.start || a.end - b.end);
     if (!glossRegions.length && !uncRegions.length) return null;
     const inRegion = (regions, pos) => {
       for (const r of regions) if (pos >= r.start && pos < r.end) return r;
@@ -1721,6 +1747,11 @@ var FelixEngine = (() => {
     // carry registration flags so the UI can distinguish which side is
     // missing from the glossary (red) from which side is present but
     // blocked by a missing counterpart (yellow).
+    // Diff pairs consumed by a substitution, with their q/s positions —
+    // the UI marks them amber on the query and TM-source sides so the
+    // whole substitution triple (query term ↔ TM term ↔ rewritten
+    // target) reads as one linked set.
+    const applied = [];
     if (o.glossary && remaining.length) {
       const stillRemaining = [];
       let glossaryApplied = false;
@@ -1736,6 +1767,7 @@ var FelixEngine = (() => {
                    + applyCasing(slice, qEntry.translation)
                    + target.substring(idx + sEntry.translation.length);
             glossaryApplied = true;
+            applied.push(d);
             continue;
           }
         }
@@ -1756,7 +1788,7 @@ var FelixEngine = (() => {
       if (rp.placed) { target = rp.target; placements.push('ルール'); }
     }
 
-    return { target, covered: remaining.length === 0, placements, uncovered: remaining };
+    return { target, covered: remaining.length === 0, placements, uncovered: remaining, applied };
   }
 
   /**
@@ -2626,7 +2658,7 @@ var FelixEngine = (() => {
            fuzzyScore, edScore, diffHighlight, tokenize,
            containsCJK, addEntry, addGlossaryEntry, parseA1, esc, escA,
            markUncoveredHtml, renderQueryCellWithUncovered,
-           uncoveredRegionsForText,
+           uncoveredRegionsForText, appliedRegionsForText,
            findDiffRegions, unverifiedRegions, buildCellFormatRuns,
            CELL_FMT_PLACED, CELL_FMT_UNVERIFIED,
            resolveWithPlacement,

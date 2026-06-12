@@ -80,3 +80,34 @@ test('toggles are independent: numbers can place while glossary is off', () => {
   assert.match(r.target, /3/);
   assert.match(r.target, /MAG/); // glossary substitution did NOT run
 });
+
+// === applied pairs (substitution provenance for UI marking) ===
+
+test('applied: substituted diff pairs come back with q/s positions', () => {
+  const r = resolveWithPlacement(GLOSS.query, GLOSS.source, GLOSS.target, GLOSS.glossary, []);
+  assert.equal(r.applied.length, 1);
+  const d = r.applied[0];
+  assert.equal(GLOSS.query.substring(d.qStart, d.qEnd), 'ATK');
+  assert.equal(GLOSS.source.substring(d.sStart, d.sEnd), 'MAG');
+});
+
+test('applied: empty when glossary substitution is off or nothing fired', () => {
+  const off = resolveWithPlacement(GLOSS.query, GLOSS.source, GLOSS.target, GLOSS.glossary, [], { glossary: false });
+  assert.equal(off.applied.length, 0);
+  const noGloss = resolveWithPlacement(GLOSS.query, GLOSS.source, GLOSS.target, [], []);
+  assert.equal(noGloss.applied.length, 0);
+});
+
+test('markUncoveredHtml marks applied pairs amber on the source side', () => {
+  const { markUncoveredHtml } = engine;
+  const r = resolveWithPlacement(GLOSS.query, GLOSS.source, GLOSS.target, GLOSS.glossary, []);
+  const html = markUncoveredHtml(GLOSS.source, r.uncovered, 's', r.applied);
+  assert.match(html, /<span class="diff-applied">MAG<\/span>/);
+});
+
+test('renderQueryCellWithUncovered marks applied pairs on the query side', () => {
+  const { renderQueryCellWithUncovered } = engine;
+  const r = resolveWithPlacement(GLOSS.query, GLOSS.source, GLOSS.target, GLOSS.glossary, []);
+  const html = renderQueryCellWithUncovered(GLOSS.query, [], r.uncovered, r.applied);
+  assert.match(html, /<span class="diff-applied">ATK<\/span>/);
+});

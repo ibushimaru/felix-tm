@@ -532,10 +532,11 @@ function renderSearch(searchQuery, isReverse) {
     }
   }
   const topUncovered = topResolved ? topResolved.uncovered : [];
+  const topApplied = topResolved ? (topResolved.applied || []) : [];
 
   // Cell preview: glossary underlines + uncovered colouring on the query
   if (searchQuery) {
-    const rendered = FelixEngine.renderQueryCellWithUncovered(searchQuery, glossHits, topUncovered);
+    const rendered = FelixEngine.renderQueryCellWithUncovered(searchQuery, glossHits, topUncovered, topApplied);
     if (rendered) $('cell-value').innerHTML = rendered;
   }
 
@@ -585,8 +586,8 @@ function renderSearch(searchQuery, isReverse) {
 
       // Insert preview on top, reference block (registered memory) below.
       const showRef = pct < 100 && (isReverse ? !!srcHtml : !!memSrcHtml);
-      const refSrcHtml = (showRef && !isReverse && i === 0 && topUncovered.length)
-        ? FelixEngine.markUncoveredHtml(m.source, topUncovered, 's')
+      const refSrcHtml = (showRef && !isReverse && i === 0 && (topUncovered.length || topApplied.length))
+        ? FelixEngine.markUncoveredHtml(m.source, topUncovered, 's', topApplied)
         : esc(m.source);
       let refBlock = '';
       if (showRef) {
