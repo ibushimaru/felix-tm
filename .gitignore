@@ -19,4 +19,4 @@ docs/manual-ja/
 node_modules/
 .secrets/
 .DS_Store
-vendor/NotoSansJP*.ttf
+vendor/*.ttf

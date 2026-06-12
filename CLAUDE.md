@@ -77,8 +77,8 @@ One-time setup: `npx office-addin-dev-certs install` (HTTPS dev certs).
 
 ## Site font (docs/fonts/)
 
-The GitHub Pages site self-hosts a subsetted Noto Sans JP
-(`docs/fonts/NotoSansJP-subset.woff2`) so Windows doesn't render thin
+The GitHub Pages site self-hosts a subsetted Zen Kaku Gothic New
+(`docs/fonts/ZenKakuGothicNew-*-subset.woff2`) so Windows doesn't render thin
 Yu Gothic. The subset only contains characters present in
 docs/index.html and docs/privacy/index.html at build time — **after
 editing page text, rerun `.venv/bin/python scripts/build_fonts.py`**
