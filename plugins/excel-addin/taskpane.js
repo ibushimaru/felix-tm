@@ -92,7 +92,7 @@ const I18N = {
     colSetToastTpl: 'Source {s} → Target {t}',
     tipColChip: 'Click, then click a cell in that column on the sheet',
     lblCols: 'Source & target columns',
-    descCols: 'Tells Felix TM which column holds the text to translate (source) and which column translations are written into (target). To change one, click its chip, then click any cell in that column on the sheet.',
+    descCols: 'Source = column to translate from. Target = where translations go. To change: click a chip, then a cell in that column.',
   },
   ja: {
     // Tabs
@@ -153,7 +153,7 @@ const I18N = {
     colSetToastTpl: '原文 {s} → 訳文 {t}',
     tipColChip: 'クリック後、シート上でその列のセルをクリック',
     lblCols: '原文列と訳文列',
-    descCols: 'シートのどの列に翻訳元のテキストがあり（原文列）、どの列に訳を書き込むか（訳文列）を指定します。変更するには、チップをクリックしてからシート上でその列のセルをクリックします。',
+    descCols: '原文＝翻訳元の列、訳文＝訳の書き込み先。変更: チップをクリック → シートでその列のセルをクリック',
   },
 };
 function t(key) { return (I18N[settings.lang] && I18N[settings.lang][key]) || I18N.en[key] || key; }
