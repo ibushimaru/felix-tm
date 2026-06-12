@@ -615,13 +615,13 @@ function renderSearch(searchQuery, isReverse) {
       }
       return `<div class="match${placed ? ' match-placed' : ''}" data-idx="${i}" data-target="${escA(insertTarget)}" data-tm-idx="${tmIdx}">
         <span class="score ${cls}">${pct}%</span>${badgeHtml}
-        <span style="float:right;display:flex;align-items:center;gap:4px">
+        <span style="float:right;display:flex;align-items:center;gap:6px">
+          ${meta ? `<span style="font-size:10px;color:var(--faint)">${meta}</span>` : ''}
           ${i === 0 ? `<span style="font-size:10px;color:var(--faint)">${ms}ms</span>` : ''}
           <span class="btn-del-tm" data-del-idx="${tmIdx}" title="Delete from TM" style="font-size:11px;color:var(--border);cursor:pointer">✕</span>
         </span>
         <div class="match-target">${tgtDisplay}</div>
         ${refBlock}
-        ${meta ? `<div class="match-meta">${meta}</div>` : ''}
       </div>`;
     }).join('');
 
