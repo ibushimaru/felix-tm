@@ -62,11 +62,22 @@ npm start    # https://localhost:3000/taskpane.html
 
 ## Mac 版デスクトップ Excel へのサイドロード（参考）
 
+公開版はターミナル1行（`install-mac.sh` が wef フォルダへの配置を行う）:
+
+```bash
+curl -fsSL https://ibushimaru.github.io/felix-tm/addin/install-mac.sh | sh
+```
+
+開発時は dev manifest を手動コピーでもよい:
+
 ```bash
 cp manifest.xml ~/Library/Containers/com.microsoft.Excel/Data/Documents/wef/
 ```
 
-Excel を再起動 → 挿入 → アドイン → 自分のアドイン。
+Excel を再起動 → 挿入 → アドイン → 個人用アドイン。
+Mac で bat 同等の「ダブルクリック配布」をしないのは macOS の制約
+（ダウンロードしたスクリプトは実行権限が落ち、未署名だと Gatekeeper が
+ブロックする）。署名には Apple Developer Program が必要。
 
 ## Windows 版デスクトップ Excel へのサイドロード（参考）
 

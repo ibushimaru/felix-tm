@@ -66,7 +66,8 @@ def main() -> int:
     OUT.mkdir(parents=True)
 
     for name in ("taskpane.html", "taskpane.css", "taskpane.js",
-                 "install-windows.bat", "uninstall-windows.bat", "install-windows.ps1"):
+                 "install-windows.bat", "uninstall-windows.bat", "install-windows.ps1",
+                 "install-mac.sh", "uninstall-mac.sh"):
         shutil.copy2(ADDIN / name, OUT / name)
     for name in ("felix-engine.js", "db.js"):
         shutil.copy2(EXT / name, OUT / name)

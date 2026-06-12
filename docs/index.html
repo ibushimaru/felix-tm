@@ -110,10 +110,12 @@
   <details>
     <summary>Mac デスクトップ版</summary>
     <ol class="steps">
-      <li>manifest.xml を <code>~/Library/Containers/com.microsoft.Excel/Data/Documents/wef/</code> にコピー（<code>wef</code> フォルダがなければ作成）</li>
-      <li>Excel を再起動</li>
-      <li><strong>挿入 → アドイン → 個人用アドイン</strong> から Felix TM を選択</li>
+      <li><strong>ターミナル</strong>を開く（⌘+Space で「ターミナル」を検索）</li>
+      <li>次の1行を貼り付けて Enter:<br>
+        <code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/install-mac.sh | sh</code></li>
+      <li>Excel を再起動し、<strong>挿入 → アドイン → 個人用アドイン</strong> から Felix TM を開く</li>
     </ol>
+    <p class="note">削除: <code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/uninstall-mac.sh | sh</code></p>
   </details>
   <h3>初期設定</h3>
   <ol class="steps">
@@ -245,10 +247,12 @@
   <details>
     <summary>Mac desktop</summary>
     <ol class="steps">
-      <li>Copy manifest.xml into <code>~/Library/Containers/com.microsoft.Excel/Data/Documents/wef/</code> (create the <code>wef</code> folder if missing)</li>
-      <li>Restart Excel</li>
-      <li><strong>Insert → Add-ins → My Add-ins</strong> → Felix TM</li>
+      <li>Open <strong>Terminal</strong> (⌘+Space, type "Terminal")</li>
+      <li>Paste this one line and press Enter:<br>
+        <code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/install-mac.sh | sh</code></li>
+      <li>Restart Excel, then open Felix TM from <strong>Insert → Add-ins → My Add-ins</strong></li>
     </ol>
+    <p class="note">To remove: <code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/uninstall-mac.sh | sh</code></p>
   </details>
   <h3>First-time setup</h3>
   <ol class="steps">
