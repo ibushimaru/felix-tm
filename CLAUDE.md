@@ -75,6 +75,16 @@ single source of truth for shared logic. Excel-specific glue lives in
 `taskpane.js`; sideload instructions are in `plugins/excel-addin/README.md`.
 One-time setup: `npx office-addin-dev-certs install` (HTTPS dev certs).
 
+## Site font (docs/fonts/)
+
+The GitHub Pages site self-hosts a subsetted Noto Sans JP
+(`docs/fonts/NotoSansJP-subset.woff2`) so Windows doesn't render thin
+Yu Gothic. The subset only contains characters present in
+docs/index.html and docs/privacy/index.html at build time — **after
+editing page text, rerun `.venv/bin/python scripts/build_fonts.py`**
+and commit the regenerated woff2. A missing character silently falls
+back to the system stack (mixed-font look), so don't skip this.
+
 ## Logic tests (no browser)
 
 `plugins/chrome-extension/tests/` holds Node unit tests for the pure
