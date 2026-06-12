@@ -119,11 +119,15 @@ hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
 .match-meta { color: var(--faint); font-size: 10px; margin-top: 3px; }
 .empty { text-align: center; color: var(--faint); padding: 16px 8px; font-size: 12px; }
 
-/* Placement preview — placed-ins is the amber "the tool changed this,
-   glance before you trust it" mark; placed-unverified is the soft
-   "re-read me" range marker when an uncovered diff survived. */
+/* Placement preview — two clearly separated colours so substituted vs
+   untouched text can't be confused:
+     placed-ins        amber  = the tool substituted THIS (check it)
+     placed-unverified red    = the tool did NOT touch this range and an
+                                unresolved diff is hiding somewhere in it
+   When every diff is covered, untouched text stays plain black — red
+   only appears while something is actually unresolved. */
 .placed-ins { color: var(--verify); text-decoration: underline dashed var(--verify-line); text-underline-offset: 2px; border-radius: 2px; padding: 0 1px; }
-.placed-unverified { border-bottom: 1px dotted var(--verify-line); }
+.placed-unverified { color: var(--danger); border-bottom: 1px dotted var(--danger-line); }
 .diff-match { color: var(--safe-strong); }
 /* Uncovered-diff palette — background = who owns the gap (red: the tool
    translated NOTHING here; amber: registered term that may have leaked
