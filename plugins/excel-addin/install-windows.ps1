@@ -25,7 +25,8 @@ New-ItemProperty -Path $key -Name 'FelixTM' -Value $manifest -PropertyType Strin
 
 Write-Host ''
 Write-Host 'Felix TM を登録しました。'
-Write-Host 'Excel を再起動すると、ホームタブの右端に Felix TM ボタンが表示されます。'
+Write-Host 'Excel を再起動し、ホーム → アドイン → 開発者向けアドイン から'
+Write-Host 'Felix TM をクリックしてください（初回のみ。以降はホームリボンに常駐します）。'
 Write-Host ''
 Write-Host 'アンインストールするには次の2行を実行:'
 Write-Host "  Remove-ItemProperty -Path '$key' -Name 'FelixTM'"
