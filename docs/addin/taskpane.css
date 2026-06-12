@@ -110,7 +110,7 @@ hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
 .match.hover-right { cursor: text; border-color: var(--verify-line) !important; }
 /* Score badge: border-only traffic-light pill ("quality gauge"),
    visually distinct from the inline diff fills sharing the same hues. */
-.score { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 600; color: var(--fg); }
+.score { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border-radius: 3px; font-size: 10px; font-weight: 600; color: var(--fg); vertical-align: top; }
 .score-high { background: var(--surface); border: 1px solid var(--safe); }
 .score-mid { background: var(--surface); border: 1px solid var(--verify-line); }
 .score-low { background: var(--surface); border: 1px solid var(--danger-line); }
@@ -161,7 +161,7 @@ hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
 .gloss-copied { background: var(--safe-bg); transition: background 0.3s; }
 .match-placed { border-color: var(--verify-line); }
 .match-placed:hover { border-color: var(--verify); }
-.placed-badge { display: inline-block; background: var(--surface); color: var(--verify); border: 1px solid var(--verify-line); font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
+.placed-badge { display: inline-flex; align-items: center; height: 18px; background: var(--surface); color: var(--verify); border: 1px solid var(--verify-line); font-size: 10px; font-weight: 600; padding: 0 5px; border-radius: 3px; margin-left: 4px; vertical-align: top; }
 .match-ref { border-top: 1px dashed var(--border-sub); margin-top: 8px; padding-top: 6px; cursor: text; user-select: text; }
 .ref-row { color: var(--faint); font-size: 11px; margin-top: 2px; word-break: break-all; }
 .btn-del-tm:hover { color: var(--danger-line) !important; }
