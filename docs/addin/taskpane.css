@@ -66,7 +66,7 @@ hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
 /* Column chips: always show which columns the pane is wired to, and
    double as the way to change them — click a chip, then click a cell
    in that column on the sheet. No typed column letters. */
-.cols-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 11px; }
+.cols-bar { display: flex; align-items: center; gap: 6px; margin: 4px 0 6px; font-size: 12px; }
 .col-chip { border: 1px dashed var(--border); border-radius: 4px; padding: 2px 8px; cursor: pointer; color: var(--fg); user-select: none; }
 .col-chip:hover { border-color: var(--accent); color: var(--accent); }
 .col-chip.picking { border-style: solid; border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }

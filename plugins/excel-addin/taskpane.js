@@ -91,6 +91,8 @@ const I18N = {
     colsSame: 'Source and target columns must differ',
     colSetToastTpl: 'Source {s} → Target {t}',
     tipColChip: 'Click, then click a cell in that column on the sheet',
+    lblCols: 'Source & target columns',
+    descCols: 'Click a chip, then click any cell in that column on the sheet — the column is saved immediately.',
   },
   ja: {
     // Tabs
@@ -150,6 +152,8 @@ const I18N = {
     colsSame: '原文列と訳文列は別の列にしてください',
     colSetToastTpl: '原文 {s} → 訳文 {t}',
     tipColChip: 'クリック後、シート上でその列のセルをクリック',
+    lblCols: '原文列と訳文列',
+    descCols: 'チップをクリックしてから、シート上でその列のセルをクリックすると設定されます。',
   },
 };
 function t(key) { return (I18N[settings.lang] && I18N[settings.lang][key]) || I18N.en[key] || key; }
@@ -1409,6 +1413,8 @@ function applyLang() {
   set('btn-export-gloss', t('exportGloss'));
   // Settings
   set('h-settings', t('settings'));
+  set('lbl-cols', t('lblCols'));
+  set('desc-cols', t('descCols'));
   tip('btn-scale-down', t('lblUiScale'));
   tip('btn-scale-up', t('lblUiScale'));
   set('btn-save-settings', t('save'));

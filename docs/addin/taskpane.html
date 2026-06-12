@@ -37,12 +37,6 @@
     <span style="flex:1"></span>
     <button class="btn" id="btn-set" title="">Set</button>
   </div>
-  <div class="cols-bar">
-    <span class="col-chip" id="col-src-chip" title="">原文 A</span>
-    <span class="col-arrow">→</span>
-    <span class="col-chip" id="col-tgt-chip" title="">訳文 B</span>
-    <span class="col-hint" id="col-hint"></span>
-  </div>
   <div class="cell-label"><span id="lbl-cell">Active Cell</span> <span id="cell-ref"></span></div>
   <div class="cell-preview" id="cell-value">—</div>
   <div class="settings-row">
@@ -129,6 +123,15 @@
 <!-- Settings -->
 <div id="settings" class="panel">
   <h3 id="h-settings">Settings</h3>
+
+  <label class="field-label" id="lbl-cols">Source &amp; Target Columns / 原文列と訳文列</label>
+  <div class="cols-bar">
+    <span class="col-chip" id="col-src-chip" title="">原文 A</span>
+    <span class="col-arrow">→</span>
+    <span class="col-chip" id="col-tgt-chip" title="">訳文 B</span>
+    <span class="col-hint" id="col-hint"></span>
+  </div>
+  <p class="desc" id="desc-cols" style="margin-bottom:12px">チップをクリックしてから、シート上でその列のセルをクリックすると設定されます。</p>
 
   <label class="field-label">Language / 言語</label>
   <select id="set-lang" style="margin-bottom:12px">
