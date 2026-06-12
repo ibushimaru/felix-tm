@@ -65,7 +65,8 @@ def main() -> int:
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True)
 
-    for name in ("taskpane.html", "taskpane.css", "taskpane.js", "install-windows.ps1"):
+    for name in ("taskpane.html", "taskpane.css", "taskpane.js",
+                 "install-windows.bat", "uninstall-windows.bat", "install-windows.ps1"):
         shutil.copy2(ADDIN / name, OUT / name)
     for name in ("felix-engine.js", "db.js"):
         shutil.copy2(EXT / name, OUT / name)

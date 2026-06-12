@@ -82,13 +82,13 @@
   <details>
     <summary>Windows デスクトップ版</summary>
     <ol class="steps">
-      <li>スタートメニューから <strong>PowerShell</strong> を開く</li>
-      <li>次の1行を貼り付けて Enter:<br>
-        <code>irm https://raw.githubusercontent.com/ibushimaru/felix-tm/main/docs/addin/install-windows.ps1 | iex</code></li>
+      <li><a href="./addin/install-windows.bat" download><strong>install-windows.bat</strong> をダウンロード</a></li>
+      <li>ダブルクリックで実行（警告が出た場合は「詳細情報」→「実行」）</li>
       <li>Excel を再起動 → ホームリボン右端に <strong>Felix TM</strong></li>
     </ol>
-    <p class="note">管理者権限は不要です。スクリプトは manifest をダウンロードして現在ユーザーのレジストリ（Office の開発者用サイドロード領域）に登録するだけ —
-      <a href="./addin/install-windows.ps1">中身はこちら</a>。アンインストール用のコマンドは実行時に表示されます。
+    <p class="note">管理者権限は不要です。manifest をダウンロードして現在ユーザーに登録するだけ —
+      <a href="https://github.com/ibushimaru/felix-tm/blob/main/plugins/excel-addin/install-windows.bat">中身はこちら</a>。
+      削除は <a href="./addin/uninstall-windows.bat" download>uninstall-windows.bat</a>。
       Microsoft 365 または Office 2021 以降。</p>
   </details>
   <details>
@@ -219,13 +219,13 @@
   <details>
     <summary>Windows desktop</summary>
     <ol class="steps">
-      <li>Open <strong>PowerShell</strong> from the Start menu</li>
-      <li>Paste this one line and press Enter:<br>
-        <code>irm https://raw.githubusercontent.com/ibushimaru/felix-tm/main/docs/addin/install-windows.ps1 | iex</code></li>
+      <li><a href="./addin/install-windows.bat" download>Download <strong>install-windows.bat</strong></a></li>
+      <li>Double-click it (if a warning appears: "More info" → "Run anyway")</li>
       <li>Restart Excel — <strong>Felix TM</strong> appears at the right end of the Home ribbon</li>
     </ol>
-    <p class="note">No admin rights needed. The script downloads the manifest and registers it in the current user's registry (Office's developer sideload area) —
-      <a href="./addin/install-windows.ps1">read it here</a>. The uninstall command is printed when it runs.
+    <p class="note">No admin rights needed. It downloads the manifest and registers it for the current user —
+      <a href="https://github.com/ibushimaru/felix-tm/blob/main/plugins/excel-addin/install-windows.bat">read it here</a>.
+      To remove: <a href="./addin/uninstall-windows.bat" download>uninstall-windows.bat</a>.
       Requires Microsoft 365 or Office 2021+.</p>
   </details>
   <details>

@@ -70,16 +70,17 @@ Excel を再起動 → 挿入 → アドイン → 自分のアドイン。
 
 ## Windows 版デスクトップ Excel へのサイドロード（参考）
 
-推奨はレジストリ方式（`install-windows.ps1`）。PowerShell で1行:
+推奨はレジストリ方式。`install-windows.bat` をダウンロードして
+ダブルクリック（削除は `uninstall-windows.bat`）。PowerShell 派には
+同等の `install-windows.ps1` もある:
 
 ```powershell
 irm https://raw.githubusercontent.com/ibushimaru/felix-tm/main/docs/addin/install-windows.ps1 | iex
 ```
 
-manifest を `%LOCALAPPDATA%\FelixTM\` にダウンロードし、
+どちらも manifest を `%LOCALAPPDATA%\FelixTM\` にダウンロードし、
 `HKCU\Software\Microsoft\Office\16.0\WEF\Developer` に登録する
-（公式 dev ツールと同じ仕組み・管理者権限不要）。アンインストールの
-コマンドは実行時に表示される。
+（公式 dev ツールと同じ仕組み・管理者権限不要）。
 
 スクリプトを使いたくない場合の代替は「共有フォルダーカタログ」方式:
 フォルダを自分に共有 → トラストセンター → 信頼できるアドインカタログに
