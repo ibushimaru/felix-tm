@@ -127,6 +127,12 @@ hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
 .diff-del { background: var(--danger-bg); color: var(--danger); text-decoration: underline dashed; text-underline-offset: 2px; }
 .diff-ins { background: var(--danger-bg); color: var(--danger); text-decoration: line-through; }
 .gloss_match { text-decoration: underline dotted; text-decoration-color: var(--accent); text-underline-offset: 2px; cursor: pointer; position: relative; }
+/* Instant hover tooltip showing the registered translation — same
+   absolute-positioned ::after as the Chrome extension (no CSS anchor
+   positioning, so it works in WKWebView/WebView2 alike). The title
+   attribute stays as an accessibility fallback. */
+.gloss_match::after { content: attr(data-tip); display: none; position: absolute; bottom: 100%; left: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 10px; color: var(--fg); white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
+.gloss_match:hover::after { display: block; }
 .gloss-copied { background: var(--safe-bg); transition: background 0.3s; }
 .match-placed { border-color: var(--verify-line); }
 .match-placed:hover { border-color: var(--verify); }
