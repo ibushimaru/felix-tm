@@ -65,7 +65,7 @@ def main() -> int:
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True)
 
-    for name in ("taskpane.html", "taskpane.css", "taskpane.js",
+    for name in ("taskpane.html", "taskpane.css", "taskpane.js", "shortcuts.json",
                  "install-windows.bat", "uninstall-windows.bat", "install-windows.ps1",
                  "install-mac.sh", "uninstall-mac.sh"):
         shutil.copy2(ADDIN / name, OUT / name)

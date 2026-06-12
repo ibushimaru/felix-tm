@@ -746,6 +746,43 @@ async function doGet(el, editMode) {
   await writeToTarget(el.getAttribute('data-target'), editMode);
 }
 
+/** Insert the nth visible match card (0-based) — the keyboard
+ *  equivalent of a left-half card click. */
+function doGetNth(n) {
+  const card = document.querySelectorAll('#results .match')[n];
+  if (!card) { showToast(t('noMatch'), 0, true); return; }
+  card.classList.add('inserted');
+  doGet(card, false);
+}
+
+/** Felix's "Set and Next": register the current row, then advance to
+ *  the next row's source cell (doSet itself stays put). */
+async function doSetAndNext() {
+  if (!lastSel) { showToast(t('selectCellFirst'), 0, true); return; }
+  const sel = lastSel;
+  await doSet();
+  await selectCellRef(sel.sheetName, (settings.sourceCol || 'A') + (sel.rowNum + 1));
+}
+
+// === Keyboard shortcuts (Felix ExcelAssist lineage) ===
+// Registered through the Office Keyboard Shortcuts API (shortcuts.json
+// via ExtendedOverrides + the shared runtime), so they fire while the
+// focus is in the grid. The Alt+arrow combos from the original Felix
+// can't be registered — the API only accepts letter/digit/F-keys.
+function registerShortcutActions() {
+  if (typeof Office === 'undefined' || !Office.actions || typeof Office.actions.associate !== 'function') return;
+  try {
+    Office.actions.associate('GetAndNext', () => doGetNth(0));
+    Office.actions.associate('SetAndNext', () => doSetAndNext());
+    Office.actions.associate('Lookup', () => rerunSearch());
+    Office.actions.associate('Entry1', () => doGetNth(0));
+    Office.actions.associate('Entry2', () => doGetNth(1));
+    Office.actions.associate('Entry3', () => doGetNth(2));
+  } catch (e) {
+    console.warn('[FelixTM] shortcut registration failed', e);
+  }
+}
+
 async function writeToTarget(value, editMode) {
   if (!lastSel) { showToast(t('selectCellFirst'), 0, true); return; }
   // Anchor row only on source/target columns — a stray click while a
@@ -1685,6 +1722,7 @@ async function init(hasExcel) {
       scheduleSelectionCheck,
       () => scheduleSelectionCheck() // initial paint once the handler is live
     );
+    registerShortcutActions();
   }
 }
 

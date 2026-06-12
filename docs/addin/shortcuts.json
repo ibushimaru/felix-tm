@@ -1,0 +1,19 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/office-js/keyboard-shortcuts.json",
+  "actions": [
+    { "id": "GetAndNext", "type": "ExecuteFunction", "name": "Get and Next" },
+    { "id": "SetAndNext", "type": "ExecuteFunction", "name": "Set and Next" },
+    { "id": "Lookup", "type": "ExecuteFunction", "name": "Lookup" },
+    { "id": "Entry1", "type": "ExecuteFunction", "name": "Insert match 1" },
+    { "id": "Entry2", "type": "ExecuteFunction", "name": "Insert match 2" },
+    { "id": "Entry3", "type": "ExecuteFunction", "name": "Insert match 3" }
+  ],
+  "shortcuts": [
+    { "action": "GetAndNext", "key": { "default": "Alt+G" } },
+    { "action": "SetAndNext", "key": { "default": "Alt+S" } },
+    { "action": "Lookup", "key": { "default": "Alt+L" } },
+    { "action": "Entry1", "key": { "default": "Alt+1" } },
+    { "action": "Entry2", "key": { "default": "Alt+2" } },
+    { "action": "Entry3", "key": { "default": "Alt+3" } }
+  ]
+}
