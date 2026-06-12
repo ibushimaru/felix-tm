@@ -49,6 +49,10 @@
   .steps { margin: 16px 0; }
   .steps li { margin: 10px 0; }
   .note { font-size: 14px; color: #5f6368; }
+  .cmd { display: flex; align-items: center; gap: 10px; background: #f1f3f4; border-radius: 6px; padding: 8px 12px; margin: 6px 0 10px; }
+  .cmd code { background: none; padding: 0; flex: 1; overflow-x: auto; white-space: nowrap; font-size: 13px; }
+  .copy-btn { flex-shrink: 0; padding: 4px 12px; border: 1px solid #dadce0; border-radius: 4px; background: #fff; color: #1a73e8; font-size: 12px; cursor: pointer; }
+  .copy-btn:hover { background: #e8f0fe; }
   details { margin: 10px 0; border: 1px solid #e8eaed; border-radius: 8px; padding: 10px 14px; }
   details summary { cursor: pointer; font-weight: 600; }
   details[open] summary { margin-bottom: 8px; }
@@ -111,11 +115,12 @@
     <summary>Mac デスクトップ版</summary>
     <ol class="steps">
       <li><strong>ターミナル</strong>を開く（⌘+Space で「ターミナル」を検索）</li>
-      <li>次の1行を貼り付けて Enter:<br>
-        <code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/install-mac.sh | sh</code></li>
+      <li>次の1行を貼り付けて Enter:
+        <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/install-mac.sh | sh</code><button class="copy-btn" data-done="✓ コピーしました">コピー</button></div></li>
       <li>Excel を再起動し、<strong>挿入 → アドイン → 個人用アドイン</strong> から Felix TM を開く</li>
     </ol>
-    <p class="note">削除: <code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/uninstall-mac.sh | sh</code></p>
+    <p class="note" style="margin-bottom:2px">削除:</p>
+    <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/uninstall-mac.sh | sh</code><button class="copy-btn" data-done="✓ コピーしました">コピー</button></div>
   </details>
   <h3>初期設定</h3>
   <ol class="steps">
@@ -248,11 +253,12 @@
     <summary>Mac desktop</summary>
     <ol class="steps">
       <li>Open <strong>Terminal</strong> (⌘+Space, type "Terminal")</li>
-      <li>Paste this one line and press Enter:<br>
-        <code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/install-mac.sh | sh</code></li>
+      <li>Paste this one line and press Enter:
+        <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/install-mac.sh | sh</code><button class="copy-btn" data-done="✓ Copied">Copy</button></div></li>
       <li>Restart Excel, then open Felix TM from <strong>Insert → Add-ins → My Add-ins</strong></li>
     </ol>
-    <p class="note">To remove: <code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/uninstall-mac.sh | sh</code></p>
+    <p class="note" style="margin-bottom:2px">To remove:</p>
+    <div class="cmd"><code>curl -fsSL https://ibushimaru.github.io/felix-tm/addin/uninstall-mac.sh | sh</code><button class="copy-btn" data-done="✓ Copied">Copy</button></div>
   </details>
   <h3>First-time setup</h3>
   <ol class="steps">
@@ -343,5 +349,37 @@
   <p>&copy; 2026 Veriscio. Released under the MIT License.</p>
 </footer>
 
+<script>
+// Copy buttons for the terminal one-liners. First-party inline script —
+// the page stays free of third-party code. execCommand fallback covers
+// webviews where the async clipboard API is unavailable.
+document.querySelectorAll('.cmd').forEach(function (box) {
+  var btn = box.querySelector('.copy-btn');
+  btn.addEventListener('click', function () {
+    var text = box.querySelector('code').textContent;
+    var done = function () {
+      var orig = btn.textContent;
+      btn.textContent = btn.dataset.done;
+      btn.disabled = true;
+      setTimeout(function () { btn.textContent = orig; btn.disabled = false; }, 1500);
+    };
+    var legacy = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy') && done(); } catch (e) {}
+      ta.remove();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, legacy);
+    } else {
+      legacy();
+    }
+  });
+});
+</script>
 </body>
 </html>
