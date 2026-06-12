@@ -1,26 +1,13 @@
 @echo off
 rem Felix TM - Windows desktop installer
-rem Downloads the add-in manifest and registers it for the current user
-rem (HKCU - no admin rights needed). Run uninstall-windows.bat to remove.
+rem Thin wrapper around install-windows.ps1 so double-click works; the
+rem actual install logic lives in the PowerShell script (single code
+rem path, loud errors, stops on the first failure).
 
-setlocal
-set "DIR=%LOCALAPPDATA%\FelixTM"
-set "MANIFEST=%DIR%\felix-tm-manifest.xml"
-
-if not exist "%DIR%" mkdir "%DIR%"
-
-curl -fsSL -o "%MANIFEST%" https://ibushimaru.github.io/felix-tm/addin/manifest.xml
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ibushimaru/felix-tm/main/docs/addin/install-windows.ps1 | iex"
 if errorlevel 1 (
-  echo Download failed. Check your network connection and try again.
-  pause
-  exit /b 1
+  echo.
+  echo Install FAILED. Please report the error shown above:
+  echo https://github.com/ibushimaru/felix-tm/issues
 )
-
-reg add "HKCU\Software\Microsoft\Office\16.0\WEF\Developer" /v FelixTM /t REG_SZ /d "%MANIFEST%" /f >/dev/null
-
-echo.
-echo Felix TM registered.
-echo Restart Excel, then look for the Felix TM button at the right end
-echo of the Home ribbon.
-echo.
 pause
