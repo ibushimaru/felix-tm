@@ -102,6 +102,23 @@ function validRange(r) {
 }
 function validSpreadsheetId(id) { return typeof id === 'string' && SS_ID_RE.test(id); }
 
+// Map a Sheets API error response (`data.error.{code,status,message}`) to
+// a stable error code that content.js can switch on for user-facing
+// messaging. We deliberately bucket all permission failures (NOT_FOUND
+// included — Sheets returns 404 instead of 403 when the token has no
+// visibility into the file) under PERMISSION because the actionable
+// remedy is the same: share the sheet with the signed-in account.
+function classifyApiError(data) {
+  const err = data && data.error;
+  if (!err) return null;
+  const code = err.code;
+  const status = err.status || '';
+  if (code === 401 || status === 'UNAUTHENTICATED') return 'NO_AUTH';
+  if (code === 403 || code === 404 || status === 'PERMISSION_DENIED' || status === 'NOT_FOUND') return 'PERMISSION';
+  if (code === 429 || status === 'RESOURCE_EXHAUSTED') return 'RATE_LIMITED';
+  return 'API_ERROR';
+}
+
 // Message routing
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // Reject messages from other extensions (defense in depth — only ours
@@ -163,12 +180,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'SHEETS_API_WRITE') {
     const d = msg.data || msg; // support both { type, data: {...} } and flat format
     if (!validSpreadsheetId(d.spreadsheetId) || !validRange(d.range)) {
-      sendResponse({ error: 'Invalid spreadsheetId or range' });
+      sendResponse({ error: 'INVALID_PARAMS' });
       return true;
     }
     chrome.identity.getAuthToken({ interactive: true }, (token) => {
       if (!token) {
-        sendResponse({ error: chrome.runtime.lastError?.message || 'No token' });
+        sendResponse({ error: 'NO_AUTH' });
         return;
       }
       const range = encodeURIComponent(d.range);
@@ -180,8 +197,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ values: [[d.value]] }),
-      }).then(r => r.json()).then(data => sendResponse(data))
-        .catch(err => sendResponse({ error: err.message }));
+      }).then(r => r.json()).then(data => {
+        const cls = classifyApiError(data);
+        if (cls) {
+          console.warn('[FelixTM] Sheets API WRITE error', d.range, data.error);
+          sendResponse({ error: cls, apiError: data.error });
+          return;
+        }
+        sendResponse(data);
+      }).catch(err => {
+        console.warn('[FelixTM] Sheets API WRITE fetch failed', d.range, err);
+        sendResponse({ error: 'NETWORK' });
+      });
     });
     return true;
   }
@@ -194,12 +221,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const updates = Array.isArray(d.updates) ? d.updates : [];
     if (!updates.length) { sendResponse({ updatedCells: 0 }); return; }
     if (!validSpreadsheetId(d.spreadsheetId) || !updates.every(u => validRange(u.range))) {
-      sendResponse({ error: 'Invalid spreadsheetId or range' });
+      sendResponse({ error: 'INVALID_PARAMS' });
       return true;
     }
     chrome.identity.getAuthToken({ interactive: true }, (token) => {
       if (!token) {
-        sendResponse({ error: chrome.runtime.lastError?.message || 'No token' });
+        sendResponse({ error: 'NO_AUTH' });
         return;
       }
       const body = {
@@ -210,8 +237,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      }).then(r => r.json()).then(data => sendResponse(data))
-        .catch(err => sendResponse({ error: err.message }));
+      }).then(r => r.json()).then(data => {
+        const cls = classifyApiError(data);
+        if (cls) {
+          console.warn('[FelixTM] Sheets API BATCH_WRITE error', data.error);
+          sendResponse({ error: cls, apiError: data.error });
+          return;
+        }
+        sendResponse(data);
+      }).catch(err => {
+        console.warn('[FelixTM] Sheets API BATCH_WRITE fetch failed', err);
+        sendResponse({ error: 'NETWORK' });
+      });
     });
     return true;
   }
@@ -220,20 +257,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'SHEETS_API_READ_BATCH') {
     const d = msg.data || msg;
     if (!validSpreadsheetId(d.spreadsheetId) || !validRange(d.range)) {
-      sendResponse({ values: [] });
+      sendResponse({ values: [], error: 'INVALID_PARAMS' });
       return true;
     }
     chrome.identity.getAuthToken({ interactive: false }, (token) => {
       void chrome.runtime.lastError;
-      if (!token) { sendResponse({ values: [] }); return; }
+      if (!token) { sendResponse({ values: [], error: 'NO_AUTH' }); return; }
       const range = encodeURIComponent(d.range);
       fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values/${range}`,
         { headers: { 'Authorization': 'Bearer ' + token } }
       ).then(r => r.json()).then(data => {
+        const cls = classifyApiError(data);
+        if (cls) {
+          console.warn('[FelixTM] Sheets API READ_BATCH error', d.range, data.error);
+          sendResponse({ values: [], error: cls, apiError: data.error });
+          return;
+        }
         const values = (data.values || []).map(row => row[0] || '');
         sendResponse({ values });
-      }).catch(() => sendResponse({ values: [] }));
+      }).catch((err) => {
+        console.warn('[FelixTM] Sheets API READ_BATCH fetch failed', d.range, err);
+        sendResponse({ values: [], error: 'NETWORK' });
+      });
     });
     return true;
   }
@@ -242,20 +288,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'SHEETS_API_READ_DIRECT') {
     const d = msg.data || msg;
     if (!validSpreadsheetId(d.spreadsheetId) || !validRange(d.range)) {
-      sendResponse({ value: '' });
+      sendResponse({ value: '', error: 'INVALID_PARAMS' });
       return true;
     }
     chrome.identity.getAuthToken({ interactive: false }, (token) => {
       void chrome.runtime.lastError;
-      if (!token) { sendResponse({ value: '' }); return; }
+      if (!token) { sendResponse({ value: '', error: 'NO_AUTH' }); return; }
       const range = encodeURIComponent(d.range);
       fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${d.spreadsheetId}/values/${range}`,
         { headers: { 'Authorization': 'Bearer ' + token } }
       ).then(r => r.json()).then(data => {
+        const cls = classifyApiError(data);
+        if (cls) {
+          console.warn('[FelixTM] Sheets API READ_DIRECT error', d.range, data.error);
+          sendResponse({ value: '', error: cls, apiError: data.error });
+          return;
+        }
         const val = data.values && data.values[0] ? data.values[0][0] : '';
         sendResponse({ value: val || '' });
-      }).catch(() => sendResponse({ value: '' }));
+      }).catch((err) => {
+        console.warn('[FelixTM] Sheets API READ_DIRECT fetch failed', d.range, err);
+        sendResponse({ value: '', error: 'NETWORK' });
+      });
     });
     return true;
   }
@@ -306,16 +361,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'SHEETS_API_WRITE_FORMATTED') {
     const d = msg.data || msg;
     if (!validSpreadsheetId(d.spreadsheetId) || !validRange(d.range)) {
-      sendResponse({ error: 'Invalid spreadsheetId or range' });
+      sendResponse({ error: 'INVALID_PARAMS' });
       return true;
     }
     chrome.identity.getAuthToken({ interactive: true }, (token) => {
-      if (!token) { sendResponse({ error: 'No token' }); return; }
+      if (!token) { sendResponse({ error: 'NO_AUTH' }); return; }
 
       // First: get sheetId from sheet name
       const ssId = d.spreadsheetId;
       const rangeMatch = d.range.match(/^'?([^'!]+)'?!([A-Z]+)(\d+)$/i);
-      if (!rangeMatch) { sendResponse({ error: 'Invalid range' }); return; }
+      if (!rangeMatch) { sendResponse({ error: 'INVALID_PARAMS' }); return; }
 
       const sheetName = rangeMatch[1];
       const col = rangeMatch[2].toUpperCase().charCodeAt(0) - 65;
@@ -325,7 +380,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ssId}?fields=sheets.properties`, {
         headers: { 'Authorization': 'Bearer ' + token },
       }).then(r => r.json()).then(meta => {
-        const sheet = meta.sheets.find(s => s.properties.title === sheetName);
+        const cls = classifyApiError(meta);
+        if (cls) {
+          console.warn('[FelixTM] Sheets API WRITE_FORMATTED meta error', d.range, meta.error);
+          throw { __classified: true, error: cls, apiError: meta.error };
+        }
+        const sheet = meta.sheets && meta.sheets.find(s => s.properties.title === sheetName);
         const sheetId = sheet ? sheet.properties.sheetId : 0;
 
         const runs = FelixEngine.buildCellFormatRuns(
@@ -349,10 +409,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           method: 'POST',
           headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-        });
-      }).then(r => r.json()).then(data => {
+        }).then(r => r.json());
+      }).then(data => {
+        if (!data) return; // already handled by classified throw
+        const cls = classifyApiError(data);
+        if (cls) {
+          console.warn('[FelixTM] Sheets API WRITE_FORMATTED batchUpdate error', d.range, data.error);
+          sendResponse({ error: cls, apiError: data.error });
+          return;
+        }
         sendResponse(data);
-      }).catch(err => sendResponse({ error: err.message }));
+      }).catch(err => {
+        if (err && err.__classified) {
+          sendResponse({ error: err.error, apiError: err.apiError });
+        } else {
+          console.warn('[FelixTM] Sheets API WRITE_FORMATTED fetch failed', d.range, err);
+          sendResponse({ error: 'NETWORK' });
+        }
+      });
     });
     return true;
   }

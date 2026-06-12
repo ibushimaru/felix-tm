@@ -60,6 +60,12 @@ const I18N = {
     signedInStatus: '✓ Signed in', notSignedIn: 'Not signed in',
     signedInToast: 'Signed in', signOutToast: 'Signed out',
     signInCancelled: 'Sign-in cancelled',
+    apiNoAuth: 'Sign in to access this spreadsheet.',
+    apiPermission: 'No access to this spreadsheet — sign in with the owning account, or share it with the signed-in account.',
+    apiRateLimited: 'Sheets API rate limit reached — wait a moment and try again.',
+    apiNetwork: 'Network error reaching Sheets — check your connection.',
+    apiInvalidParams: 'Invalid spreadsheet or range.',
+    apiGenericPrefix: 'Sheets API error: ',
   },
   ja: {
     tm: 'TM', glossary: '用語集', settings: '設定',
@@ -106,11 +112,36 @@ const I18N = {
     signedInStatus: '✓ サインイン済み', notSignedIn: '未サインイン',
     signedInToast: 'サインインしました', signOutToast: 'サインアウトしました',
     signInCancelled: 'サインインをキャンセルしました',
+    apiNoAuth: 'このスプレッドシートにアクセスするにはサインインしてください。',
+    apiPermission: 'このスプレッドシートへのアクセス権がありません。所有者アカウントでサインインするか、サインイン中のアカウントに共有してください。',
+    apiRateLimited: 'Sheets API のレート制限に達しました。少し待ってから再試行してください。',
+    apiNetwork: 'Sheets への接続エラーです。ネットワークを確認してください。',
+    apiInvalidParams: 'スプレッドシート ID または範囲が不正です。',
+    apiGenericPrefix: 'Sheets API エラー: ',
   },
 };
 
 function t(key) {
   return (I18N[settings.lang] && I18N[settings.lang][key]) || I18N.en[key] || key;
+}
+
+// Mirror of content.js's sheetsErrorMessage so sidepanel-side imports
+// (Import from Sheet) can render the same human-readable messages on
+// the same error codes returned by background.js.
+function sheetsErrorMessage(resp) {
+  if (!resp || !resp.error) return null;
+  switch (resp.error) {
+    case 'NO_AUTH': return t('apiNoAuth');
+    case 'PERMISSION': return t('apiPermission');
+    case 'RATE_LIMITED': return t('apiRateLimited');
+    case 'NETWORK': return t('apiNetwork');
+    case 'INVALID_PARAMS': return t('apiInvalidParams');
+    case 'API_ERROR': {
+      const apiMsg = resp.apiError && resp.apiError.message ? resp.apiError.message : 'unknown';
+      return t('apiGenericPrefix') + apiMsg;
+    }
+    default: return null;
+  }
 }
 
 function applyLang() {
@@ -725,6 +756,12 @@ async function readSheetRange(srcId, tgtId) {
     sendBg('SHEETS_API_READ_BATCH', { spreadsheetId: info.spreadsheetId, range: `${prefix}${srcRangeRaw}` }),
     sendBg('SHEETS_API_READ_BATCH', { spreadsheetId: info.spreadsheetId, range: `${prefix}${tgtRangeRaw}` }),
   ]);
+
+  const errResp = (srcResp && srcResp.error) ? srcResp : ((tgtResp && tgtResp.error) ? tgtResp : null);
+  if (errResp) {
+    showToast(sheetsErrorMessage(errResp));
+    return null;
+  }
 
   return { srcValues: srcResp?.values || [], tgtValues: tgtResp?.values || [] };
 }

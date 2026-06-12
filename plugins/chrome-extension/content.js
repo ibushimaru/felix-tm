@@ -102,6 +102,12 @@
       toTerm: 'To term: ',
       toTranslation: 'To translation: ',
       invalidRegex: 'Invalid regex',
+      apiNoAuth: 'Sign in to access this spreadsheet.',
+      apiPermission: 'No access to this spreadsheet — sign in with the owning account, or share it with the signed-in account.',
+      apiRateLimited: 'Sheets API rate limit reached — wait a moment and try again.',
+      apiNetwork: 'Network error reaching Sheets — check your connection.',
+      apiInvalidParams: 'Invalid spreadsheet or range.',
+      apiGenericPrefix: 'Sheets API error: ',
     },
     ja: {
       activeCell: 'アクティブセル', selectCell: 'セルを選択するとTM検索します',
@@ -149,6 +155,12 @@
       toTerm: '用語へ: ',
       toTranslation: '訳語へ: ',
       invalidRegex: '無効な正規表現',
+      apiNoAuth: 'このスプレッドシートにアクセスするにはサインインしてください。',
+      apiPermission: 'このスプレッドシートへのアクセス権がありません。所有者アカウントでサインインするか、サインイン中のアカウントに共有してください。',
+      apiRateLimited: 'Sheets API のレート制限に達しました。少し待ってから再試行してください。',
+      apiNetwork: 'Sheets への接続エラーです。ネットワークを確認してください。',
+      apiInvalidParams: 'スプレッドシート ID または範囲が不正です。',
+      apiGenericPrefix: 'Sheets API エラー: ',
     },
   };
   function t(key) { return (I18N[settings.lang] && I18N[settings.lang][key]) || I18N.en[key] || key; }
@@ -162,11 +174,35 @@
     });
   }
 
-  // Sheets API errors that come back from background.js are surfaced
-  // via showToast at the call site. The previous per-spreadsheet
-  // authorization banner was removed when we switched from
-  // drive.file to spreadsheets scope — one consent now covers any
-  // sheet the user opens.
+  // Sheets API errors that come back from background.js carry a
+  // stable error code (NO_AUTH / PERMISSION / RATE_LIMITED / NETWORK /
+  // INVALID_PARAMS / API_ERROR). sheetsErrorMessage maps that code to
+  // a user-facing string; surfaceSheetsError handles the toast and
+  // returns true when an error was found, so call sites can early-bail
+  // with `if (surfaceSheetsError(resp)) return;`.
+  function sheetsErrorMessage(resp) {
+    if (!resp || !resp.error) return null;
+    switch (resp.error) {
+      case 'NO_AUTH': return t('apiNoAuth');
+      case 'PERMISSION': return t('apiPermission');
+      case 'RATE_LIMITED': return t('apiRateLimited');
+      case 'NETWORK': return t('apiNetwork');
+      case 'INVALID_PARAMS': return t('apiInvalidParams');
+      case 'API_ERROR': {
+        const apiMsg = resp.apiError && resp.apiError.message ? resp.apiError.message : 'unknown';
+        return t('apiGenericPrefix') + apiMsg;
+      }
+      default: return null;
+    }
+  }
+  function surfaceSheetsError(resp) {
+    const m = sheetsErrorMessage(resp);
+    // Errors linger longer than a normal toast (3.5s) and use the danger
+    // variant so a permission/network failure never reads as a green
+    // "success" flash.
+    if (m) { showToast(m, 3500, true); return true; }
+    return false;
+  }
 
   // === Load data from storage ===
   let _dataReady = false;
@@ -274,6 +310,23 @@
     shadow.innerHTML = `
     <style>
       :host { all: initial; }
+      /* === Semantic colour system — one hue, one meaning ===
+         The panel's job is to show the translator the DIFF and let them
+         decide, so colour is reserved for decision-bearing signals:
+           --accent  (blue)   操作できるUI: タブ/ボタン/リンク/フォーカス/クリック可能な用語集ヒット
+           --safe    (green)  そのまま流用してよい: 100%一致部分・高スコア・挿入済み
+           --verify  (amber)  ツールが手を入れた／差分。あなたの確認が要る: 自動置換語・置換可能な差分・中スコア
+           --danger  (red)    信用するな・対応せよ: 未処理の差分・APIエラー・破壊操作・低スコア
+         Neutrals (--fg/--muted/--faint/--border…) carry no meaning — pure chrome. */
+      :host {
+        --fg: #202124; --muted: #5f6368; --faint: #9aa0a6;
+        --border: #dadce0; --border-sub: #e8eaed;
+        --surface: #fff; --surface-sub: #f8f9fa; --surface-sub2: #f1f3f4;
+        --accent: #1a73e8; --accent-bg: #e8f0fe;
+        --safe: #34a853; --safe-strong: #137333; --safe-bg: #e6f4ea;
+        --verify: #b06000; --verify-line: #f9ab00; --verify-bg: #feefc3;
+        --danger: #c5221f; --danger-line: #ea4335; --danger-bg: #fce8e6;
+      }
       * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
       #panel {
         position: fixed; top: 80px; right: 20px; width: 360px; max-height: calc(100vh - 100px);
@@ -300,14 +353,17 @@
       .row > * { flex: 1; }
       select { width: 100%; padding: 6px; border: 1px solid #dadce0; border-radius: 4px; font-size: 12px; }
       .match { background: #f8f9fa; border: 1px solid #e8eaed; border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; transition: all 0.1s; position: relative; }
-      .match:hover { border-color: #1a73e8; }
-      .match.inserted { border-color: #34a853; opacity: 0.6; }
-      .match.hover-left { cursor: pointer; border-color: #1a73e8 !important; }
-      .match.hover-right { cursor: text; border-color: #f9ab00 !important; }
-      .score { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 600; color: #fff; }
-      .score-high { background: #fff; color: #202124; border: 1px solid #34a853; }
-      .score-mid { background: #fff; color: #202124; border: 1px solid #f9ab00; }
-      .score-low { background: #fff; color: #202124; border: 1px solid #ea4335; }
+      .match:hover { border-color: var(--accent); }
+      .match.inserted { border-color: var(--safe); opacity: 0.6; }
+      .match.hover-left { cursor: pointer; border-color: var(--accent) !important; }
+      .match.hover-right { cursor: text; border-color: var(--verify-line) !important; }
+      /* Score badge keeps the familiar traffic light, but as a border-only
+         pill (not a filled chip) so it reads as "quality gauge", visually
+         distinct from the inline diff fills that share the same hues. */
+      .score { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 600; color: var(--fg); }
+      .score-high { background: var(--surface); color: var(--fg); border: 1px solid var(--safe); }
+      .score-mid { background: var(--surface); color: var(--fg); border: 1px solid var(--verify-line); }
+      .score-low { background: var(--surface); color: var(--fg); border: 1px solid var(--danger-line); }
       .match-source { color: #5f6368; font-size: 11px; margin-top: 3px; word-break: break-all; }
       .match-target { color: #202124; font-size: 12px; margin-top: 2px; word-break: break-all; }
       .match-meta { color: #9aa0a6; font-size: 10px; margin-top: 3px; }
@@ -317,20 +373,29 @@
       #auth-banner.visible { display: flex; }
       #auth-banner .msg { line-height: 1.4; }
       #auth-banner .btn { align-self: flex-start; }
-      .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid #dadce0; cursor: pointer; font-size: 11px; font-weight: 500; background: #fff; color: #1a73e8; }
+      .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); cursor: pointer; font-size: 11px; font-weight: 500; background: var(--surface); color: var(--accent); }
       .btn:hover { background: #f1f3f4; }
-      .toast { padding: 6px 10px; border-radius: 4px; font-size: 11px; margin-top: 6px; background: #e6f4ea; color: #137333; white-space: pre-line; line-height: 1.4; }
-      /* Card preview of the placement output:
-         - placed-ins (blue): chars the system rewrote itself (numbers,
-           resolved-glossary, rules) — positions are known exactly.
-         - placed-unverified (dotted underline): the non-placed range
-           when any uncovered diff survived. Range-level "contamination
-           somewhere in here" marker, not a pinpoint. */
-      .placed-ins { background: #e8f0fe; color: #1a73e8; border-radius: 2px; padding: 0 1px; }
-      .placed-unverified { border-bottom: 1px dotted #9aa0a6; }
-      .diff-match { color: #137333; }
-      /* Uncovered-diff palette has two axes:
-           background  → glossary registration (red = missing, amber = registered)
+      /* Success/info toast is safe-green; errors (API/permission/network)
+         take the danger variant so a failure never reads as a green
+         "success" flash. */
+      .toast { padding: 6px 10px; border-radius: 4px; font-size: 11px; margin-top: 6px; background: var(--safe-bg); color: var(--safe-strong); white-space: pre-line; line-height: 1.4; }
+      .toast.toast-error { background: var(--danger-bg); color: var(--danger); }
+      /* Card preview of the placement output (auto-replace result):
+         - placed-ins: a word the tool substituted for you. NOT the calm
+           "safe" blue it used to be — that invites the over-trust this
+           panel fights. It gets the amber "要確認" dashed underline:
+           "the tool changed this, glance before you trust it."
+         - placed-unverified: the surrounding range when an uncovered diff
+           survived — a soft amber dotted underline saying "re-read me". */
+      .placed-ins { color: var(--verify); text-decoration: underline dashed var(--verify-line); text-underline-offset: 2px; border-radius: 2px; padding: 0 1px; }
+      .placed-unverified { border-bottom: 1px dotted var(--verify-line); }
+      .diff-match { color: var(--safe-strong); }
+      /* Uncovered-diff palette = the heart of "show the diff". Two axes:
+           background  → danger (red) = the tool translated NOTHING here,
+                         it's all on you — highest alarm, this is where the
+                         enemy/ally-class mistranslations hide; verify
+                         (amber) = a known/registered term that may have
+                         leaked through, lighter "要確認".
            decoration  → post-placement action:
                            none           = substitution / swap
                            dashed under   = must ADD (cell has it, TM doesn't)
@@ -338,26 +403,26 @@
          The decoration mirrors the actual edit the translator will make
          on top of the placed TM target, so add/remove read as opposite
          actions instead of two flavors of "ins/del". */
-      .diff-uncovered-missing { background: #fce8e6; color: #c5221f; font-weight: 500; }
-      .diff-uncovered-present { background: #feefc3; color: #b06000; font-weight: 500; }
+      .diff-uncovered-missing { background: var(--danger-bg); color: var(--danger); font-weight: 500; }
+      .diff-uncovered-present { background: var(--verify-bg); color: var(--verify); font-weight: 500; }
       .diff-uncovered-add { text-decoration: underline dashed; text-underline-offset: 2px; }
       .diff-uncovered-remove { text-decoration: line-through; }
-      .diff-sub { background: #feefc3; color: #b06000; }
-      .diff-del { background: #fce8e6; color: #c5221f; text-decoration: underline dashed; text-underline-offset: 2px; }
-      .diff-ins { background: #fce8e6; color: #c5221f; text-decoration: line-through; }
-      .gloss_match { text-decoration: underline; text-decoration-color: #1a73e8; text-underline-offset: 2px; cursor: pointer; position: relative; }
+      .diff-sub { background: var(--verify-bg); color: var(--verify); }
+      .diff-del { background: var(--danger-bg); color: var(--danger); text-decoration: underline dashed; text-underline-offset: 2px; }
+      .diff-ins { background: var(--danger-bg); color: var(--danger); text-decoration: line-through; }
+      .gloss_match { text-decoration: underline dotted; text-decoration-color: var(--accent); text-underline-offset: 2px; cursor: pointer; position: relative; }
       .gloss_match::after { content: attr(data-tip); display: none; position: absolute; bottom: 100%; left: 0; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #202124; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
       .gloss_match:hover::after { display: block; }
-      .gloss-copied { background: #e6f4ea; transition: background 0.3s; }
-      .match-placed { border-color: #34a853; }
-      .match-placed:hover { border-color: #137333; }
-      .placed-badge { display: inline-block; background: #fff; color: #34a853; border: 1px solid #34a853; font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
+      .gloss-copied { background: var(--safe-bg); transition: background 0.3s; }
+      .match-placed { border-color: var(--verify-line); }
+      .match-placed:hover { border-color: var(--verify); }
+      .placed-badge { display: inline-block; background: var(--surface); color: var(--verify); border: 1px solid var(--verify-line); font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
       /* Reference block: muted colour so the insert preview stays dominant.
          No label text — the dashed divider alone is enough to read the
          two lines as "registered memory". */
       .match-ref { border-top: 1px dashed #e8eaed; margin-top: 8px; padding-top: 6px; cursor: text; user-select: text; }
       .ref-row { color: #9aa0a6; font-size: 11px; margin-top: 2px; word-break: break-all; }
-      .btn-del-tm:hover { color: #ea4335 !important; }
+      .btn-del-tm:hover { color: var(--danger-line) !important; }
       /* Right-click popover for glossary registration from a text
          selection inside the card. Sits above every other panel chrome. */
       .settings-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
@@ -365,13 +430,13 @@
       .mode-btn { padding: 3px 8px; font-size: 10px; cursor: pointer; color: #5f6368; user-select: none; }
       .mode-btn:first-child { border-radius: 3px 0 0 3px; }
       .mode-btn:last-child  { border-radius: 0 3px 3px 0; }
-      .mode-btn.mode-active { color: #1a73e8; font-weight: 600; }
+      .mode-btn.mode-active { color: var(--accent); font-weight: 600; }
       .conc-row { display: flex; gap: 4px; margin-bottom: 6px; }
       .conc-input { flex: 1; padding: 4px 6px; border: 1px solid #dadce0; border-radius: 4px; font-size: 11px; }
-      .conc-input:focus { outline: none; border-color: #1a73e8; }
+      .conc-input:focus { outline: none; border-color: var(--accent); }
       .conc-highlight { background: #fef7cd; border-radius: 2px; padding: 0 1px; }
       .regex-toggle { padding: 3px 6px; border: 1px solid #dadce0; border-radius: 4px; font-size: 11px; font-family: monospace; cursor: pointer; color: #9aa0a6; user-select: none; }
-      .regex-toggle.active { color: #1a73e8; border-color: #1a73e8; font-weight: 600; }
+      .regex-toggle.active { color: var(--accent); border-color: var(--accent); font-weight: 600; }
       .auto-label { font-size: 10px; color: #5f6368; margin: 0 2px 0 4px; white-space: nowrap; }
       /* Tooltip via CSS Anchor Positioning (Chrome 125+).
          anchor-scope: --felix-tip confines each element's anchor to its own
@@ -428,7 +493,7 @@
           <button class="btn" id="btn-sign-in-banner">Sign in with Google</button>
         </div>
         <div class="action-bar">
-          <button class="btn has-tip-below" id="btn-undo" data-tip="" style="padding:6px 8px;color:#5f6368">↩</button>
+          <button class="btn has-tip-below" id="btn-undo" data-tip="" style="padding:6px 8px;color:var(--muted)">↩</button>
           <span class="auto-label" id="lbl-auto">Auto:</span>
           <button class="btn has-tip-below" id="btn-auto-fuzzy" data-tip="">↓ Fuzzy</button>
           <button class="btn has-tip-below" id="btn-auto-range" data-tip="">↓ Range</button>
@@ -694,6 +759,7 @@
       const srcCol = settings.sourceCol || 'A';
       const range = sheetRef(`${srcCol}${rowNum}`);
       let val = '';
+      let errMsg = null;
       // Race the fetch against an 8s timeout so a hung background or a
       // dropped sendResponse doesn't leave the row pinned in the dedupe
       // set forever.
@@ -702,6 +768,7 @@
           msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
         ]);
+        errMsg = sheetsErrorMessage(resp);
         val = (resp && resp.value) ? resp.value : '';
       } catch (_) { val = ''; }
       // Always cache, even when empty, so a fresh selection on the same
@@ -721,12 +788,14 @@
         // source row…" placeholder pinned forever.
         doSearch(val);
       } else {
-        // Source row is genuinely empty — paint the message directly
-        // for the same reason: no truthy query means doSearch would
-        // early-return.
+        // Source row is genuinely empty (or fetch failed) — paint
+        // either the empty-row message or the error message in the
+        // results panel directly. No toast: this path fires whenever
+        // the user navigates to an unfetched row and we don't want to
+        // spam the screen during routine cell-bouncing.
         const sh = getShadow();
         const rs = sh && sh.getElementById('results');
-        if (rs) rs.innerHTML = `<div class="empty">${t('emptySourceRow')}</div>`;
+        if (rs) rs.innerHTML = `<div class="empty">${esc(errMsg || t('emptySourceRow'))}</div>`;
       }
     } finally {
       _pendingSourceFetch.delete(rowNum);
@@ -901,7 +970,7 @@
     if (!matches.length) {
       el.innerHTML = `<div class="empty">${t('noMatch')} ${label} (${ms}ms)</div>`;
     } else {
-      el.innerHTML = (label ? `<div style="font-size:10px;color:#1a73e8;margin-bottom:4px">${label}</div>` : '') +
+      el.innerHTML = (label ? `<div style="font-size:10px;color:var(--accent);margin-bottom:4px">${label}</div>` : '') +
       matches.map((m, i) => {
         const pct = Math.round(m.score * 100);
         const cls = pct >= 90 ? 'score-high' : pct >= 70 ? 'score-mid' : 'score-low';
@@ -977,8 +1046,8 @@
         return `<div class="match${placed ? ' match-placed' : ''}" data-idx="${i}" data-target="${escA(insertTarget)}" data-tm-idx="${tmIdx}">
           <span class="score ${cls}">${pct}%</span>
           <span style="float:right;display:flex;align-items:center;gap:4px">
-            ${i === 0 ? `<span style="font-size:10px;color:#9aa0a6">${ms}ms</span>` : ''}
-            <span class="btn-del-tm" data-del-idx="${tmIdx}" title="Delete from TM" style="font-size:11px;color:#dadce0;cursor:pointer">✕</span>
+            ${i === 0 ? `<span style="font-size:10px;color:var(--faint)">${ms}ms</span>` : ''}
+            <span class="btn-del-tm" data-del-idx="${tmIdx}" title="Delete from TM" style="font-size:11px;color:var(--border);cursor:pointer">✕</span>
           </span>
           <div class="match-target">${tgtDisplay}</div>
           ${refBlock}
@@ -1263,7 +1332,7 @@
       return result;
     }
 
-    el.innerHTML = `<div style="font-size:10px;color:#1a73e8;margin-bottom:4px">Concordance: ${hits.length} hits (${ms}ms)</div>` +
+    el.innerHTML = `<div style="font-size:10px;color:var(--accent);margin-bottom:4px">Concordance: ${hits.length} hits (${ms}ms)</div>` +
       hits.map((h, i) => {
         const tmIdx = typeof h.tmIdx === 'number' ? h.tmIdx : tmData.findIndex(e => e.source === h.source && e.target === h.target);
         return `<div class="match" data-idx="${i}" data-target="${escA(h.target)}" data-tm-idx="${tmIdx}">
@@ -1318,6 +1387,8 @@
       msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: sheetRef(targetRef) }),
     ]);
 
+    if (surfaceSheetsError(srcResp) || surfaceSheetsError(tgtResp)) return;
+
     const source = srcResp && srcResp.value ? srcResp.value : '';
     const target = tgtResp && tgtResp.value ? tgtResp.value : '';
 
@@ -1366,6 +1437,7 @@
     // Read old value for undo
     const fullRange = sheetRef(targetRef);
     const oldResp = await msg('SHEETS_API_READ_DIRECT', { spreadsheetId: ssId, range: fullRange });
+    if (surfaceSheetsError(oldResp)) return;
     const oldValue = oldResp && oldResp.value ? oldResp.value : '';
     pushUndo({ ssId, range: fullRange, oldValue, newValue: value });
 
@@ -1374,10 +1446,17 @@
     // cell blue / underline) get reset. The batchUpdate path writes
     // `textFormatRuns: [{ startIndex: 0, format: {} }]` which clears
     // prior custom formatting and leaves the cell fully plain.
-    await msg('SHEETS_API_WRITE_FORMATTED', {
+    const writeResp = await msg('SHEETS_API_WRITE_FORMATTED', {
       spreadsheetId: ssId, range: fullRange, value,
       placedRanges: [], unverifiedRanges: [],
     });
+    if (surfaceSheetsError(writeResp)) {
+      // Roll back the optimistic undo entry so a failed write doesn't
+      // leave the user one Cmd+Z away from "restoring" a value that
+      // was never actually written.
+      _undoStack.pop();
+      return;
+    }
 
     // Edit mode → jump to the target cell; otherwise → next row's source.
     moveCursorTo(editMode ? targetRef : (settings.sourceCol || 'A') + (rowNum + 1));
@@ -1398,11 +1477,21 @@
     let result;
     if (entry.batch && entry.batch.length) {
       const updates = entry.batch.map(b => ({ range: b.range, value: b.oldValue }));
-      await msg('SHEETS_API_BATCH_WRITE', { spreadsheetId: entry.ssId, updates });
+      const resp = await msg('SHEETS_API_BATCH_WRITE', { spreadsheetId: entry.ssId, updates });
+      if (surfaceSheetsError(resp)) {
+        // Push the entry back so the user can retry once they fix
+        // the underlying access issue.
+        _undoStack.push(entry);
+        return { reason: 'api_error', error: resp.error };
+      }
       showToast(t('undoCellsTpl').replace('{n}', String(entry.batch.length)));
       result = { kind: 'batch', restored: entry.batch.length, firstRange: entry.batch[0].range };
     } else {
-      await msg('SHEETS_API_WRITE', { spreadsheetId: entry.ssId, range: entry.range, value: entry.oldValue });
+      const resp = await msg('SHEETS_API_WRITE', { spreadsheetId: entry.ssId, range: entry.range, value: entry.oldValue });
+      if (surfaceSheetsError(resp)) {
+        _undoStack.push(entry);
+        return { reason: 'api_error', error: resp.error };
+      }
       showToast(t('undoRangePrefix') + entry.range);
       result = { kind: 'single', range: entry.range };
     }
@@ -1451,6 +1540,7 @@
       msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: srcRange }),
       msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: tgtRange }),
     ]);
+    if (surfaceSheetsError(srcResp) || surfaceSheetsError(tgtResp)) return;
     const srcValues = (srcResp && srcResp.values) || [];
     const tgtValues = (tgtResp && tgtResp.values) || [];
 
@@ -1504,6 +1594,7 @@
       msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: srcRange }),
       msg('SHEETS_API_READ_BATCH', { spreadsheetId: ssId, range: tgtRange }),
     ]);
+    if (surfaceSheetsError(srcResp) || surfaceSheetsError(tgtResp)) return;
     const srcValues = (srcResp && srcResp.values) || [];
     const tgtValues = (tgtResp && tgtResp.values) || [];
 
@@ -1535,7 +1626,7 @@
     if (updates.length) {
       showToast(t('writingCellsTpl').replace('{n}', String(updates.length)));
       const resp = await msg('SHEETS_API_BATCH_WRITE', { spreadsheetId: ssId, updates });
-      if (resp && resp.error) { showToast(t('errorPrefix') + resp.error); return; }
+      if (surfaceSheetsError(resp)) return;
       pushUndo({ ssId, batch: undoEntries });
     }
 
@@ -1559,12 +1650,12 @@
   }
 
   let _toastTimer = null;
-  function showToast(text, ms) {
+  function showToast(text, ms, isError) {
     const s = getShadow();
     if (!s) return;
     const el = s.getElementById('toast-area');
     if (!el) return;
-    el.innerHTML = `<div class="toast">${esc(text)}</div>`;
+    el.innerHTML = `<div class="toast${isError ? ' toast-error' : ''}">${esc(text)}</div>`;
     if (_toastTimer) clearTimeout(_toastTimer);
     _toastTimer = setTimeout(() => { el.innerHTML = ''; }, ms || 2000);
   }
