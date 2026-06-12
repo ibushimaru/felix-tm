@@ -1232,6 +1232,11 @@ function downloadText(text, filename) {
 function uiScale() { return parseFloat(settings.uiScale) || 1; }
 function applyUiScale() {
   document.body.style.zoom = String(uiScale());
+  // The header is chrome, not content — counter-zoom it so the −/＋
+  // controls (and title/badge) stay the same size while everything
+  // below scales. Nested zooms multiply: s × 1/s = 1.
+  const header = document.querySelector('.header');
+  if (header) header.style.zoom = String(1 / uiScale());
   $('scale-label').textContent = Math.round(uiScale() * 100) + '%';
 }
 function nudgeUiScale(step) {
