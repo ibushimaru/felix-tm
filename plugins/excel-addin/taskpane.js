@@ -608,11 +608,11 @@ function renderSearch(searchQuery, isReverse) {
     });
   }
 
-  // The engine emits data-tip attributes for its CSS-anchor tooltips
-  // (a Chrome-extension affordance). Mirror them onto title so the
-  // task pane gets native tooltips on every webview, including ones
-  // without CSS Anchor Positioning support.
+  // Mirror engine-emitted data-tip onto title for native tooltips —
+  // EXCEPT glossary terms, which have the instant CSS ::after tooltip;
+  // a delayed native one on top of it shows the same text twice.
   document.querySelectorAll('#search [data-tip]').forEach(el => {
+    if (el.classList.contains('gloss_match')) { el.removeAttribute('title'); return; }
     if (!el.title) el.title = el.getAttribute('data-tip');
   });
 
