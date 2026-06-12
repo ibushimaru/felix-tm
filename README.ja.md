@@ -18,6 +18,40 @@
 - **CLI + ライブラリ** — コマンドラインツールとしても、Pythonパッケージとしても利用可能
 - **クロスプラットフォーム** — Windows、macOS、Linux（CI で全環境テスト済み）
 
+## プラグイン — Google スプレッドシート & Excel
+
+同じマッチングエンジンを、エンドユーザー向けの2つのプラグインとしても
+提供しています（JavaScript 移植版エンジンは
+`plugins/chrome-extension/felix-engine.js` に共有され、専用の Node
+テストスイートでカバー）。どちらもシートの横にライブ TM パネルを表示し、
+セルを選択 → 差分ハイライト付きのファジーマッチ → クリックで挿入、
+という流れで使えます。
+
+### Excel（Office タスクペイン アドイン）
+
+インストールはマニフェストのアップロードだけです:
+
+1. [manifest.xml](https://ibushimaru.github.io/felix-tm/addin/manifest.xml) をダウンロード
+2. Excel（Web 版）で **ホーム → アドイン → 詳細設定を表示 →
+   個人用アドインの管理 → マイ アドインをアップロード** からファイルを選択
+3. ホームリボンの **Felix TM** ボタンでペインを開く
+
+開発環境のセットアップは [plugins/excel-addin/README.md](plugins/excel-addin/README.md) を参照。
+
+### Google スプレッドシート（Chrome 拡張）
+
+シート上に重なるフローティング TM パネル。`chrome://extensions/` から
+`plugins/chrome-extension/` を「パッケージ化されていない拡張機能」として
+読み込むか、`python3 scripts/build_extension.py` で配布用 zip を作成。
+
+### データとプライバシー
+
+TM・用語集・設定はすべてブラウザの IndexedDB（あなたの PC 内、
+ブラウザプロファイル単位）に保存されます。**どこのサーバにも一切送信
+されません** — プラグインにバックエンドも計測機能もありません。
+ブラウザのサイトデータを消去すると TM も消えるため、バックアップには
+内蔵の TMX/TSV エクスポートを使ってください。
+
 ## 動作要件
 
 - Python 3.10 以上

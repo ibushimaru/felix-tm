@@ -18,6 +18,40 @@ The fuzzy matching algorithms and TM architecture are inspired by
 - **CLI + Library** — Use as a command-line tool or import as a Python package
 - **Cross-platform** — Windows, macOS, Linux (CI tested on all three)
 
+## Plugins — Google Sheets & Excel
+
+The same matching engine also ships as two end-user plugins (a shared
+JavaScript port lives in `plugins/chrome-extension/felix-engine.js`,
+covered by its own Node test suite). Both put a live TM panel next to
+your sheet: select a cell, see fuzzy matches with the diff highlighted,
+click to insert.
+
+### Excel (Office task-pane add-in)
+
+No install beyond a manifest upload:
+
+1. Download [manifest.xml](https://ibushimaru.github.io/felix-tm/addin/manifest.xml)
+2. In Excel (on the web): **Home → Add-ins → More settings →
+   My Add-ins → Upload My Add-in** and pick the file
+3. Open the pane from the **Felix TM** button on the Home ribbon
+
+Development setup: see [plugins/excel-addin/README.md](plugins/excel-addin/README.md).
+
+### Google Sheets (Chrome extension)
+
+In-page floating TM panel for Google Sheets. Load
+`plugins/chrome-extension/` as an unpacked extension via
+`chrome://extensions/`, or build a distributable zip with
+`python3 scripts/build_extension.py`.
+
+### Data & privacy
+
+All TM, glossary, and settings data is stored in the browser's
+IndexedDB on your machine, scoped per browser profile. Nothing is ever
+sent to any server — the plugins have no backend and no telemetry.
+Clearing the browser's site data deletes the TM, so use the built-in
+TMX/TSV export for backups.
+
 ## Requirements
 
 - Python 3.10+
