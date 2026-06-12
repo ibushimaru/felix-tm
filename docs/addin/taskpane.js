@@ -248,46 +248,58 @@ async function selectCellRef(sheetName, ref) {
   });
 }
 
-// === Column flash (visual confirmation of the configured pair) ===
-// Opening the Settings tab briefly tints the configured columns on the
-// sheet — source blue, target green, matching the chip colors. The
-// tint is a temporary conditional-format rule (marker formula below),
-// NOT a fill write: deleting the rule restores the sheet exactly,
-// including any fills the user already had.
-const FLASH_MARKER = 'FelixTMFlash';
-const FLASH_SRC_COLOR = '#CCE0FF';
-const FLASH_TGT_COLOR = '#CCEFD4';
+// === Column tint (visual confirmation of the configured pair) ===
+// While the Settings tab is open, the configured columns stay tinted
+// on the sheet — source blue, target green, matching the chip colors.
+// Leaving the tab (or completing a pick, which re-tints the new pair)
+// removes it. The tint is a temporary conditional-format rule (marker
+// formula below), NOT a fill write: deleting the rule restores the
+// sheet exactly, including any fills the user already had.
+const TINT_MARKER = 'FelixTMFlash';
+const TINT_SRC_COLOR = '#CCE0FF';
+const TINT_TGT_COLOR = '#CCEFD4';
 let _hasExcel = false;
-let _flashTimer = null;
+let _tinted = null; // { sheetName, cols } currently tinted, or null
 
-function flashSupported() {
+function tintSupported() {
   return _hasExcel && typeof Excel !== 'undefined' && Excel.ConditionalFormatType;
 }
 
-async function flashConfiguredColumns() {
-  if (!flashSupported()) return;
+async function applyColumnTint() {
+  if (!tintSupported()) return;
+  await clearColumnTint();
   const src = (settings.sourceCol || 'A').toUpperCase();
   const tgt = (settings.targetCol || 'B').toUpperCase();
-  await excelRun(async (ctx) => {
+  const sheetName = await excelRun(async (ctx) => {
     const sheet = ctx.workbook.worksheets.getActiveWorksheet();
-    for (const [col, color] of [[src, FLASH_SRC_COLOR], [tgt, FLASH_TGT_COLOR]]) {
+    sheet.load('name');
+    for (const [col, color] of [[src, TINT_SRC_COLOR], [tgt, TINT_TGT_COLOR]]) {
       const cf = sheet.getRange(`${col}:${col}`).conditionalFormats.add(Excel.ConditionalFormatType.custom);
-      cf.custom.rule.formula = `=LEN("${FLASH_MARKER}")>0`; // always true, and identifies the rule as ours
+      cf.custom.rule.formula = `=LEN("${TINT_MARKER}")>0`; // always true, and identifies the rule as ours
       cf.custom.format.fill.color = color;
     }
     await ctx.sync();
+    return sheet.name;
   });
-  clearTimeout(_flashTimer);
-  _flashTimer = setTimeout(() => clearColumnFlash([src, tgt]), 1600);
+  if (sheetName) _tinted = { sheetName, cols: [src, tgt] };
 }
 
-/** Delete every Felix flash rule on the given columns (marker match
+async function clearColumnTint() {
+  if (!_tinted) return;
+  const { sheetName, cols } = _tinted;
+  _tinted = null;
+  await removeTintRules(sheetName, cols);
+}
+
+/** Delete every Felix tint rule on the given columns (marker match
  *  only — user-defined conditional formats stay). Also runs at startup
  *  so a rule orphaned by a closed pane gets swept. */
-async function clearColumnFlash(cols) {
-  if (!flashSupported()) return;
+async function removeTintRules(sheetName, cols) {
+  if (!tintSupported()) return;
   await excelRun(async (ctx) => {
-    const sheet = ctx.workbook.worksheets.getActiveWorksheet();
+    const sheet = sheetName
+      ? ctx.workbook.worksheets.getItem(sheetName)
+      : ctx.workbook.worksheets.getActiveWorksheet();
     for (const col of cols) {
       const cfs = sheet.getRange(`${col}:${col}`).conditionalFormats;
       cfs.load('items/type');
@@ -296,7 +308,7 @@ async function clearColumnFlash(cols) {
       customs.forEach(c => c.custom.rule.load('formula'));
       await ctx.sync();
       customs
-        .filter(c => (c.custom.rule.formula || '').includes(FLASH_MARKER))
+        .filter(c => (c.custom.rule.formula || '').includes(TINT_MARKER))
         .forEach(c => c.delete());
       await ctx.sync();
     }
@@ -339,8 +351,9 @@ async function handleColPick(sel) {
   await settingsSave(settings);
   updateColChips();
   showToast(t('colSetToastTpl').replace('{s}', settings.sourceCol).replace('{t}', settings.targetCol));
-  // Confirm the new pair in colour on the sheet itself.
-  flashConfiguredColumns();
+  // Re-tint so the sheet shows the new pair (Settings is the only tab
+  // with the chips, so it is the active tab during a pick).
+  await applyColumnTint();
   // Refresh against the new pair right away — the picked cell is
   // usually in the freshly assigned column, so the search lights up
   // immediately and confirms the choice.
@@ -856,7 +869,9 @@ function switchTab(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === name));
   if (name === 'tm') renderTMList();
   if (name === 'glossary') renderGlossaryList();
-  if (name === 'settings') flashConfiguredColumns();
+  // Tint the configured columns for as long as Settings is open.
+  if (name === 'settings') applyColumnTint();
+  else clearColumnTint();
 }
 
 function applyGlossaryAction(payload) {
@@ -1516,8 +1531,8 @@ async function init(hasExcel) {
   glossaryData = await glossaryGetAll().catch(() => []) || [];
   rulesData = await rulesGetAll().catch(() => []) || [];
 
-  // Sweep flash rules a closed pane may have left behind.
-  clearColumnFlash([(settings.sourceCol || 'A').toUpperCase(), (settings.targetCol || 'B').toUpperCase()]);
+  // Sweep tint rules a closed pane may have left behind.
+  removeTintRules(null, [(settings.sourceCol || 'A').toUpperCase(), (settings.targetCol || 'B').toUpperCase()]);
 
   updateStats();
   applyLang();
