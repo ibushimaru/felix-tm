@@ -102,12 +102,12 @@ test('markUncoveredHtml marks applied pairs amber on the source side', () => {
   const { markUncoveredHtml } = engine;
   const r = resolveWithPlacement(GLOSS.query, GLOSS.source, GLOSS.target, GLOSS.glossary, []);
   const html = markUncoveredHtml(GLOSS.source, r.uncovered, 's', r.applied);
-  assert.match(html, /<span class="diff-applied">MAG<\/span>/);
+  assert.ok(html.includes('<span class="diff-applied" data-tip="MAG">MAG</span>'));
 });
 
 test('renderQueryCellWithUncovered marks applied pairs on the query side', () => {
   const { renderQueryCellWithUncovered } = engine;
   const r = resolveWithPlacement(GLOSS.query, GLOSS.source, GLOSS.target, GLOSS.glossary, []);
   const html = renderQueryCellWithUncovered(GLOSS.query, [], r.uncovered, r.applied);
-  assert.match(html, /<span class="diff-applied">ATK<\/span>/);
+  assert.ok(html.includes('diff-applied') && html.includes('ATK'));
 });

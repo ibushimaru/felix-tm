@@ -542,7 +542,8 @@ var FelixEngine = (() => {
       const end = side === 'q' ? d.qEnd : d.sEnd;
       if (typeof start !== 'number' || typeof end !== 'number') continue;
       if (end <= start || start < 0 || end > text.length) continue;
-      regions.push({ start, end, cls: 'diff-applied' });
+      const dataTip = side === 'q' ? (d.qTranslation || '') : (d.sTranslation || '');
+      regions.push({ start, end, cls: 'diff-applied', dataTip });
     }
     regions.sort((a, b) => a.start - b.start || a.end - b.end);
     return regions;
@@ -564,7 +565,8 @@ var FelixEngine = (() => {
     for (const r of regions) {
       if (r.start < cursor) continue; // overlap guard — shouldn't happen
       html += esc(text.substring(cursor, r.start));
-      html += `<span class="${r.cls}">${esc(text.substring(r.start, r.end))}</span>`;
+      const tip = r.dataTip ? ` data-tip="${escA(r.dataTip)}"` : '';
+      html += `<span class="${r.cls}"${tip}>${esc(text.substring(r.start, r.end))}</span>`;
       cursor = r.end;
     }
     html += esc(text.substring(cursor));
@@ -1767,7 +1769,7 @@ var FelixEngine = (() => {
                    + applyCasing(slice, qEntry.translation)
                    + target.substring(idx + sEntry.translation.length);
             glossaryApplied = true;
-            applied.push(d);
+            applied.push({ ...d, qTranslation: qEntry.translation, sTranslation: sEntry.translation });
             continue;
           }
         }

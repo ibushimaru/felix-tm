@@ -151,12 +151,13 @@ hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
    colour alone: blue = glossary info, amber = substituted, red =
    unresolved. */
 .gloss_match { text-decoration: underline dotted; text-decoration-color: var(--accent); text-underline-offset: 2px; cursor: pointer; position: relative; }
-/* Instant hover tooltip showing the registered translation — same
-   absolute-positioned ::after as the Chrome extension (no CSS anchor
-   positioning, so it works in WKWebView/WebView2 alike). The title
-   attribute stays as an accessibility fallback. */
-.gloss_match::after { content: attr(data-tip); display: none; position: absolute; bottom: 100%; left: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 10px; color: var(--fg); white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
-.gloss_match:hover::after { display: block; }
+/* Instant hover tooltip — shared by glossary hits, substitution marks
+   in the reference rows (term → its translation) and the rewritten
+   target text (translation → the term that drove it). Classic absolute
+   ::after so it works in WKWebView/WebView2 alike. */
+.placed-ins, .diff-applied { position: relative; }
+.gloss_match::after, .placed-ins[data-tip]::after, .diff-applied[data-tip]::after { content: attr(data-tip); display: none; position: absolute; bottom: 100%; left: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 10px; color: var(--fg); white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; pointer-events: none; }
+.gloss_match:hover::after, .placed-ins[data-tip]:hover::after, .diff-applied[data-tip]:hover::after { display: block; }
 .gloss-copied { background: var(--safe-bg); transition: background 0.3s; }
 .match-placed { border-color: var(--verify-line); }
 .match-placed:hover { border-color: var(--verify); }

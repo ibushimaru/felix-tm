@@ -479,7 +479,7 @@ function markRegionsMixed(text, regions) {
   for (const r of sorted) {
     if (r.idx < cursor) continue;
     html += esc(text.substring(cursor, r.idx));
-    const tip = r.dataTip ? ` title="→ ${escA(r.dataTip)}"` : '';
+    const tip = r.dataTip ? ` data-tip="${escA(r.dataTip)}"` : '';
     html += `<span class="${r.cls}"${tip}>${esc(text.substring(r.idx, r.idx + r.len))}</span>`;
     cursor = r.idx + r.len;
   }
@@ -487,9 +487,19 @@ function markRegionsMixed(text, regions) {
   return html;
 }
 
-function placedHighlightHtml(original, placed, uncoveredCount) {
+function placedHighlightHtml(original, placed, uncoveredCount, applied) {
   const placedRegions = FelixEngine.findDiffRegions(original, placed);
-  const regions = placedRegions.map(r => ({ idx: r.idx, len: r.len, cls: 'placed-ins' }));
+  const regions = placedRegions.map(r => {
+    const region = { idx: r.idx, len: r.len, cls: 'placed-ins' };
+    // Tooltip = the opposite side of the pair: hovering the inserted
+    // translation (低下) shows the query term that drove it (Decreases).
+    if (applied && applied.length) {
+      const textCmp = FelixEngine.makeCmp(placed.substring(r.idx, r.idx + r.len));
+      const pair = applied.find(d => d.qTranslation && FelixEngine.makeCmp(d.qTranslation) === textCmp);
+      if (pair && pair.qText) region.dataTip = pair.qText;
+    }
+    return region;
+  });
   if (uncoveredCount > 0) {
     for (const r of FelixEngine.unverifiedRegions(placedRegions, placed.length)) {
       regions.push({ idx: r.idx, len: r.len, cls: 'placed-unverified' });
@@ -578,7 +588,7 @@ function renderSearch(searchQuery, isReverse) {
           if (badges.length) {
             placed = true;
             insertTarget = placedTarget;
-            tgtDisplay = placedHighlightHtml(m.target, placedTarget, resolved.uncovered.length);
+            tgtDisplay = placedHighlightHtml(m.target, placedTarget, resolved.uncovered.length, resolved.applied);
             // The badge sits next to the score pill, not in the text flow.
             badgeHtml = `<span class="placed-badge">${badges.join('+')}置換</span>`;
           }
@@ -655,10 +665,14 @@ function renderSearch(searchQuery, isReverse) {
   }
 
   // Mirror engine-emitted data-tip onto title for native tooltips —
-  // EXCEPT glossary terms, which have the instant CSS ::after tooltip;
-  // a delayed native one on top of it shows the same text twice.
+  // EXCEPT elements that carry the instant CSS ::after tooltip
+  // (glossary terms, substitution marks); a delayed native one on top
+  // of it shows the same text twice.
   document.querySelectorAll('#search [data-tip]').forEach(el => {
-    if (el.classList.contains('gloss_match')) { el.removeAttribute('title'); return; }
+    if (el.classList.contains('gloss_match') || el.classList.contains('placed-ins') || el.classList.contains('diff-applied')) {
+      el.removeAttribute('title');
+      return;
+    }
     if (!el.title) el.title = el.getAttribute('data-tip');
   });
 
