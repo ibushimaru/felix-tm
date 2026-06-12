@@ -37,6 +37,12 @@
     <span style="flex:1"></span>
     <button class="btn" id="btn-set" title="">Set</button>
   </div>
+  <div class="cols-bar">
+    <span class="col-chip" id="col-src-chip" title="">原文 A</span>
+    <span class="col-arrow">→</span>
+    <span class="col-chip" id="col-tgt-chip" title="">訳文 B</span>
+    <span class="col-hint" id="col-hint"></span>
+  </div>
   <div class="cell-label"><span id="lbl-cell">Active Cell</span> <span id="cell-ref"></span></div>
   <div class="cell-preview" id="cell-value">—</div>
   <div class="settings-row">
@@ -129,12 +135,6 @@
     <option value="en">English</option>
     <option value="ja">日本語</option>
   </select>
-
-  <label class="field-label" id="lbl-source-col">Source Column / 原文列</label>
-  <input type="text" id="set-source-col" value="A" maxlength="3">
-
-  <label class="field-label" id="lbl-target-col">Target Column / 訳文列</label>
-  <input type="text" id="set-target-col" value="B" maxlength="3">
 
   <label class="field-label" id="lbl-min-score">Default Min Score / 最低マッチ率</label>
   <select id="set-min-score">

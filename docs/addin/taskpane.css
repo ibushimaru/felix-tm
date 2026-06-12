@@ -63,6 +63,15 @@ hr { margin: 12px 0; border: none; border-top: 1px solid var(--border-sub); }
 
 /* === Search pane (port of the overlay panel) === */
 .action-bar { display: flex; gap: 6px; align-items: center; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border-sub); }
+/* Column chips: always show which columns the pane is wired to, and
+   double as the way to change them — click a chip, then click a cell
+   in that column on the sheet. No typed column letters. */
+.cols-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 11px; }
+.col-chip { border: 1px dashed var(--border); border-radius: 4px; padding: 2px 8px; cursor: pointer; color: var(--fg); user-select: none; }
+.col-chip:hover { border-color: var(--accent); color: var(--accent); }
+.col-chip.picking { border-style: solid; border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.col-arrow { color: var(--faint); }
+.col-hint { color: var(--accent); font-size: 10px; }
 .cell-label { font-size: 10px; color: var(--faint); margin-bottom: 2px; }
 .cell-preview { background: var(--surface-sub2); border-radius: 4px; padding: 6px 10px; font-size: 12px; line-height: 1.4; color: #3c4043; margin-bottom: 8px; min-height: calc(1.4em + 12px); word-break: break-all; }
 .settings-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }

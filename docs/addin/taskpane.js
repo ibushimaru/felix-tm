@@ -86,6 +86,11 @@ const I18N = {
     confirmClear: 'Delete all entries?', cancel: 'Cancel',
     lblSourceCol: 'Source Column', lblTargetCol: 'Target Column', lblMinScore: 'Default Min Score',
     lblUiScale: 'UI scale',
+    colSource: 'Source', colTarget: 'Target',
+    pickSourceHint: 'Click a cell in the source column', pickTargetHint: 'Click a cell in the target column',
+    colsSame: 'Source and target columns must differ',
+    colSetToastTpl: 'Source {s} → Target {t}',
+    tipColChip: 'Click, then click a cell in that column on the sheet',
   },
   ja: {
     // Tabs
@@ -140,6 +145,11 @@ const I18N = {
     confirmClear: '全エントリを削除しますか？', cancel: 'キャンセル',
     lblSourceCol: '原文列', lblTargetCol: '訳文列', lblMinScore: '最低マッチ率',
     lblUiScale: '表示倍率',
+    colSource: '原文', colTarget: '訳文',
+    pickSourceHint: '原文列にするセルをクリック', pickTargetHint: '訳文列にするセルをクリック',
+    colsSame: '原文列と訳文列は別の列にしてください',
+    colSetToastTpl: '原文 {s} → 訳文 {t}',
+    tipColChip: 'クリック後、シート上でその列のセルをクリック',
   },
 };
 function t(key) { return (I18N[settings.lang] && I18N[settings.lang][key]) || I18N.en[key] || key; }
@@ -232,6 +242,50 @@ async function selectCellRef(sheetName, ref) {
     range.select();
     await ctx.sync();
   });
+}
+
+// === Column configuration via cell click ===
+// Typing column letters into a settings form is the wrong gesture for
+// Excel users. The chips in the search tab show the current pair; a
+// chip click arms pick mode and the next cell the user selects on the
+// sheet sets that column.
+let colPickMode = null; // null | 'source' | 'target'
+
+function updateColChips() {
+  $('col-src-chip').textContent = `${t('colSource')} ${settings.sourceCol || 'A'}`;
+  $('col-tgt-chip').textContent = `${t('colTarget')} ${settings.targetCol || 'B'}`;
+  $('col-src-chip').classList.toggle('picking', colPickMode === 'source');
+  $('col-tgt-chip').classList.toggle('picking', colPickMode === 'target');
+  $('col-hint').textContent =
+    colPickMode === 'source' ? t('pickSourceHint') :
+    colPickMode === 'target' ? t('pickTargetHint') : '';
+}
+
+function toggleColPick(which) {
+  colPickMode = colPickMode === which ? null : which;
+  updateColChips();
+}
+
+/** Returns true when the selection was consumed by pick mode. */
+async function handleColPick(sel) {
+  if (!colPickMode) return false;
+  const other = colPickMode === 'source' ? (settings.targetCol || 'B') : (settings.sourceCol || 'A');
+  if (sel.colLetter === other.toUpperCase()) {
+    showToast(t('colsSame'), 0, true);
+    return true; // stay armed so the user can click another column
+  }
+  if (colPickMode === 'source') settings.sourceCol = sel.colLetter;
+  else settings.targetCol = sel.colLetter;
+  colPickMode = null;
+  await settingsSave(settings);
+  updateColChips();
+  showToast(t('colSetToastTpl').replace('{s}', settings.sourceCol).replace('{t}', settings.targetCol));
+  // Refresh against the new pair right away — the picked cell is
+  // usually in the freshly assigned column, so the search lights up
+  // immediately and confirms the choice.
+  lastSel = sel;
+  await routeSelection(sel);
+  return true;
 }
 
 // === Search routing ===
@@ -1245,16 +1299,12 @@ function nudgeUiScale(step) {
 
 function loadSettingsUI() {
   $('set-lang').value = settings.lang || 'en';
-  $('set-source-col').value = settings.sourceCol || 'A';
-  $('set-target-col').value = settings.targetCol || 'B';
   $('set-min-score').value = String(settings.minScore || 0.7);
   $('min-score').value = String(settings.minScore || 0.7);
 }
 
 async function saveSettingsUI() {
   settings.lang = $('set-lang').value;
-  settings.sourceCol = $('set-source-col').value.toUpperCase();
-  settings.targetCol = $('set-target-col').value.toUpperCase();
   settings.minScore = parseFloat($('set-min-score').value);
   await settingsSave(settings);
   $('min-score').value = String(settings.minScore);
@@ -1327,6 +1377,9 @@ function applyLang() {
   tip('conc-query', t('tipConcordance'));
   tip('btn-regex', t('tipRegex'));
   ph('conc-query', t('phConcordance'));
+  tip('col-src-chip', t('tipColChip'));
+  tip('col-tgt-chip', t('tipColChip'));
+  updateColChips();
   // TM
   set('h-register', t('registerToTM'));
   set('btn-register', t('register'));
@@ -1377,6 +1430,9 @@ function scheduleSelectionCheck() {
 async function onSelectionChanged() {
   const sel = await getSelectionInfo();
   if (!sel) return; // multi-area selection or transient Excel error
+  // Column pick mode eats the selection before the dedupe check —
+  // re-clicking the already-active cell must still register the pick.
+  if (await handleColPick(sel)) return;
   const unchanged = lastSel && lastSel.sheetName === sel.sheetName &&
     lastSel.ref === sel.ref && lastSel.value === sel.value;
   lastSel = sel;
@@ -1481,6 +1537,8 @@ async function init(hasExcel) {
   });
   $('btn-scale-down').addEventListener('click', () => nudgeUiScale(-0.1));
   $('btn-scale-up').addEventListener('click', () => nudgeUiScale(0.1));
+  $('col-src-chip').addEventListener('click', () => toggleColPick('source'));
+  $('col-tgt-chip').addEventListener('click', () => toggleColPick('target'));
   $('btn-clear-tm').addEventListener('click', () => clearAllTM());
   $('btn-clear-gloss').addEventListener('click', () => clearAllGlossary());
 
