@@ -1,0 +1,2628 @@
+/**
+ * Felix TM Engine — Shared fuzzy matching core
+ * Used by both content script and side panel.
+ */
+
+var FelixEngine = (() => {
+
+  // === Text Normalization ===
+
+  // Length-preserving 1-to-1 char normalization: full→half width,
+  // ideographic→ascii space, hiragana→katakana, lowercase. Char indices
+  // map back to the original text, so this is the form to use anywhere
+  // a position (indexOf / substring / DP alignment) must remain valid
+  // on the original string. Single source of truth for normalization.
+  function cmpLen(text) {
+    return String(text)
+      .replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+      .replace(/\u3000/g, ' ')
+      .replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60))
+      .toLowerCase();
+  }
+
+  // Whole-string equality form (match_maker scoring, glossary key dedupe,
+  // etc.). Strips inline tags then collapses whitespace — both length-
+  // changing, so positions on the result do NOT map back to the original.
+  // Use cmpLen if you need positions.
+  function makeCmp(text) {
+    return cmpLen(String(text).replace(/<[^>]+>/g, ''))
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  // Transfer the casing pattern of `srcSlice` onto `newText`. Used when
+  // a per-diff substitution rewrites a chunk of the EN target with a
+  // glossary translation — the glossary is typically registered in
+  // canonical (often lowercase) form, but the actual cell rendering
+  // may use ALL CAPS, Title Case, or sentence case. Without this the
+  // substitution silently lowercases context that came in as Title.
+  //
+  // No-op when srcSlice has no Latin letters (CJK / digits / symbols),
+  // so JA/ZH targets pass through unchanged.
+  function applyCasing(srcSlice, newText) {
+    if (!/[A-Za-z]/.test(srcSlice)) return newText;
+    const isUpper = srcSlice.toUpperCase() === srcSlice && /[A-Z]/.test(srcSlice);
+    const isLower = srcSlice.toLowerCase() === srcSlice && /[a-z]/.test(srcSlice);
+    if (isUpper) return newText.toUpperCase();
+    if (isLower) return newText.toLowerCase();
+    // Mixed. Title Case if every space-separated word starts with an
+    // uppercase letter; sentence case if only the first letter is upper.
+    const words = srcSlice.split(/\s+/).filter(Boolean);
+    const everyWordTitle = words.length > 1 && words.every(w => {
+      const m = w.match(/[A-Za-z]/);
+      return !m || m[0] === m[0].toUpperCase();
+    });
+    if (everyWordTitle) {
+      return newText.replace(/(^|\s)([a-z])/g, (_, sp, c) => sp + c.toUpperCase());
+    }
+    const firstAlpha = srcSlice.match(/[A-Za-z]/);
+    if (firstAlpha && firstAlpha[0] === firstAlpha[0].toUpperCase()) {
+      const m = newText.match(/[a-zA-Z]/);
+      if (!m) return newText;
+      const i = m.index;
+      return newText.substring(0, i) + newText.charAt(i).toUpperCase() + newText.substring(i + 1);
+    }
+    return newText;
+  }
+
+  // Character class for the boundary test: 'L' = ASCII letter,
+  // 'D' = digit, 'O' = anything else (CJK / punctuation / symbol).
+  function _charClass(c) {
+    if (c >= 'a' && c <= 'z') return 'L';
+    if (c >= 'A' && c <= 'Z') return 'L';
+    if (c >= '0' && c <= '9') return 'D';
+    return 'O';
+  }
+
+  // Find `fromText` (already cmpLen-folded) in `target` such that the
+  // match doesn't sit inside a larger token of the same character class.
+  // Length-preserving cmpLen means the index returned is also a valid
+  // index in `target`.
+  //
+  // A match is rejected when its leading or trailing edge sits flush
+  // against a same-class neighbour: letter-flush-letter ("dark" inside
+  // "darken") or digit-flush-digit ("5%UP" inside "15%UP" — the leading
+  // 1 is digit-class, same as the term's leading 5). Class transitions
+  // are fine: ATK followed by 200 stays a valid match for the ATK
+  // glossary term, since L→D is a real boundary.
+  function findWordBoundaryIndex(target, fromText, startPos) {
+    if (startPos == null) startPos = 0;
+    const tgtLower = cmpLen(target);
+    if (!fromText) return tgtLower.indexOf(fromText, startPos);
+    const startCls = _charClass(fromText[0]);
+    const endCls = _charClass(fromText[fromText.length - 1]);
+    if (startCls === 'O' && endCls === 'O') return tgtLower.indexOf(fromText, startPos);
+    let pos = startPos;
+    for (;;) {
+      const idx = tgtLower.indexOf(fromText, pos);
+      if (idx === -1) return -1;
+      const beforeOk = startCls === 'O' || idx === 0
+        || _charClass(target[idx - 1]) !== startCls;
+      const afterIdx = idx + fromText.length;
+      const afterOk = endCls === 'O' || afterIdx === target.length
+        || _charClass(target[afterIdx]) !== endCls;
+      if (beforeOk && afterOk) return idx;
+      pos = idx + 1;
+    }
+  }
+
+  function containsCJK(text) {
+    return /[\u3000-\u9FFF\uF900-\uFAFF]/.test(text);
+  }
+
+  // === Levenshtein Edit Distance ===
+
+  // Ukkonen-style banded Levenshtein. The standard single-row DP fills
+  // every cell of an rl × cl matrix; the optimal alignment of two
+  // similar strings stays close to the diagonal, so cells far from it
+  // can never be on a path that fits within maxD operations. Felix
+  // Distance::edist applies the same band trick (with hard-coded
+  // bandwidth = a_len/2). We use a maxD-driven band:
+  //
+  //   For column j, valid rows are i ∈ [j - maxD, j + maxD - lenDiff]
+  //   (clipped to [1, rl]) where lenDiff = cl - rl.
+  //
+  // Cells outside the band hold SENTINEL = maxD + 1, so any path that
+  // would touch them gets correctly priced out of the DP min.
+  function editDistance(src, tgt, maxD) {
+    let n = src.length, m = tgt.length;
+    if (n === 0) return m; if (m === 0) return n;
+    let p = 0;
+    while (p < n && p < m && src[p] === tgt[p]) p++;
+    let sx = 0;
+    while (sx < n - p && sx < m - p && src[n - 1 - sx] === tgt[m - 1 - sx]) sx++;
+    const s = src.substring(p, n - sx), t = tgt.substring(p, m - sx);
+    const n2 = s.length, m2 = t.length;
+    if (n2 === 0) return m2; if (m2 === 0) return n2;
+    if (n2 === 1) return t.indexOf(s[0]) >= 0 ? m2 - 1 : m2;
+    if (m2 === 1) return s.indexOf(t[0]) >= 0 ? n2 - 1 : n2;
+    const [rows, cols] = n2 > m2 ? [t, s] : [s, t];
+    const rl = rows.length, cl = cols.length;
+    if (maxD === undefined) maxD = cl;
+    const lenDiff = cl - rl;
+    // Length asymmetry alone exceeds the budget — no path can fit.
+    if (lenDiff > maxD) return maxD + 1;
+
+    const SENTINEL = maxD + 1;
+    const row = new Array(rl + 1);
+    // Initial column (j = 0): only the first maxD+1 cells are valid;
+    // the rest start at SENTINEL because they'd already exceed budget.
+    const initEnd = Math.min(rl, maxD);
+    for (let i = 0; i <= initEnd; i++) row[i] = i;
+    for (let i = initEnd + 1; i <= rl; i++) row[i] = SENTINEL;
+
+    for (let j = 1; j <= cl; j++) {
+      const iLo = Math.max(1, j - maxD);
+      const iHi = Math.min(rl, j + maxD - lenDiff);
+      if (iLo > iHi) return maxD + 1;
+
+      // Save prev = (iLo - 1, j-1), then sentinel-out (iLo - 1, j).
+      let prev;
+      let rm;
+      if (iLo === 1) {
+        prev = row[0];   // (0, j-1) = j-1
+        row[0] = j;      // (0, j) = j
+        rm = j > maxD ? SENTINEL : j;
+      } else {
+        prev = row[iLo - 1];          // (iLo - 1, j - 1) — was in prev band
+        row[iLo - 1] = SENTINEL;      // (iLo - 1, j) — out of this band
+        rm = SENTINEL;
+      }
+
+      const cc = cols[j - 1];
+      for (let i = iLo; i <= iHi; i++) {
+        const tmp = row[i];                     // (i, j-1) — may be SENTINEL
+        const aboveCost = row[i - 1] + 1;       // (i-1, j) — already updated
+        const leftCost = tmp + 1;               // (i, j-1) + 1 (insertion)
+        const subCost = prev + (rows[i - 1] === cc ? 0 : 1);
+        let cell = aboveCost < leftCost ? aboveCost : leftCost;
+        if (subCost < cell) cell = subCost;
+        if (cell > maxD) cell = SENTINEL;
+        row[i] = cell;
+        prev = tmp;
+        if (cell < rm) rm = cell;
+      }
+
+      // The cell just above the band needs to be SENTINEL so the next
+      // column's "above" lookup at row iHi+1 gets the right value.
+      if (iHi < rl) row[iHi + 1] = SENTINEL;
+
+      if (rm > maxD) return maxD + 1;
+    }
+
+    const result = row[rl];
+    return result > maxD ? maxD + 1 : result;
+  }
+
+  function edScore(s, t, ms) {
+    if (!s && !t) return 1;
+    const h = Math.max(s.length, t.length);
+    if (!h) return 1;
+    // Match Felix's calculation pattern: max_distance = b_len -
+    // (size_t)(b_len * minscore). The naive (h * (1 - ms)) form
+    // suffers FP cancellation — at ms=0.8 the JS expression
+    // 5 * (1 - 0.8) evaluates to 0.9999999999999998 instead of 1.0,
+    // which then floors to 0 and rejects every match.
+    const md = h - Math.floor(h * (ms || 0));
+    const d = editDistance(s, t, md);
+    return d > md ? 0 : (h - d) / h;
+  }
+
+  function bagDistance(s, t) {
+    const f = {};
+    for (const c of s) f[c] = (f[c] || 0) + 1;
+    for (const c of t) f[c] = (f[c] || 0) - 1;
+    let d = 0; for (const k in f) d += Math.abs(f[k]);
+    return d;
+  }
+
+  // Felix-style edit-distance lower bound: max(|s|,|t|) - multiset
+  // intersection size. This is the universally tightest lower bound
+  // for Levenshtein and matches the maxalike / mindiff calculation in
+  // Felix Distance::edist_score. Strictly ≤ bagDistance — using this
+  // for the fuzzyScore pre-filter avoids the false-negative cases the
+  // symmetric-difference bag distance produces ("hello"/"jello" with
+  // minScore=0.7 used to reject incorrectly).
+  function _editLowerBound(s, t) {
+    const f = {};
+    for (const c of s) f[c] = (f[c] || 0) + 1;
+    let common = 0;
+    for (const c of t) {
+      if (f[c] > 0) { common++; f[c]--; }
+    }
+    return Math.max(s.length, t.length) - common;
+  }
+
+  // === Word-level matching ===
+
+  function tokenize(t) {
+    return t.split(/(\s+|[.,;:!?()"'\[\]{}<>])/).filter(x => x && !/^\s+$/.test(x));
+  }
+
+  // The two-mode split used everywhere a function decides char-level
+  // vs word-level alignment. Call sites set useChar themselves (the
+  // heuristic differs by context — see glossaryPlacement vs the rest)
+  // and just defer the actual splitting here.
+  function splitTokens(text, useChar) {
+    return useChar ? Array.from(text) : tokenize(text);
+  }
+
+  // Standard Levenshtein DP table over two indexable sequences (string
+  // or array). Single source of truth for the O(nm) fill — callers
+  // pre-normalize their elements so plain `===` is the right equality
+  // test, which keeps the inner loop free of per-cell function calls.
+  // Backtrace stays in each caller because the tie-break priority
+  // differs by domain (diffHighlight prefers sub, nonNumericDiffs
+  // prefers ins/del to preserve common particles, findDiffRegions
+  // prefers sub then ins then del).
+  function fillEditDp(qSeq, sSeq) {
+    const n = qSeq.length, m = sSeq.length;
+    const dp = [];
+    for (let i = 0; i <= n; i++) { dp[i] = new Array(m + 1); dp[i][0] = i; }
+    for (let j = 0; j <= m; j++) dp[0][j] = j;
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        const cost = qSeq[i-1] === sSeq[j-1] ? 0 : 1;
+        dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost);
+      }
+    }
+    return dp;
+  }
+
+  function wordScore(q, s, ms) {
+    const qt = tokenize(q), st = tokenize(s);
+    if (!qt.length || !st.length) return edScore(q, s, ms);
+    const n = qt.length, m = st.length, h = Math.max(n, m);
+    const row = new Array(n + 1);
+    for (let i = 0; i <= n; i++) row[i] = i;
+    for (let j = 1; j <= m; j++) {
+      let prev = row[0]; row[0] = j;
+      for (let i = 1; i <= n; i++) {
+        const cost = 1 - edScore(qt[i - 1], st[j - 1]);
+        const tmp = row[i];
+        row[i] = Math.min(row[i] + 1, row[i - 1] + 1, prev + cost);
+        prev = tmp;
+      }
+    }
+    return Math.max(0, Math.min(1, h > 0 ? (h - row[n]) / h : 1));
+  }
+
+  // === Fuzzy Match ===
+
+  function fuzzyScore(qCmp, sCmp, minScore) {
+    if (qCmp === sCmp) return 1;
+    const ql = qCmp.length, sl = sCmp.length, h = Math.max(ql, sl);
+    if (!h) return 1;
+    if (Math.min(ql, sl) / h < minScore) return 0;
+    // Felix-style lower bound on edit distance (max - common). The
+    // older symmetric-difference bag distance was too aggressive and
+    // false-rejected pairs Felix would have scored.
+    const maxDiff = h - Math.floor(h * minScore);
+    if (_editLowerBound(qCmp, sCmp) > maxDiff) return 0;
+    const score = (containsCJK(qCmp) || qCmp.indexOf(' ') === -1)
+      ? edScore(qCmp, sCmp, minScore)
+      : wordScore(qCmp, sCmp, minScore);
+    return score >= minScore ? score : 0;
+  }
+
+  // === TM Search ===
+
+  // Felix-spec format penalty: extract opening tags only (skip
+  // closing tags so <b>x</b> on one side and <b>y</b> on the other
+  // count as one matched tag, not two), lower-case, then take the
+  // multiset symmetric difference and divide by 100. Used optionally
+  // by search() / reverseSearch() to demote matches whose markup
+  // structure diverges from the query.
+  function _extractFormatTags(s) {
+    const out = [];
+    const re = /<([^>]+)>/g;
+    let m;
+    while ((m = re.exec(String(s == null ? '' : s))) !== null) {
+      const tag = m[1];
+      if (tag.length && tag[0] !== '/') out.push(tag.toLowerCase());
+    }
+    return out;
+  }
+
+  function _multisetDiff(a, b) {
+    const f = new Map();
+    for (const x of a) f.set(x, (f.get(x) || 0) + 1);
+    for (const x of b) f.set(x, (f.get(x) || 0) - 1);
+    let d = 0;
+    for (const v of f.values()) d += Math.abs(v);
+    return d;
+  }
+
+  function formatPenalty(rich1, rich2) {
+    const t1 = _extractFormatTags(rich1);
+    const t2 = _extractFormatTags(rich2);
+    if (!t1.length && !t2.length) return 0;
+    return _multisetDiff(t1, t2) / 100;
+  }
+
+  function search(query, tmData, minScore, opts) {
+    if (!query || !tmData || !tmData.length) return [];
+    const assessFormat = !!(opts && opts.assessFormatPenalty);
+    const qCmp = makeCmp(query);
+    const matches = [];
+    for (let i = 0; i < tmData.length; i++) {
+      const entry = tmData[i];
+      const sCmp = entry.cmp || makeCmp(entry.source);
+      let score = fuzzyScore(qCmp, sCmp, minScore);
+      if (assessFormat && score > 0) {
+        score = Math.max(0, score - formatPenalty(query, entry.source));
+      }
+      if (score >= minScore) {
+        matches.push({ ...entry, score, tmIdx: i });
+      }
+    }
+    matches.sort((a, b) => b.score - a.score || (b.refcount || 0) - (a.refcount || 0));
+    return matches.slice(0, 20);
+  }
+
+  // === Glossary Matching (Felix-faithful) ===
+
+  // Substring edit distance: minimum edit distance from `needle` to
+  // any substring of `haystack`. Two-row DP with the first row
+  // initialized to zero, so the needle can start at any position in
+  // the haystack at no cost. Direct port of Felix Distance::subdist.
+  function subdist(needle, haystack) {
+    const n = needle.length, m = haystack.length;
+    if (n === 0) return 0;
+    if (m === 0) return n;
+    let row1 = new Array(m + 1).fill(0);
+    let row2 = new Array(m + 1).fill(0);
+    for (let i = 0; i < n; i++) {
+      row2[0] = i + 1;
+      for (let j = 0; j < m; j++) {
+        const cost = needle[i] === haystack[j] ? 0 : 1;
+        row2[j + 1] = Math.min(
+          row1[j + 1] + 1,  // deletion
+          row2[j] + 1,      // insertion
+          row1[j] + cost,   // substitution / match
+        );
+      }
+      const tmp = row1; row1 = row2; row2 = tmp;
+    }
+    let best = row1[0];
+    for (let j = 1; j <= m; j++) if (row1[j] < best) best = row1[j];
+    return best;
+  }
+
+  /**
+   * Felix subdist_score: fuzzy substring match score for glossary
+   * lookup. needle = the glossary term we're hunting, haystack =
+   * the cmp text we're searching inside. Returns (n - distance) / n
+   * — same formula as Felix Distance::subdist_score.
+   */
+  function subdistScore(needle, haystack, minScore) {
+    if (!needle || !haystack) return 0;
+    if (haystack.includes(needle)) return 1.0;
+    const n = needle.length;
+    const score = (n - subdist(needle, haystack)) / n;
+    return score >= (minScore || 0) ? score : 0;
+  }
+
+  /**
+   * Find glossary terms that appear in the query text.
+   * Fast path: exact substring match (covers most game translation cases).
+   * Slow path: fuzzy subdist only when explicitly requested.
+   * Returns matches sorted by longest-term-first (Felix GlossMatchComparator).
+   */
+  function glossarySearch(query, glossaryData, minScore) {
+    if (!query || !glossaryData || !glossaryData.length) return [];
+    const qCmp = makeCmp(query);
+    const threshold = typeof minScore === 'number' ? minScore : 1.0;
+    const hits = [];
+    for (const entry of glossaryData) {
+      const tCmp = entry.cmp || makeCmp(entry.term);
+      if (!tCmp) continue;
+      // Fast path: exact substring match wins (score 1.0) and
+      // matches the OG behavior for typical glossary lookups.
+      if (qCmp.includes(tCmp)) {
+        hits.push({ ...entry, score: 1.0 });
+        continue;
+      }
+      // Felix's fuzzy_gloss_score path: subdist of term inside the
+      // query text. Only kicks in below a threshold of 1.0 — at the
+      // default of 1.0, glossary lookup remains exact.
+      if (threshold < 1.0) {
+        const score = subdistScore(tCmp, qCmp, threshold);
+        if (score >= threshold) hits.push({ ...entry, score });
+      }
+    }
+    // Sort: highest score first, then longest term first (Felix
+    // GlossMatchComparator) so an exact "attack damage up" beats a
+    // partial "damage" hit on the same query.
+    hits.sort((a, b) => b.score - a.score || b.term.length - a.term.length);
+    return hits;
+  }
+
+  /**
+   * Mark glossary matches in a source text string.
+   * Returns HTML with <span class="gloss_match"> wrapping matched terms.
+   * Longest match first, no overlapping.
+   */
+  /** Build non-overlapping glossary regions for a text. Single source of truth. */
+  function glossRegionsForText(text, glossHits) {
+    if (!glossHits.length || !text) return [];
+    const lower = cmpLen(text);
+    const regions = [];
+    for (const g of glossHits) {
+      const termLower = cmpLen(g.term);
+      let pos = 0;
+      while ((pos = lower.indexOf(termLower, pos)) !== -1) {
+        const end = pos + termLower.length;
+        const overlaps = regions.some(r => pos < r.end && end > r.start);
+        if (!overlaps) regions.push({ start: pos, end, translation: g.translation });
+        pos = end;
+      }
+    }
+    regions.sort((a, b) => a.start - b.start);
+    return regions;
+  }
+
+  function markGlossaryInSource(sourceText, glossHits) {
+    const regions = glossRegionsForText(sourceText, glossHits);
+    if (!regions.length) return null;
+    // Build HTML
+    let html = '';
+    let cursor = 0;
+    for (const r of regions) {
+      if (r.start > cursor) html += esc(sourceText.substring(cursor, r.start));
+      html += `<span class="gloss_match" data-tip="${escA(r.translation)}">${esc(sourceText.substring(r.start, r.end))}</span>`;
+      cursor = r.end;
+    }
+    if (cursor < sourceText.length) html += esc(sourceText.substring(cursor));
+    return html;
+  }
+
+  /**
+   * Map uncovered diffs to char ranges in the given text ('q' → query /
+   * qText, 's' → TM.source / sText). Positions come from the DP backtrace
+   * and point at the specific diff region, so a sText like "全" that also
+   * happens to appear in a matched segment elsewhere in the sentence
+   * won't get painted a second time.
+   *
+   * The class distinction drives the two-color UX: red for the side that's
+   * actually missing (translator must add a glossary entry), yellow for
+   * the side that's registered but still uncovered because its
+   * counterpart is missing.
+   */
+  function uncoveredRegionsForText(text, uncovered, side) {
+    if (!text || !uncovered || !uncovered.length) return [];
+    const regions = [];
+    for (const d of uncovered) {
+      const start = side === 'q' ? d.qStart : d.sStart;
+      const end = side === 'q' ? d.qEnd : d.sEnd;
+      const registered = side === 'q' ? d.qRegistered : d.sRegistered;
+      if (typeof start !== 'number' || typeof end !== 'number') continue;
+      if (end <= start || start < 0 || end > text.length) continue;
+      // 2-axis classification:
+      //   missing/present → glossary registration (red vs amber background)
+      //   add / remove    → action the translator must take after the TM
+      //                     match is placed:
+      //                       q-side ins/del (this content is in the cell
+      //                         but not in TM) → must ADD to placement
+      //                         → dashed underline
+      //                       s-side ins/del (this content is in TM but
+      //                         not in the cell) → must REMOVE from
+      //                         placement → strikethrough
+      //                     sub diffs are a swap, neither pure-add nor
+      //                     pure-remove, so they keep the default style.
+      const baseCls = registered ? 'diff-uncovered-present' : 'diff-uncovered-missing';
+      const mustAdd = side === 'q' && !d.sText;
+      const mustRemove = side === 's' && !d.qText;
+      const cls = mustAdd ? `${baseCls} diff-uncovered-add`
+        : mustRemove ? `${baseCls} diff-uncovered-remove`
+        : baseCls;
+      regions.push({ start, end, cls });
+    }
+    regions.sort((a, b) => a.start - b.start || a.end - b.end);
+    const merged = [];
+    for (const r of regions) {
+      const prev = merged[merged.length - 1];
+      if (prev && r.start < prev.end) continue;
+      merged.push(r);
+    }
+    return merged;
+  }
+
+  /**
+   * Render plain text with uncovered regions wrapped in the appropriate
+   * class. Used for TM.source inside match-ref (no glossary underline
+   * overlay needed). For query/cell rendering that also carries glossary
+   * underlines, use renderQueryCellWithUncovered instead.
+   */
+  function markUncoveredHtml(text, uncovered, side) {
+    const regions = uncoveredRegionsForText(text, uncovered, side);
+    if (!regions.length) return esc(text);
+    let html = '', cursor = 0;
+    for (const r of regions) {
+      html += esc(text.substring(cursor, r.start));
+      html += `<span class="${r.cls}">${esc(text.substring(r.start, r.end))}</span>`;
+      cursor = r.end;
+    }
+    html += esc(text.substring(cursor));
+    return html;
+  }
+
+  /**
+   * Render the active-cell / query text with two layers of markup:
+   *   - glossary underlines (gloss_match) for registered terms
+   *   - uncovered coloring (red / yellow) for terms inside unresolved diffs
+   *
+   * Layers are emitted per-character so nested state changes (glossary
+   * starts inside an uncovered region, or vice versa) stay well-formed.
+   * Returns HTML, or null when neither layer has anything to add — callers
+   * fall back to their existing plain-text rendering in that case.
+   */
+  function renderQueryCellWithUncovered(text, glossHits, uncovered) {
+    const glossRegions = glossHits && glossHits.length ? glossRegionsForText(text, glossHits) : [];
+    const uncRegions = uncoveredRegionsForText(text, uncovered, 'q');
+    if (!glossRegions.length && !uncRegions.length) return null;
+    const inRegion = (regions, pos) => {
+      for (const r of regions) if (pos >= r.start && pos < r.end) return r;
+      return null;
+    };
+    let html = '';
+    let prevG = null, prevU = null;
+    for (let i = 0; i < text.length; i++) {
+      const g = inRegion(glossRegions, i);
+      const u = inRegion(uncRegions, i);
+      if (g !== prevG || u !== prevU) {
+        if (prevG) html += '</span>';
+        if (prevU) html += '</span>';
+        if (u) html += `<span class="${u.cls}">`;
+        if (g) html += `<span class="gloss_match" data-tip="${escA(g.translation)}">`;
+      }
+      html += esc(text[i]);
+      prevG = g; prevU = u;
+    }
+    if (prevG) html += '</span>';
+    if (prevU) html += '</span>';
+    return html;
+  }
+
+  /**
+   * Glossary Placement (Felix gloss_placement.cpp port).
+   * Given a TM match (source + target) and the query, find the "hole" (differing part),
+   * look up glossary translations for both holes, and substitute in the target.
+   *
+   * Returns { placed: true, target: "modified target" } or { placed: false }.
+   */
+  function glossaryPlacement(query, tmSource, tmTarget, glossaryData) {
+    if (!query || !tmSource || !tmTarget || !glossaryData.length) return { placed: false };
+    if (query === tmSource) return { placed: false }; // exact match, no placement needed
+
+    const qCmp = makeCmp(query);
+    const sCmp = makeCmp(tmSource);
+    if (qCmp === sCmp) return { placed: false };
+
+    // Find the differing segment (hole) between query and TM source
+    // Use token-level diff to locate substituted words
+    const useChar = containsCJK(query);
+    const qTokens = splitTokens(qCmp, useChar);
+    const sTokens = splitTokens(sCmp, useChar);
+
+    // Find common prefix and suffix
+    let prefixLen = 0;
+    while (prefixLen < qTokens.length && prefixLen < sTokens.length &&
+           qTokens[prefixLen] === sTokens[prefixLen]) prefixLen++;
+    let suffixLen = 0;
+    while (suffixLen < qTokens.length - prefixLen && suffixLen < sTokens.length - prefixLen &&
+           qTokens[qTokens.length - 1 - suffixLen] === sTokens[sTokens.length - 1 - suffixLen]) suffixLen++;
+
+    const qHoleTokens = qTokens.slice(prefixLen, qTokens.length - suffixLen);
+    const sHoleTokens = sTokens.slice(prefixLen, sTokens.length - suffixLen);
+    if (!qHoleTokens.length || !sHoleTokens.length) return { placed: false };
+
+    const sep = useChar ? '' : ' ';
+    const qHole = qHoleTokens.join(sep).trim();
+    const sHole = sHoleTokens.join(sep).trim();
+    if (!qHole || !sHole) return { placed: false };
+
+    // Look up glossary for both holes (exact match only — Felix uses get_perfect_matches)
+    let qGlossTrans = null, sGlossTrans = null;
+    const qHoleCmp = makeCmp(qHole);
+    const sHoleCmp = makeCmp(sHole);
+    for (const g of glossaryData) {
+      const gCmp = g.cmp || makeCmp(g.term);
+      if (!qGlossTrans && gCmp === qHoleCmp) qGlossTrans = g.translation;
+      if (!sGlossTrans && gCmp === sHoleCmp) sGlossTrans = g.translation;
+    }
+
+    if (!qGlossTrans || !sGlossTrans) return { placed: false };
+
+    // Check that sGlossTrans appears exactly once in tmTarget,
+    // respecting word boundaries when the translation is Latin-letter
+    // bordered.
+    const sTransLower = cmpLen(sGlossTrans);
+    const idx = findWordBoundaryIndex(tmTarget, sTransLower);
+    if (idx === -1) return { placed: false };
+    if (findWordBoundaryIndex(tmTarget, sTransLower, idx + 1) !== -1) return { placed: false };
+
+    // Replace, preserving the target's existing casing pattern.
+    const slice = tmTarget.substring(idx, idx + sGlossTrans.length);
+    const newTarget = tmTarget.substring(0, idx) + applyCasing(slice, qGlossTrans) + tmTarget.substring(idx + sGlossTrans.length);
+    return { placed: true, target: newTarget, from: sHole, to: qHole };
+  }
+
+  // === Diff Highlighting (backtrace from edit distance matrix) ===
+
+  /**
+   * Compute word-level diff between query and TM source.
+   * Returns HTML strings with colored spans:
+   *   green = match, yellow = substitution, red = insertion/deletion
+   *
+   * For CJK: character-level diff
+   * For Western: word-level diff
+   */
+  function diffHighlight(query, tmSource) {
+    if (!query || !tmSource) return { queryHtml: esc(query), sourceHtml: esc(tmSource) };
+    if (query === tmSource) return { queryHtml: `<span class="diff-match">${esc(query)}</span>`, sourceHtml: `<span class="diff-match">${esc(tmSource)}</span>` };
+
+    const useChar = containsCJK(query) || query.indexOf(' ') === -1;
+    const qTokens = splitTokens(query, useChar);
+    const sTokens = splitTokens(tmSource, useChar);
+    const sep = useChar ? '' : ' ';
+
+    // Pre-normalize tokens for ===-based DP comparison: in word mode
+    // this is just a case fold via cmpLen (which also handles width
+    // and kana, so 'ATK' ≡ 'ＡＴＫ' and 'カタ' ≡ 'かた'); in char
+    // mode tokens are already single chars so cmpLen is a no-op for
+    // most CJK but still folds digits and ASCII consistently.
+    const n = qTokens.length, m = sTokens.length;
+    const qNorm = new Array(n); for (let i = 0; i < n; i++) qNorm[i] = cmpLen(qTokens[i]);
+    const sNorm = new Array(m); for (let j = 0; j < m; j++) sNorm[j] = cmpLen(sTokens[j]);
+    const dp = fillEditDp(qNorm, sNorm);
+
+    // Backtrace
+    const ops = []; // {type: 'match'|'sub'|'del'|'ins', qTok, sTok}
+    let i = n, j = m;
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0) {
+        const match = qNorm[i-1] === sNorm[j-1];
+        if (match && dp[i][j] === dp[i-1][j-1]) {
+          ops.unshift({ type: 'match', qTok: qTokens[i-1], sTok: sTokens[j-1] });
+          i--; j--; continue;
+        }
+        if (dp[i][j] === dp[i-1][j-1] + 1) {
+          ops.unshift({ type: 'sub', qTok: qTokens[i-1], sTok: sTokens[j-1] });
+          i--; j--; continue;
+        }
+      }
+      if (i > 0 && dp[i][j] === dp[i-1][j] + 1) {
+        ops.unshift({ type: 'del', qTok: qTokens[i-1], sTok: null });
+        i--; continue;
+      }
+      if (j > 0 && dp[i][j] === dp[i][j-1] + 1) {
+        ops.unshift({ type: 'ins', qTok: null, sTok: sTokens[j-1] });
+        j--; continue;
+      }
+      // Fallback
+      if (i > 0) { ops.unshift({ type: 'del', qTok: qTokens[--i], sTok: null }); }
+      else if (j > 0) { ops.unshift({ type: 'ins', qTok: null, sTok: sTokens[--j] }); }
+    }
+
+    // Build HTML
+    let qParts = [], sParts = [];
+
+    // Build glossary position map on the query text (same logic as markGlossaryInSource)
+    const glossRegions = arguments[2] && arguments[2].length
+      ? glossRegionsForText(query, arguments[2])
+      : [];
+
+    // Merge consecutive same-type ops to avoid per-character span padding
+    const merged = [];
+    for (const op of ops) {
+      const prev = merged.length ? merged[merged.length - 1] : null;
+      if (prev && prev.type === op.type) {
+        if (op.qTok) prev.qToks.push(op.qTok);
+        if (op.sTok) prev.sToks.push(op.sTok);
+      } else {
+        merged.push({
+          type: op.type,
+          qToks: op.qTok ? [op.qTok] : [],
+          sToks: op.sTok ? [op.sTok] : [],
+        });
+      }
+    }
+
+    // Expand sub spans to cover full number tokens:
+    // If a 'sub' contains digits and is adjacent to 'match' that also contains digits,
+    // absorb those digit chars from the match into the sub.
+    const isDigit = c => c >= '0' && c <= '9';
+    for (let mi = 0; mi < merged.length; mi++) {
+      if (merged[mi].type !== 'sub') continue;
+      const qText = merged[mi].qToks.join(sep);
+      const sText = merged[mi].sToks.join(sep);
+      if (!qText.split('').some(isDigit) && !sText.split('').some(isDigit)) continue;
+      // Absorb trailing digits from preceding match
+      if (mi > 0 && merged[mi - 1].type === 'match') {
+        const prev = merged[mi - 1];
+        while (prev.qToks.length && isDigit(prev.qToks[prev.qToks.length - 1])) {
+          merged[mi].qToks.unshift(prev.qToks.pop());
+          if (prev.sToks.length) merged[mi].sToks.unshift(prev.sToks.pop());
+        }
+        if (!prev.qToks.length && !prev.sToks.length) { merged.splice(mi - 1, 1); mi--; }
+      }
+      // Absorb leading digits from following match
+      if (mi + 1 < merged.length && merged[mi + 1].type === 'match') {
+        const next = merged[mi + 1];
+        while (next.qToks.length && isDigit(next.qToks[0])) {
+          merged[mi].qToks.push(next.qToks.shift());
+          if (next.sToks.length) merged[mi].sToks.push(next.sToks.shift());
+        }
+        if (!next.qToks.length && !next.sToks.length) merged.splice(mi + 1, 1);
+      }
+    }
+
+    // Build source HTML
+    for (const m of merged) {
+      const sText = m.sToks.join(sep);
+      if (m.type === 'match') sParts.push(`<span class="diff-match">${esc(sText)}</span>`);
+      else if (m.type === 'sub') sParts.push(`<span class="diff-sub">${esc(sText)}</span>`);
+      else if (m.type === 'ins') sParts.push(`<span class="diff-ins">${esc(sText)}</span>`);
+    }
+
+    // Build query HTML: per-character array with diff type, then overlay glossary
+    const qCharsTyped = []; // { ch, type }
+    for (const m of merged) {
+      if (m.type === 'ins') continue;
+      for (const tok of m.qToks) {
+        for (const ch of tok) qCharsTyped.push({ ch, type: m.type });
+      }
+    }
+
+    // Generate query HTML with diff spans + glossary wrapping
+    let queryHtml = '';
+    let curType = null, inGloss = null;
+    for (let ci = 0; ci < qCharsTyped.length; ci++) {
+      const { ch, type } = qCharsTyped[ci];
+      const gRegion = glossRegions.find(r => ci >= r.start && ci < r.end) || null;
+
+      // Glossary boundary change
+      if (gRegion !== inGloss) {
+        if (curType) { queryHtml += '</span>'; curType = null; }
+        if (inGloss) queryHtml += '</span>';
+        if (gRegion) queryHtml += `<span class="gloss_match" data-tip="${escA(gRegion.translation)}">`;
+        inGloss = gRegion;
+      }
+      // Diff type change
+      if (type !== curType) {
+        if (curType) queryHtml += '</span>';
+        queryHtml += `<span class="diff-${type}">`;
+        curType = type;
+      }
+      queryHtml += esc(ch);
+    }
+    if (curType) queryHtml += '</span>';
+    if (inGloss) queryHtml += '</span>';
+
+    return {
+      queryHtml,
+      sourceHtml: sParts.join(sep),
+    };
+  }
+
+  function esc(s) {
+    return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  // Attribute-context escape: also handles `"` so a glossary entry
+  // containing a double-quote can't break out of `data-tip="…"`.
+  function escA(s) {
+    return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // === Concordance Search (substring match in source or target) ===
+
+  function concordanceSearch(query, tmData, maxResults, useRegex) {
+    if (!query || !tmData || !tmData.length) return [];
+
+    let re = null;
+    if (useRegex) {
+      try { re = new RegExp(query, 'i'); } catch (_) { return []; }
+    }
+
+    const hits = [];
+    const qLower = useRegex ? null : query.toLowerCase();
+    for (let i = 0; i < tmData.length; i++) {
+      const entry = tmData[i];
+      const inSource = re ? re.test(entry.source) : entry.source.toLowerCase().includes(qLower);
+      const inTarget = re ? re.test(entry.target) : entry.target.toLowerCase().includes(qLower);
+      if (inSource || inTarget) {
+        hits.push({ ...entry, matchField: inSource ? 'source' : 'target', tmIdx: i });
+      }
+      if (hits.length >= (maxResults || 50)) break;
+    }
+    return hits;
+  }
+
+  // === Reverse Search (search by target text) ===
+
+  function reverseSearch(query, tmData, minScore, opts) {
+    if (!query || !tmData || !tmData.length) return [];
+    const assessFormat = !!(opts && opts.assessFormatPenalty);
+    const qCmp = makeCmp(query);
+    const matches = [];
+    for (let i = 0; i < tmData.length; i++) {
+      const entry = tmData[i];
+      const tCmp = entry.targetCmp || makeCmp(entry.target);
+      let score = fuzzyScore(qCmp, tCmp, minScore);
+      if (assessFormat && score > 0) {
+        score = Math.max(0, score - formatPenalty(query, entry.target));
+      }
+      if (score >= minScore) {
+        matches.push({ ...entry, score, tmIdx: i });
+      }
+    }
+    matches.sort((a, b) => b.score - a.score);
+    return matches.slice(0, 20);
+  }
+
+  // === TM Entry Management (dedup + add) ===
+
+  /**
+   * Add a source/target pair to tmData with dedup.
+   * Returns 'added' if new, 'refcount' if duplicate (refcount incremented).
+   *
+   * Fourth argument is overloaded for backward compatibility:
+   *   addEntry(tm, src, tgt, 'some context string')   ← legacy
+   *   addEntry(tm, src, tgt, { context, createdBy,    ← full metadata
+   *      modifiedBy, created, modified, reliability, validated })
+   *
+   * On 'refcount', the entry's `modified` timestamp is bumped to now
+   * (or to opts.modified if explicitly provided) so callers can tell
+   * which rows were touched in the current session.
+   */
+  function addEntry(tmData, source, target, contextOrOpts) {
+    const opts = (contextOrOpts && typeof contextOrOpts === 'object' && !(contextOrOpts instanceof Date))
+      ? contextOrOpts
+      : { context: contextOrOpts };
+    const sCmp = makeCmp(source);
+    const tCmp = makeCmp(target);
+
+    for (const entry of tmData) {
+      const entrySCmp = entry.cmp || makeCmp(entry.source);
+      const entryTCmp = entry.targetCmp || makeCmp(entry.target);
+      if (entrySCmp === sCmp && entryTCmp === tCmp) {
+        entry.refcount = (entry.refcount || 0) + 1;
+        entry.modified = opts.modified || new Date();
+        if (opts.modifiedBy) entry.modifiedBy = opts.modifiedBy;
+        return 'refcount';
+      }
+    }
+
+    const now = new Date();
+    tmData.push({
+      source, target,
+      context: opts.context || '',
+      cmp: sCmp, targetCmp: tCmp,
+      refcount: 0,
+      reliability: opts.reliability != null ? opts.reliability : 0,
+      validated: opts.validated === true,
+      created: opts.created || now,
+      modified: opts.modified || now,
+      createdBy: opts.createdBy || '',
+      modifiedBy: opts.modifiedBy || '',
+    });
+    return 'added';
+  }
+
+  /**
+   * Dedup-aware glossary insert. Mirrors addEntry: returns 'added' when
+   * the pair is new, 'exists' when the exact pair is already registered
+   * (case-insensitive / width-insensitive via makeCmp). Always stores the
+   * term's cmp so later hot-path lookups don't recompute makeCmp(term).
+   */
+  /**
+   * Parse an A1-style Sheets reference. Accepts `A2`, `B5:B10`, `A:A`,
+   * `A2:A`, or full `Sheet!A2`. Returns null on failure.
+   *   { col, row, col2, row2 }  — col2/row2 undefined for single-cell refs.
+   * Row numbers come back as integers when present, undefined otherwise
+   * (column-only ranges like `A:A`). Column letters are uppercased.
+   */
+  function parseA1(ref) {
+    if (!ref || typeof ref !== 'string') return null;
+    const m = ref.match(/^([A-Z]+)(\d+)?(?::([A-Z]+)(\d+)?)?$/i);
+    if (!m) return null;
+    return {
+      col: m[1].toUpperCase(),
+      row: m[2] ? parseInt(m[2], 10) : undefined,
+      col2: m[3] ? m[3].toUpperCase() : undefined,
+      row2: m[4] ? parseInt(m[4], 10) : undefined,
+    };
+  }
+
+  /**
+   * Dedup-aware glossary insert. Fourth arg is overloaded the same way
+   * as addEntry: a plain string is treated as the legacy `notes` slot,
+   * while an object form lets callers attach reliability / validated /
+   * createdBy / modifiedBy / created / modified.
+   */
+  function addGlossaryEntry(glossaryData, term, translation, notesOrOpts) {
+    const opts = (notesOrOpts && typeof notesOrOpts === 'object' && !(notesOrOpts instanceof Date))
+      ? notesOrOpts
+      : { notes: notesOrOpts };
+    const tCmp = makeCmp(term);
+    const trCmp = makeCmp(translation);
+    for (const g of glossaryData) {
+      const gCmp = g.cmp || makeCmp(g.term);
+      const gTrCmp = g.translationCmp || makeCmp(g.translation);
+      if (gCmp === tCmp && gTrCmp === trCmp) return 'exists';
+    }
+    const now = new Date();
+    glossaryData.push({
+      term, translation,
+      notes: opts.notes || '',
+      cmp: tCmp, translationCmp: trCmp,
+      reliability: opts.reliability != null ? opts.reliability : 0,
+      validated: opts.validated === true,
+      created: opts.created || now,
+      modified: opts.modified || now,
+      createdBy: opts.createdBy || '',
+      modifiedBy: opts.modifiedBy || '',
+    });
+    return 'added';
+  }
+
+  /**
+   * Number Placement (Felix MatchStringPairing.cpp port).
+   * Extracts number tokens from query, source, and target by position order,
+   * then substitutes where source and query differ.
+   */
+  function numberPlacement(query, tmSource, tmTarget, glossaryData, precomputedDiffs) {
+    if (!query || !tmSource || !tmTarget) return { placed: false };
+    if (query === tmSource) return { placed: false };
+
+    // Normalize full-width digits to half-width
+    function narrowNum(s) {
+      return s.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+    }
+
+    // Extract all number tokens with their positions: [{ value, index, length }]
+    const numRe = /(?:\d+(?:[.,]\d+)*|[０-９]+(?:[．，][０-９]+)*)/g;
+    function extractNums(text) {
+      const nums = [];
+      let m;
+      numRe.lastIndex = 0;
+      while ((m = numRe.exec(text)) !== null) {
+        nums.push({ value: narrowNum(m[0]), index: m.index, length: m[0].length });
+      }
+      return nums;
+    }
+
+    // A digit sitting inside a non-numeric diff region (e.g. the 4 in
+    // `ランダム4体` that aligned against `全体`) is part of the lexical
+    // diff, not an independent numeric slot. Counting it here would make
+    // query and source disagree on the number of slots and silently
+    // disable placement for the entire row. We mask those ranges on both
+    // sides symmetrically, using the DP-computed positions from
+    // nonNumericDiffs — so the masking can't create its own asymmetry.
+    function maskRanges(text, ranges) {
+      if (!ranges.length) return text;
+      const sorted = [...ranges].sort((a, b) => a.start - b.start);
+      let out = '';
+      let cursor = 0;
+      for (const r of sorted) {
+        if (r.end <= r.start || r.start < cursor) continue;
+        out += text.substring(cursor, r.start) + ' '.repeat(r.end - r.start);
+        cursor = r.end;
+      }
+      out += text.substring(cursor);
+      return out;
+    }
+
+    // When the caller already ran nonNumericDiffs (e.g. resolveWithPlacement),
+    // reuse the result instead of paying for a second DP pass.
+    const nnd = precomputedDiffs || nonNumericDiffs(query, tmSource, glossaryData);
+
+    // Count total digits inside the non-numeric diff regions on each
+    // side. Masking is only needed when this total is asymmetric —
+    // e.g. `ランダム4体 ↔ 全体` where query has a 4 inside the diff but
+    // source has no digit there. When both sides contribute the same
+    // number of digits to the diff region (`20%UP` / `ダメージカット20%`
+    // each carrying one `20`), the raw digits align positionally by
+    // themselves and masking would just break target-side count match.
+    const DIGIT_RE = /[\d０-９]/g;
+    const qDigitsInDiff = nnd.reduce((n, d) => n + (d.qText.match(DIGIT_RE) || []).length, 0);
+    const sDigitsInDiff = nnd.reduce((n, d) => n + (d.sText.match(DIGIT_RE) || []).length, 0);
+    const asymmetric = qDigitsInDiff !== sDigitsInDiff;
+
+    const qMasked = asymmetric
+      ? maskRanges(query, nnd.map(d => ({ start: d.qStart, end: d.qEnd })))
+      : query;
+    const sMasked = asymmetric
+      ? maskRanges(tmSource, nnd.map(d => ({ start: d.sStart, end: d.sEnd })))
+      : tmSource;
+
+    // Target-side digits that correspond to a masked source-side lexical
+    // diff need to drop out of the numeric count too. Only relevant when
+    // we actually masked the source side (asymmetric case), AND we can
+    // identify the corresponding target range via a glossary translation.
+    let tMasked = tmTarget;
+    if (asymmetric) {
+      const gIdx = glossaryIndex(glossaryData);
+      const tMaskRanges = [];
+      if (gIdx) {
+        for (const d of nnd) {
+          const sEntry = gIdx.get(makeCmp(d.sText));
+          if (!sEntry || !sEntry.translation) continue;
+          const tr = sEntry.translation;
+          const pos = tmTarget.indexOf(tr);
+          if (pos !== -1) tMaskRanges.push({ start: pos, end: pos + tr.length });
+        }
+      }
+      if (tMaskRanges.length) tMasked = maskRanges(tmTarget, tMaskRanges);
+    }
+
+    const qNums = extractNums(qMasked);
+    const sNums = extractNums(sMasked);
+    const tNums = extractNums(tMasked);
+
+    // Source and query must have the same count of number tokens
+    if (!qNums.length || qNums.length !== sNums.length) return { placed: false };
+    // Target must have the same count for reliable positional matching
+    if (tNums.length !== sNums.length) return { placed: false };
+
+    // Pair source numbers with target numbers. Positional pairing
+    // (source[k] ↔ target[k]) breaks when the target language reorders
+    // the numbers — `ランダム4体の敵に120%のダメージ` carries [4, 120]
+    // but its English `Deals 120% damage to 4 random enemies` carries
+    // [120, 4], so a 4→5 query change would overwrite the 120. When the
+    // two sides hold the same multiset of values, pair equal values
+    // instead (occurrence order within a value); then the replaced
+    // target number always equals the source number that changed. Only
+    // when the multisets differ (e.g. the target localizes a number)
+    // fall back to positional pairing.
+    function pairByValue() {
+      const slots = new Map();
+      for (let t = 0; t < tNums.length; t++) {
+        const v = tNums[t].value;
+        if (!slots.has(v)) slots.set(v, []);
+        slots.get(v).push(t);
+      }
+      const pairing = new Array(sNums.length);
+      for (let k = 0; k < sNums.length; k++) {
+        const list = slots.get(sNums[k].value);
+        if (!list || !list.length) return null;
+        pairing[k] = list.shift();
+      }
+      return pairing;
+    }
+    const pairing = pairByValue();
+
+    // If source[k] ≠ query[k], replace the paired target number with query[k]
+    const replacements = [];
+    for (let k = 0; k < sNums.length; k++) {
+      if (qNums[k].value !== sNums[k].value) {
+        const t = pairing ? pairing[k] : k;
+        replacements.push({
+          tgtIdx: tNums[t].index,
+          tgtLen: tNums[t].length,
+          newValue: qNums[k].value,
+        });
+      }
+    }
+
+    if (!replacements.length) return { placed: false };
+
+    // Apply from end to start so indices stay valid
+    replacements.sort((a, b) => b.tgtIdx - a.tgtIdx);
+    let result = tmTarget;
+    for (const r of replacements) {
+      result = result.substring(0, r.tgtIdx) + r.newValue + result.substring(r.tgtIdx + r.tgtLen);
+    }
+
+    return { placed: true, target: result };
+  }
+
+  /**
+   * Rule-based Placement (Felix Rule Manager port).
+   * Each rule has a source regex and a target template with \1, \2 backreferences.
+   * Algorithm:
+   *   1. Apply rule source regex to TM source → get captured groups → build "source replacement"
+   *   2. Apply rule source regex to query → get captured groups → build "query replacement"
+   *   3. In TM target, find "source replacement" and substitute with "query replacement"
+   *
+   * Returns { placed: true, target: "modified target" } or { placed: false }.
+   */
+  function rulePlacement(query, tmSource, tmTarget, rules) {
+    if (!query || !tmSource || !tmTarget || !rules || !rules.length) return { placed: false };
+    if (query === tmSource) return { placed: false };
+
+    function applyTemplate(template, groups) {
+      return template.replace(/\\(\d+)/g, (_, n) => {
+        const idx = parseInt(n);
+        return idx < groups.length ? groups[idx] : '';
+      });
+    }
+
+    let result = tmTarget;
+    let didPlace = false;
+
+    for (const rule of rules) {
+      if (rule.enabled === false) continue;
+      let re;
+      try { re = new RegExp(rule.sourcePattern); } catch (_) { continue; }
+
+      const sMatch = tmSource.match(re);
+      const qMatch = query.match(re);
+      if (!sMatch || !qMatch) continue;
+
+      const sReplacement = applyTemplate(rule.targetTemplate, sMatch);
+      const qReplacement = applyTemplate(rule.targetTemplate, qMatch);
+      if (sReplacement === qReplacement) continue;
+
+      const idx = result.indexOf(sReplacement);
+      if (idx === -1) continue;
+      // Ensure unique occurrence
+      if (result.indexOf(sReplacement, idx + sReplacement.length) !== -1) continue;
+
+      result = result.substring(0, idx) + qReplacement + result.substring(idx + sReplacement.length);
+      didPlace = true;
+    }
+
+    return didPlace ? { placed: true, target: result } : { placed: false };
+  }
+
+  /**
+   * Build a glossary-aware token stream. Each element is
+   * { text, start, end } where start/end are char offsets in the
+   * original string. Glossary-entry occurrences collapse into a single
+   * atomic token so downstream DP aligns on lexical units instead of
+   * accidentally-shared characters (e.g. `体` between `ランダム4体` and
+   * `全体`, or `確率` between `中確率` and `低確率`). Non-glossary text
+   * falls back to char tokens (CJK / single-word) or whitespace-split
+   * word tokens (Western). When glossaryData is empty this is identical
+   * to the old char/word tokenizer.
+   */
+  function tokenizeGlossaryAware(text, glossaryData, useChar) {
+    const atoms = [];
+    if (glossaryData && glossaryData.length) {
+      const lower = cmpLen(text);
+      for (const g of glossaryData) {
+        const term = g && g.term;
+        if (!term) continue;
+        const tl = cmpLen(term);
+        let pos = 0;
+        while (pos <= text.length - term.length) {
+          const idx = lower.indexOf(tl, pos);
+          if (idx === -1) break;
+          atoms.push({ start: idx, end: idx + term.length });
+          pos = idx + term.length;
+        }
+      }
+      atoms.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+      const kept = [];
+      let lastEnd = 0;
+      for (const a of atoms) {
+        if (a.start < lastEnd) continue;
+        kept.push(a);
+        lastEnd = a.end;
+      }
+      atoms.length = 0;
+      atoms.push(...kept);
+    }
+
+    const tokens = [];
+    function pushPlain(start, end) {
+      if (start >= end) return;
+      if (useChar) {
+        for (let k = start; k < end; k++) {
+          tokens.push({ text: text[k], start: k, end: k + 1, atom: false });
+        }
+      } else {
+        let k = start;
+        while (k < end) {
+          while (k < end && text[k] === ' ') k++;
+          if (k >= end) break;
+          let we = k;
+          while (we < end && text[we] !== ' ') we++;
+          tokens.push({ text: text.substring(k, we), start: k, end: we, atom: false });
+          k = we;
+        }
+      }
+    }
+    let cursor = 0;
+    for (const a of atoms) {
+      pushPlain(cursor, a.start);
+      tokens.push({ text: text.substring(a.start, a.end), start: a.start, end: a.end, atom: true });
+      cursor = a.end;
+    }
+    pushPlain(cursor, text.length);
+    return tokens;
+  }
+
+  // Classify a token for run-boundary decisions in nonNumericDiffs. We
+  // flush a diff run between consecutive substitutions whose token types
+  // differ on both sides, so a glossary atom paired with its counterpart
+  // never merges with an adjacent digit-only sub (e.g. `MATK↔ATK` plus
+  // `1↔2` stops collapsing into a single `{MATK1, ATK2}` run that loses
+  // both the glossary lookup and the number-placement slot).
+  const DIGIT_TOKEN = /^[\d.,０-９．，]+$/;
+  function tokenTypeOf(tok) {
+    if (tok.atom) return 'atom';
+    if (DIGIT_TOKEN.test(tok.text)) return 'digit';
+    return 'other';
+  }
+
+  /**
+   * Extract non-numeric substitution pairs from query vs source diff.
+   * Returns [{ qText, sText, qStart, qEnd, sStart, sEnd }] — parts that
+   * changed in a lexical sense, plus the char span each side occupies in
+   * its original string.
+   *
+   * Glossary awareness: when `glossaryData` is passed, every glossary
+   * entry occurrence becomes an atomic token before DP runs. Diff
+   * boundaries therefore always coincide with lexical units — a registered
+   * pair fires per-diff glossary reliably, red/yellow uncovered marks
+   * wrap the full term, and click-to-prefill carries the whole key. The
+   * same code handles JP-CN and JP-EN without per-language branching.
+   *
+   * Digit-only variance filter: a diff whose two sides share the same
+   * non-digit skeleton (`2ターンの間 ↔ 3ターンの間`, or the older
+   * pure-numeric `2 ↔ 3`) isn't a lexical substitution — it's a number
+   * swap that numberPlacement handles positionally. Those diffs are
+   * dropped here so the translator doesn't have to register every
+   * numeric variant of the same phrase as a separate glossary entry.
+   */
+  function nonNumericDiffs(query, tmSource, glossaryData) {
+    if (!query || !tmSource || query === tmSource) return [];
+    const useChar = containsCJK(query) || query.indexOf(' ') === -1;
+    const qTokens = tokenizeGlossaryAware(query, glossaryData, useChar);
+    const sTokens = tokenizeGlossaryAware(tmSource, glossaryData, useChar);
+
+    const n = qTokens.length, m = sTokens.length;
+    // Precompute normalized token strings so ％ ≡ %, 全角数字 ≡ 半角数字,
+    // ひらがな ≡ カタカナ don't fall into the diff just because the source
+    // cell was entered with different widths than the query.
+    const qNorm = new Array(n); for (let i = 0; i < n; i++) qNorm[i] = cmpLen(qTokens[i].text);
+    const sNorm = new Array(m); for (let j = 0; j < m; j++) sNorm[j] = cmpLen(sTokens[j].text);
+    const dp = fillEditDp(qNorm, sNorm);
+
+    // Backtrace — collect substitution runs. When tied we prefer
+    // insert/delete over substitution so a stray common token (e.g. a
+    // particle 「を」 stuck between a translated term and a number) stays
+    // a match and doesn't merge the surrounding diff into one
+    // unresolvable region.
+    const DIGIT_STRIP = /[\d.,０-９．，]/g;
+    const diffs = [];
+    let i = n, j = m;
+    let qTokStart = null, qTokEnd = null, sTokStart = null, sTokEnd = null;
+    // Track whether the current run is all-sub (no insert/delete) plus the
+    // token-types of its accumulated sides. Used to split adjacent subs
+    // whose types change in lockstep — the MATK↔ATK (atom) followed by
+    // 1↔2 (digit) case, where merging would make the glossary lookup
+    // target `MATK1`/`ATK2` and silently disable both glossary and
+    // number placement. Mixed runs (any insert/delete) stay fused so the
+    // digit-strip safety net keeps working for digit-variant phrases like
+    // `2ターンの間 ↔ 3ターンの間`.
+    let runAllSubs = true;
+    let runQType = null, runSType = null;
+    function flush() {
+      if (qTokStart == null && sTokStart == null) {
+        runAllSubs = true; runQType = null; runSType = null;
+        return;
+      }
+      const qStart = qTokStart != null ? qTokens[qTokStart].start : 0;
+      const qEnd = qTokEnd != null && qTokEnd > 0 ? qTokens[qTokEnd - 1].end : qStart;
+      const sStart = sTokStart != null ? sTokens[sTokStart].start : 0;
+      const sEnd = sTokEnd != null && sTokEnd > 0 ? sTokens[sTokEnd - 1].end : sStart;
+      const q = query.substring(qStart, qEnd);
+      const s = tmSource.substring(sStart, sEnd);
+      if (q.length || s.length) {
+        if (q.replace(DIGIT_STRIP, '') !== s.replace(DIGIT_STRIP, '')) {
+          diffs.push({ qText: q, sText: s, qStart, qEnd, sStart, sEnd });
+        }
+      }
+      qTokStart = qTokEnd = sTokStart = sTokEnd = null;
+      runAllSubs = true; runQType = null; runSType = null;
+    }
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0) {
+        const match = qNorm[i-1] === sNorm[j-1];
+        if (match && dp[i][j] === dp[i-1][j-1]) { flush(); i--; j--; continue; }
+      }
+      // Priority order: insert → delete → sub (prefer common-char
+      // matches over collapsing common chars into a single substitution).
+      // Atom pairing is NOT forced here — DP might naturally sub unrelated
+      // atoms (e.g. `20%UP ↔ 土属性`) because the cost table doesn't know
+      // they are semantically unrelated. Post-processing at the end
+      // corrects this using shared-char similarity.
+      if (j > 0 && dp[i][j] === dp[i][j-1] + 1) {
+        j--;
+        if (sTokEnd == null) sTokEnd = j + 1;
+        sTokStart = j;
+        runAllSubs = false;
+        runSType = tokenTypeOf(sTokens[j]);
+        continue;
+      }
+      if (i > 0 && dp[i][j] === dp[i-1][j] + 1) {
+        i--;
+        if (qTokEnd == null) qTokEnd = i + 1;
+        qTokStart = i;
+        runAllSubs = false;
+        runQType = tokenTypeOf(qTokens[i]);
+        continue;
+      }
+      if (i > 0 && j > 0 && dp[i][j] === dp[i-1][j-1] + 1) {
+        // Same-lockstep type-flush (kept): splits MATK↔ATK from 1↔2 in
+        // pure-sub runs where no insert/delete intervenes.
+        const nextQType = tokenTypeOf(qTokens[i-1]);
+        const nextSType = tokenTypeOf(sTokens[j-1]);
+        if (runAllSubs && runQType !== null
+            && nextQType !== runQType && nextSType !== runSType) {
+          flush();
+        }
+        i--; j--;
+        if (qTokEnd == null) qTokEnd = i + 1; qTokStart = i;
+        if (sTokEnd == null) sTokEnd = j + 1; sTokStart = j;
+        runQType = nextQType; runSType = nextSType;
+        continue;
+      }
+      break;
+    }
+    flush();
+
+    // Post-process: when DP bundled atom-atom pairs inside a larger
+    // mixed diff (because its optimal path aligned around the atoms
+    // via common surrounding chars rather than sub'ing them), split
+    // the merged diff so each atom pair becomes its own standalone
+    // entry. Without this, per-diff glossary can't match the atoms
+    // (the whole merged qText isn't in glossary) and numberPlacement
+    // ends up with asymmetric masking.
+    let out = (glossaryData && glossaryData.length)
+      ? diffs.flatMap(d => splitDiffAtAtomPairs(d, glossaryData))
+      : diffs;
+    // For pure insertions/deletions, DP is free to place the diff at
+    // either end of a run of common characters. When the source has
+    // `…与え、自身の…1%UPし、…` and the query has `…与え、…`, DP often
+    // ends up with `sText='、自身の…1%UPし'` (the *leading* comma in
+    // the diff), even though the natural read is to keep `与え、` as
+    // the shared prefix and put the *trailing* comma in the diff:
+    // `sText='自身の…1%UPし、'`. Rotate forward while the rotation
+    // is cost-neutral — the leading char of the diff equals the char
+    // immediately after it — so the highlighted region matches the
+    // translator's intuition.
+    return out.map(d => rotateBoundaryDiff(d, query, tmSource));
+  }
+
+  // Cost-neutral forward rotation for pure insert/delete diffs. Sub
+  // diffs (both qText and sText non-empty) are returned unchanged —
+  // their boundaries are constrained by both sides and rotation could
+  // change DP cost.
+  function rotateBoundaryDiff(diff, query, tmSource) {
+    if (diff.qText === '' && diff.sText) {
+      let sStart = diff.sStart, sEnd = diff.sEnd;
+      while (sEnd < tmSource.length && tmSource[sStart] === tmSource[sEnd]) {
+        sStart++; sEnd++;
+      }
+      if (sStart !== diff.sStart) {
+        return { ...diff, sStart, sEnd, sText: tmSource.substring(sStart, sEnd) };
+      }
+    } else if (diff.sText === '' && diff.qText) {
+      let qStart = diff.qStart, qEnd = diff.qEnd;
+      while (qEnd < query.length && query[qStart] === query[qEnd]) {
+        qStart++; qEnd++;
+      }
+      if (qStart !== diff.qStart) {
+        return { ...diff, qStart, qEnd, qText: query.substring(qStart, qEnd) };
+      }
+    }
+    return diff;
+  }
+
+  // Find every non-overlapping glossary-atom occurrence inside `text`.
+  // Results are sorted by start; on overlap the longer / earlier atom wins.
+  function findAllAtoms(text, glossaryData) {
+    if (!text || !glossaryData) return [];
+    const lower = cmpLen(text);
+    const raw = [];
+    for (const g of glossaryData) {
+      const term = g && g.term;
+      if (!term) continue;
+      const tl = cmpLen(term);
+      let pos = 0;
+      while (pos <= text.length - term.length) {
+        const idx = lower.indexOf(tl, pos);
+        if (idx === -1) break;
+        raw.push({ start: idx, end: idx + term.length, entry: g });
+        pos = idx + term.length;
+      }
+    }
+    raw.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+    const kept = [];
+    let lastEnd = 0;
+    for (const r of raw) {
+      if (r.start < lastEnd) continue;
+      kept.push(r);
+      lastEnd = r.end;
+    }
+    return kept;
+  }
+
+  // Pair a qAtom with its best sAtom counterpart by char-set overlap.
+  // Pure positional pairing fails when one side contains extra atoms
+  // (e.g. source has 全体 AND ダメージカット20% while query only has
+  // 20%UP — "first" on source is 全体 but the pair the translator
+  // means is 20%UP ↔ ダメージカット20%). Overlap-scoring catches that:
+  // 20%UP shares `2 0 %` with ダメージカット20% but nothing with 全体.
+  function bestPairForAtom(qAtom, sAtoms) {
+    if (!sAtoms.length) return -1;
+    const qChars = new Set(cmpLen(qAtom.entry.term));
+    let bestIdx = -1, bestScore = -1;
+    for (let i = 0; i < sAtoms.length; i++) {
+      let score = 0;
+      for (const ch of cmpLen(sAtoms[i].entry.term)) {
+        if (qChars.has(ch)) score++;
+      }
+      if (score > bestScore) { bestScore = score; bestIdx = i; }
+    }
+    return bestScore > 0 ? bestIdx : -1;
+  }
+
+  function splitDiffAtAtomPairs(diff, glossaryData) {
+    const qAtoms = findAllAtoms(diff.qText, glossaryData);
+    if (!qAtoms.length) return [diff];
+    const sAtoms = findAllAtoms(diff.sText, glossaryData);
+    if (!sAtoms.length) return [diff];
+    // Take the first qAtom; find its best sAtom partner by shared chars.
+    const qAtom = qAtoms[0];
+    const sIdx = bestPairForAtom(qAtom, sAtoms);
+    if (sIdx < 0) return [diff];
+    const sAtom = sAtoms[sIdx];
+    const out = [];
+    if (qAtom.start > 0 || sAtom.start > 0) {
+      out.push(...splitDiffAtAtomPairs({
+        qText: diff.qText.substring(0, qAtom.start),
+        sText: diff.sText.substring(0, sAtom.start),
+        qStart: diff.qStart,
+        qEnd: diff.qStart + qAtom.start,
+        sStart: diff.sStart,
+        sEnd: diff.sStart + sAtom.start,
+      }, glossaryData));
+    }
+    out.push({
+      qText: diff.qText.substring(qAtom.start, qAtom.end),
+      sText: diff.sText.substring(sAtom.start, sAtom.end),
+      qStart: diff.qStart + qAtom.start,
+      qEnd: diff.qStart + qAtom.end,
+      sStart: diff.sStart + sAtom.start,
+      sEnd: diff.sStart + sAtom.end,
+    });
+    if (qAtom.end < diff.qText.length || sAtom.end < diff.sText.length) {
+      out.push(...splitDiffAtAtomPairs({
+        qText: diff.qText.substring(qAtom.end),
+        sText: diff.sText.substring(sAtom.end),
+        qStart: diff.qStart + qAtom.end,
+        qEnd: diff.qEnd,
+        sStart: diff.sStart + sAtom.end,
+        sEnd: diff.sEnd,
+      }, glossaryData));
+    }
+    return out;
+  }
+
+  // === Auto-Translate planners (pure, no DOM / no I/O) ===
+  //
+  // The content script handles reading the sheet, writing back, and moving
+  // the cursor. These functions take the already-read source/target arrays
+  // and decide *what* should happen — nothing more. Keeping them pure makes
+  // them trivially unit-testable from Node.
+  //
+  // Shape contract (shared by both planners):
+  //
+  //   @typedef {Object} PlanWrite
+  //   @property {number}  rowNum
+  //   @property {string}  value        — text to write into the target cell
+  //   @property {string}  oldValue     — previous target value, for undo
+  //   @property {boolean} viaPlacement — true when placement synthesized the value
+  //
+  //   @typedef {Object} MissingTerm
+  //   @property {string} query  — term as it appears in the query
+  //   @property {string} source — term as it appears in the TM source
+  //
+  //   @typedef {Object} StoppedAt
+  //   @property {number} rowNum
+  //   @property {string} source                  — the row's source text
+  //   @property {string} [matchSource]           — best TM candidate's source
+  //   @property {number} [matchScore]            — 0..1
+  //   @property {MissingTerm[]} [missingTerms]   — for 'fuzzy_uncovered'
+  //
+  //   @typedef {'empty_source'|'end_of_batch'|'end_of_range'|'no_match'|'fuzzy_uncovered'} StopReason
+  //
+  //   @typedef {Object} FuzzyPlan
+  //   @property {PlanWrite[]} writes
+  //   @property {number|null} stopRow
+  //   @property {StopReason|null} stopReason
+  //   @property {StoppedAt|null} stoppedAt
+  //
+  //   @typedef {Object} SelectionPlan
+  //   @property {number} total
+  //   @property {PlanWrite[]} writes
+  //   @property {number} skippedEmpty
+  //   @property {number} skippedFilled
+  //   @property {number|null} stopRow
+  //   @property {StopReason|null} stopReason
+  //   @property {StoppedAt|null} stoppedAt
+
+  /**
+   * Plan writes for Felix's "Auto Translate Selection" over a contiguous
+   * row range. Target cells that already contain a translation are
+   * preserved. Walks the range in order, writing rows that can be
+   * translated unambiguously (100% match OR placement covers every diff),
+   * and HARD-STOPS at the first row that can't — returning enough detail
+   * in stoppedAt for the caller to tell the user why.
+   *
+   * @param {object} o
+   * @param {number}   o.startRow     first row in the selection (1-based)
+   * @param {number}   o.endRow       last row in the selection (inclusive)
+   * @param {string[]} o.srcValues    source column values, index 0 = startRow
+   * @param {string[]} o.tgtValues    target column values, index 0 = startRow
+   * @param {Array}    o.tmData       TM entries
+   * @param {Array}    [o.glossaryData] glossary entries (for placement coverage)
+   * @param {Array}    [o.rulesData]  rule entries (applied, not counted)
+   * @param {number}   [o.minScore=0.7] match threshold
+   * @returns {SelectionPlan}
+   */
+  function planAutoTranslateSelection({ startRow, endRow, srcValues, tgtValues, tmData, glossaryData, rulesData, minScore }) {
+    const threshold = typeof minScore === 'number' ? minScore : 0.7;
+    const writes = [];
+    let skippedEmpty = 0, skippedFilled = 0;
+    // Selection processes every row in the range independently. A row that
+    // can't be translated (no candidate above threshold, or fuzzy-uncovered)
+    // is recorded but does NOT stop the walk — the user explicitly defined
+    // the range, so the rest of it should still be filled in. Compare with
+    // planAutoTranslateToFuzzy, which walks downward from a single anchor
+    // and stops on the first stuck row by design.
+    const skippedNoMatch = [];
+    const skippedFuzzyUncovered = [];
+    const total = Math.max(0, endRow - startRow + 1);
+    for (let i = 0; i < total; i++) {
+      const rowNum = startRow + i;
+      const src = ((srcValues && srcValues[i]) || '').trim();
+      const existing = ((tgtValues && tgtValues[i]) || '').trim();
+      if (!src) { skippedEmpty++; continue; }
+      if (existing) { skippedFilled++; continue; }
+
+      const matches = search(src, tmData, threshold);
+      if (!matches.length) {
+        skippedNoMatch.push({ rowNum, source: src });
+        continue;
+      }
+      const top = matches[0];
+
+      if (top.score >= 1.0) {
+        writes.push({ rowNum, value: top.target, oldValue: existing, viaPlacement: false });
+        continue;
+      }
+
+      const resolved = resolveWithPlacement(src, top.source, top.target, glossaryData, rulesData);
+      if (resolved.covered) {
+        writes.push({ rowNum, value: resolved.target, oldValue: existing, viaPlacement: true });
+        continue;
+      }
+
+      skippedFuzzyUncovered.push({
+        rowNum, source: src,
+        matchSource: top.source, matchScore: top.score,
+        missingTerms: resolved.uncovered.map(d => ({ query: d.qText, source: d.sText })),
+      });
+    }
+    return {
+      total, writes,
+      skippedEmpty, skippedFilled,
+      skippedNoMatch, skippedFuzzyUncovered,
+      stopReason: 'end_of_range',
+      stoppedAt: null,
+      // stopRow kept null so buildPlanActions falls through to startRow + writes.length.
+      stopRow: null,
+    };
+  }
+
+  /**
+   * Try to resolve a non-100% match into a writable target by applying all
+   * available placements (number / glossary / rule). The result is
+   * `covered: true` only when every non-numeric diff between query and TM
+   * source was actually handled by one of the placements — otherwise the
+   * caller should stop rather than silently insert a partially-correct
+   * translation.
+   *
+   * Numeric diffs are always considered covered (numberPlacement handles
+   * them and nonNumericDiffs filters them out in advance). Rule placement
+   * is applied but not counted toward coverage — rules can span across
+   * multiple diffs in ways that are hard to attribute safely, and we'd
+   * rather under-cover (stop) than over-cover (wrong insert).
+   */
+  // Cache the cmp → entry index keyed on the glossaryData array
+  // reference. Auto Translate resolves placement once per row and each
+  // row used to rebuild this index by scanning the whole glossary; a
+  // WeakMap lets us reuse one build across every row until the caller
+  // swaps in a fresh array (which `DATA_CHANGED` does on every save).
+  const _glossaryIndexCache = new WeakMap();
+  function glossaryIndex(glossaryData) {
+    if (!glossaryData || !glossaryData.length) return null;
+    let cached = _glossaryIndexCache.get(glossaryData);
+    if (cached) return cached;
+    cached = new Map();
+    for (const g of glossaryData) {
+      const c = g.cmp || makeCmp(g.term);
+      if (!cached.has(c)) cached.set(c, g);
+    }
+    _glossaryIndexCache.set(glossaryData, cached);
+    return cached;
+  }
+
+  /**
+   * Per-diff glossary will happily substitute on any diff pair whose two
+   * sides both happen to be registered atoms. DP sometimes aligns
+   * unrelated atoms via cost-minimum sub (e.g. source's leftover `付与`
+   * with query's `20%UP`), and without a guard the target ends up with
+   * the wrong segment rewritten (first `賦予` → `提升20%`). This detects
+   * obvious bogus pairs: no shared characters AND one of the two terms
+   * already appears on the OTHER side of the row, meaning the atom
+   * isn't really a cross-side differential — it's present on both
+   * sides, and DP just couldn't find it a counterpart here.
+   *
+   * Kept intentionally narrow so legitimate 0-overlap cross-script
+   * pairs (MIND ↔ 光属性ダメージ, HP ↔ 生命値, etc.) still fire.
+   */
+  function isSpuriousDiffPair(qEntry, sEntry, query, tmSource) {
+    const q = cmpLen(qEntry.term || '');
+    const s = cmpLen(sEntry.term || '');
+    if (!q || !s) return false;
+    const qChars = new Set(q);
+    for (const ch of s) {
+      if (qChars.has(ch)) return false;  // shared char → not spurious
+    }
+    // No shared chars. Spurious only if one term also appears on the
+    // other side of the row (so it's not a genuine cross-side diff).
+    if (cmpLen(tmSource).includes(q)) return true;
+    if (cmpLen(query).includes(s)) return true;
+    return false;
+  }
+
+  function resolveWithPlacement(query, tmSource, tmTarget, glossaryData, rulesData) {
+    let target = tmTarget;
+    let remaining = nonNumericDiffs(query, tmSource, glossaryData);
+    const placements = [];
+
+    const indexByCmp = glossaryIndex(glossaryData) || new Map();
+
+    // Number placement handles numeric diffs (which nonNumericDiffs already
+    // excluded from `remaining`). numberPlacement itself masks non-numeric
+    // diff regions symmetrically so digits inside a diff (e.g. the 4 in
+    // ランダム4体 aligned against 全体) don't inflate the count on one side.
+    const np = numberPlacement(query, tmSource, target, glossaryData, remaining);
+    if (np.placed) { target = np.target; placements.push('数値'); }
+
+    // Per-diff glossary coverage. Felix's glossaryPlacement is restricted to
+    // a single contiguous hole, so it can't address rows with scattered
+    // differences (number + number + term + number). Here we walk each
+    // non-numeric diff and check the glossary independently: if both sides
+    // of the diff have glossary entries we know how to rewrite the target
+    // segment that corresponds to sEntry.translation. Uncovered entries
+    // carry registration flags so the UI can distinguish which side is
+    // missing from the glossary (red) from which side is present but
+    // blocked by a missing counterpart (yellow).
+    if (remaining.length) {
+      const stillRemaining = [];
+      let glossaryApplied = false;
+      for (const d of remaining) {
+        const qEntry = indexByCmp.get(makeCmp(d.qText));
+        const sEntry = indexByCmp.get(makeCmp(d.sText));
+        if (qEntry && sEntry && !isSpuriousDiffPair(qEntry, sEntry, query, tmSource)) {
+          const fromLower = cmpLen(sEntry.translation);
+          const idx = findWordBoundaryIndex(target, fromLower);
+          if (idx !== -1) {
+            const slice = target.substring(idx, idx + sEntry.translation.length);
+            target = target.substring(0, idx)
+                   + applyCasing(slice, qEntry.translation)
+                   + target.substring(idx + sEntry.translation.length);
+            glossaryApplied = true;
+            continue;
+          }
+        }
+        stillRemaining.push({
+          ...d,
+          qRegistered: !!qEntry, sRegistered: !!sEntry,
+        });
+      }
+      if (glossaryApplied) placements.push('用語');
+      remaining = stillRemaining;
+    }
+
+    // Rule placement — applied for completeness but not counted toward
+    // coverage because a rule's regex can span multiple diffs in ways that
+    // are hard to attribute safely.
+    if (rulesData && rulesData.length) {
+      const rp = rulePlacement(query, tmSource, target, rulesData);
+      if (rp.placed) { target = rp.target; placements.push('ルール'); }
+    }
+
+    return { target, covered: remaining.length === 0, placements, uncovered: remaining };
+  }
+
+  /**
+   * Plan writes for "Auto Translate" from startRow downward. Writes every
+   * row that can be translated unambiguously and STOPS at the first row
+   * that can't — returning concrete information about why so the caller
+   * can tell the user exactly what to fix before retrying.
+   *
+   * When stopReason is 'no_match' or 'fuzzy_uncovered', `stoppedAt` carries
+   * enough context to explain the problem: the source text, the best TM
+   * candidate (if any), and the list of missing glossary term pairs.
+   *
+   * @returns {FuzzyPlan}
+   */
+  function planAutoTranslateToFuzzy({ startRow, srcValues, tgtValues, tmData, glossaryData, rulesData, minScore }) {
+    const threshold = typeof minScore === 'number' ? minScore : 0.7;
+    const writes = [];
+    let stopRow = null, stopReason = null, stoppedAt = null;
+    const n = (srcValues && srcValues.length) || 0;
+    for (let i = 0; i < n; i++) {
+      const rowNum = startRow + i;
+      const src = ((srcValues && srcValues[i]) || '').trim();
+      if (!src) {
+        stopRow = rowNum; stopReason = 'empty_source';
+        stoppedAt = { rowNum, source: '' };
+        break;
+      }
+
+      const matches = search(src, tmData, threshold);
+      if (!matches.length) {
+        stopRow = rowNum; stopReason = 'no_match';
+        stoppedAt = { rowNum, source: src };
+        break;
+      }
+      const top = matches[0];
+
+      if (top.score >= 1.0) {
+        writes.push({
+          rowNum, value: top.target, viaPlacement: false,
+          oldValue: ((tgtValues && tgtValues[i]) || '').trim(),
+        });
+        continue;
+      }
+
+      const resolved = resolveWithPlacement(src, top.source, top.target, glossaryData, rulesData);
+      if (resolved.covered) {
+        writes.push({
+          rowNum, value: resolved.target, viaPlacement: true,
+          oldValue: ((tgtValues && tgtValues[i]) || '').trim(),
+        });
+        continue;
+      }
+
+      stopRow = rowNum; stopReason = 'fuzzy_uncovered';
+      stoppedAt = {
+        rowNum, source: src,
+        matchSource: top.source, matchScore: top.score,
+        missingTerms: resolved.uncovered.map(d => ({ query: d.qText, source: d.sText })),
+      };
+      break;
+    }
+    if (stopRow == null && n > 0) stopReason = 'end_of_batch';
+    return { writes, stopRow, stopReason, stoppedAt };
+  }
+
+  // === Plan consumers (pure helpers used by content.js) ===
+  //
+  // Keeping the "what do we do with this plan?" logic in felix-engine.js
+  // means it's covered by the same Node test suite as the planners. When
+  // the planner's return shape changes, tests here (and the IDE's JSDoc
+  // checks) will catch any drift instead of waiting for a browser bug.
+
+  /**
+   * Build the concrete IO artifacts the content script needs from a plan.
+   * Pure — no DOM, no Sheets API, no chrome.runtime access.
+   *
+   * @param {FuzzyPlan | SelectionPlan} plan
+   * @param {object} cfg
+   * @param {string} cfg.tgtCol      target column letter (e.g. "B")
+   * @param {string} [cfg.sheetName] active sheet name; when present, ranges
+   *                                 are qualified as `'sheet'!B5`
+   * @param {number} cfg.startRow    first row in the plan's window
+   * @returns {{
+   *   updates: Array<{ range: string, value: string }>,
+   *   undoEntries: Array<{ range: string, oldValue: string }>,
+   *   landingRow: number,
+   * }}
+   */
+  function buildPlanActions(plan, cfg) {
+    const tgtCol = cfg.tgtCol;
+    const qualify = (cell) => cfg.sheetName ? `'${cfg.sheetName}'!${cell}` : cell;
+    const writes = (plan && plan.writes) || [];
+    const updates = writes.map(w => ({ range: qualify(`${tgtCol}${w.rowNum}`), value: w.value }));
+    const undoEntries = writes.map(w => ({ range: qualify(`${tgtCol}${w.rowNum}`), oldValue: w.oldValue }));
+    const landingRow = (plan && plan.stopRow) || (cfg.startRow + writes.length);
+    return { updates, undoEntries, landingRow };
+  }
+
+  /**
+   * Turn a plan into a human-readable report + a suggested display duration.
+   * Priority (per product design):
+   *   1. "類似候補なし（しきい値未満）" — most actionable: add TM entry
+   *   2. "X% マッチあり、未対応の差分" — lists missing glossary pairs
+   *   3. Normal completion — concise
+   *
+   * @param {FuzzyPlan | SelectionPlan} plan
+   * @param {object} cfg
+   * @param {string} cfg.srcCol              source column letter (for row refs)
+   * @param {number} [cfg.minScoreDefault=0.7] displayed in the "below threshold" message
+   * @returns {{ text: string, ms: number }}
+   */
+  function describePlan(plan, cfg) {
+    const col = cfg.srcCol || 'A';
+    const wrote = (plan.writes || []).length;
+    const reason = plan.stopReason;
+    const at = plan.stoppedAt;
+
+    // Selection plans (planAutoTranslateSelection) carry per-row skip
+    // arrays and never stop early — every row in the range is examined.
+    // Format the report as a roll-up with a few example rows so the
+    // translator knows exactly which rows still need attention.
+    if (plan.skippedNoMatch || plan.skippedFuzzyUncovered) {
+      const noMatch = plan.skippedNoMatch || [];
+      const uncovered = plan.skippedFuzzyUncovered || [];
+      const skipTotal = noMatch.length + uncovered.length;
+      const lines = [];
+      if (wrote && skipTotal) {
+        let breakdown;
+        if (noMatch.length && uncovered.length) {
+          breakdown = `（候補なし: ${noMatch.length}, 未対応の差分: ${uncovered.length}）`;
+        } else if (noMatch.length) {
+          breakdown = `（候補なし: ${noMatch.length}）`;
+        } else {
+          breakdown = `（未対応の差分: ${uncovered.length}）`;
+        }
+        lines.push(`完了: ${wrote} 行挿入、スキップ ${skipTotal} 行 ${breakdown}`);
+      } else if (wrote) {
+        lines.push(`完了: ${wrote} 行挿入`);
+      } else if (skipTotal) {
+        lines.push(`挿入なし、スキップ ${skipTotal} 行`);
+      } else {
+        lines.push('挿入なし（候補や対象がありません）');
+      }
+      const SHOW = 3;
+      for (const r of noMatch.slice(0, SHOW)) {
+        lines.push(`  ・候補なし: ${col}${r.rowNum}`);
+      }
+      for (const r of uncovered.slice(0, SHOW)) {
+        const pct = r.matchScore != null ? Math.round(r.matchScore * 100) : '?';
+        lines.push(`  ・未対応 ${pct}%: ${col}${r.rowNum}`);
+      }
+      const extra = (noMatch.length + uncovered.length) - Math.min(SHOW, noMatch.length) - Math.min(SHOW, uncovered.length);
+      if (extra > 0) lines.push(`  ・他 ${extra} 件`);
+      return { text: lines.join('\n'), ms: skipTotal ? 6000 : 3000 };
+    }
+
+    if (!reason || reason === 'end_of_batch' || reason === 'end_of_range') {
+      return {
+        text: wrote ? `完了: ${wrote} 行挿入` : '挿入なし（候補や対象がありません）',
+        ms: 3000,
+      };
+    }
+    if (reason === 'empty_source') {
+      const where = at ? ` (${col}${at.rowNum} でデータ末尾)` : '';
+      return { text: `完了: ${wrote} 行挿入${where}`, ms: 3000 };
+    }
+
+    if (!at) return { text: `停止: ${reason}`, ms: 4000 };
+
+    const head = wrote
+      ? `${col}${at.rowNum} で停止（${wrote} 行挿入済み）`
+      : `${col}${at.rowNum} で停止（挿入なし）`;
+
+    if (reason === 'no_match') {
+      const minPct = Math.round(((cfg.minScoreDefault ?? 0.7)) * 100);
+      return {
+        text: `${head}\n類似候補なし（最低マッチ率 ${minPct}% 未満）\nTM に近い原文がないため自動処理できません`,
+        ms: 6000,
+      };
+    }
+
+    if (reason === 'fuzzy_uncovered') {
+      const pct = at.matchScore != null ? Math.round(at.matchScore * 100) : '?';
+      const lines = [head, `${pct}% マッチ — 自動置換では対応できない差分:`];
+      const terms = at.missingTerms || [];
+      const SHOW = 4;
+      for (const t of terms.slice(0, SHOW)) {
+        lines.push(`  ・「${t.query}」⇔「${t.source}」`);
+      }
+      if (terms.length > SHOW) lines.push(`  ・他 ${terms.length - SHOW} 件`);
+      return { text: lines.join('\n'), ms: 6000 };
+    }
+
+    return { text: `${head}\n(${reason})`, ms: 4000 };
+  }
+
+  // === Placement-result char-range derivation (shared by card preview + Sheets write) ===
+  //
+  // findDiffRegions: char ranges in `placed` that differ from `original`.
+  //   Used to colour the system's own substitutions blue. Any change —
+  //   number, glossary-resolved, rule-applied — shows up here by construction,
+  //   without needing each placement to report its position.
+  //
+  // unverifiedRegions: the complement of the placed ranges over `placedLen`.
+  //   When any uncovered diff survives, this is the char span that STILL
+  //   carries TM.target content — somewhere in here, the old translation of
+  //   the uncovered source term persists. We scope the risk to the range
+  //   instead of guessing a char-level location.
+  //
+  // buildCellFormatRuns: turn the two range sets into Sheets textFormatRuns,
+  //   resolving overlaps so a placement range always wins over an
+  //   unverified range (placement positions are exact; unverified is the
+  //   "somewhere in this range" complement).
+  function findDiffRegions(original, placed) {
+    if (!original || !placed || original === placed) {
+      return original === placed ? [] : [{ idx: 0, len: (placed || '').length }];
+    }
+    // Strip common prefix / suffix before DP. Placement output is
+    // usually a tiny edit of TM.target, so this collapses the hot
+    // quadratic work to a small band around the actual changes
+    // instead of filling a 500×500 matrix for a 3-char number swap.
+    let pre = 0;
+    const maxPre = Math.min(original.length, placed.length);
+    while (pre < maxPre && original.charCodeAt(pre) === placed.charCodeAt(pre)) pre++;
+    let suf = 0;
+    const maxSuf = Math.min(original.length - pre, placed.length - pre);
+    while (suf < maxSuf
+        && original.charCodeAt(original.length - 1 - suf)
+        === placed.charCodeAt(placed.length - 1 - suf)) suf++;
+    const oCore = original.substring(pre, original.length - suf);
+    const pCore = placed.substring(pre, placed.length - suf);
+    if (!oCore && !pCore) return [];
+    if (!oCore) return [{ idx: pre, len: pCore.length }];
+    if (!pCore) return [];
+
+    const n = oCore.length, m = pCore.length;
+    const dp = fillEditDp(oCore, pCore);
+    const regions = [];
+    let i = n, j = m;
+    let curStart = null, curEnd = null;
+    function flush() {
+      if (curStart != null) {
+        regions.push({ idx: curStart, len: curEnd - curStart });
+        curStart = curEnd = null;
+      }
+    }
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && oCore[i-1] === pCore[j-1] && dp[i][j] === dp[i-1][j-1]) {
+        flush();
+        i--; j--;
+        continue;
+      }
+      if (i > 0 && j > 0 && dp[i][j] === dp[i-1][j-1] + 1) {
+        i--; j--;
+        if (curEnd == null) curEnd = j + 1;
+        curStart = j;
+        continue;
+      }
+      if (j > 0 && dp[i][j] === dp[i][j-1] + 1) {
+        j--;
+        if (curEnd == null) curEnd = j + 1;
+        curStart = j;
+        continue;
+      }
+      if (i > 0 && dp[i][j] === dp[i-1][j] + 1) {
+        i--;
+        continue;
+      }
+      break;
+    }
+    flush();
+    // Offset the core-local positions back into the full-string coordinates.
+    if (pre) {
+      for (const r of regions) r.idx += pre;
+    }
+    return regions.reverse();
+  }
+
+  function unverifiedRegions(placedRegions, placedLen) {
+    const out = [];
+    let cursor = 0;
+    const sorted = [...(placedRegions || [])].sort((a, b) => a.idx - b.idx);
+    for (const r of sorted) {
+      if (r.idx > cursor) out.push({ idx: cursor, len: r.idx - cursor });
+      cursor = r.idx + r.len;
+    }
+    if (cursor < placedLen) out.push({ idx: cursor, len: placedLen - cursor });
+    return out;
+  }
+
+  const CELL_FMT_PLACED = { foregroundColorStyle: { rgbColor: { red: 0.102, green: 0.451, blue: 0.910 } } };
+  const CELL_FMT_UNVERIFIED = { underline: true, foregroundColorStyle: { rgbColor: { red: 0.604, green: 0.627, blue: 0.651 } } };
+
+  function buildCellFormatRuns(text, placedRanges, unverifiedRanges) {
+    const valueLen = text ? text.length : 0;
+    const placed = [];
+    for (const h of (placedRanges || [])) {
+      if (h.end > h.start) placed.push({ start: h.start, end: h.end, fmt: CELL_FMT_PLACED });
+    }
+    placed.sort((a, b) => a.start - b.start);
+    // Chop each unverified range around every placed range that overlaps it.
+    // Placed takes precedence because its positions are exact; unverified
+    // is the "somewhere in this range" complement.
+    const unverified = [];
+    for (const h of (unverifiedRanges || [])) {
+      if (h.end <= h.start) continue;
+      let cur = h.start;
+      for (const p of placed) {
+        if (p.end <= cur) continue;
+        if (p.start >= h.end) break;
+        if (p.start > cur) unverified.push({ start: cur, end: p.start, fmt: CELL_FMT_UNVERIFIED });
+        cur = Math.max(cur, p.end);
+      }
+      if (cur < h.end) unverified.push({ start: cur, end: h.end, fmt: CELL_FMT_UNVERIFIED });
+    }
+    const resolved = [...placed, ...unverified].sort((a, b) => a.start - b.start);
+    const runs = [];
+    let cursor = 0;
+    for (const h of resolved) {
+      if (h.start > cursor) runs.push({ startIndex: cursor, format: {} });
+      runs.push({ startIndex: h.start, format: h.fmt });
+      cursor = h.end;
+    }
+    if (!runs.length) return [{ startIndex: 0, format: {} }];
+    if (runs[0].startIndex > 0) runs.unshift({ startIndex: 0, format: {} });
+    if (cursor < valueLen) runs.push({ startIndex: cursor, format: {} });
+    return runs;
+  }
+
+  // === Tagged Search / Replace (Felix Manual Ch.4.5) ===
+  //
+  // The query language Felix uses in its Search & Replace dialog:
+  //   foo                  — match "foo" in source/target/context
+  //   source:foo           — only the source field
+  //   trans:foo            — only the target field (Felix's name)
+  //   target:foo           — alias for trans:
+  //   context:foo          — only the context field
+  //   created-by:alice     — only the createdBy field
+  //   modified-by:alice    — only the modifiedBy field
+  //   regex:foo\d+         — JavaScript regex (case-insensitive)
+  //   <field>:*            — only valid in the FROM side of replace,
+  //                          tells the replacer to overwrite the field
+  //                          entirely with the TO expression's text
+  //
+  // Numeric / boolean / date fields (reliability, validated, refcount,
+  // created, modified) are settable on the TO side via the same
+  // <field>:value syntax — Felix handles them as the field replace too.
+
+  const _TEXT_FIELDS = ['source', 'target', 'context', 'createdBy', 'modifiedBy'];
+  const _TAG_TO_FIELD = {
+    source: 'source',
+    trans: 'target',
+    target: 'target',
+    context: 'context',
+    'created-by': 'createdBy',
+    'modified-by': 'modifiedBy',
+    reliability: 'reliability',
+    validated: 'validated',
+    refcount: 'refcount',
+    created: 'created',
+    modified: 'modified',
+  };
+
+  function parseQuery(expr) {
+    const e = String(expr == null ? '' : expr);
+    if (!e) return { tag: null, field: null, value: '', regex: false, fieldStar: false };
+    // regex: is a special tag that doesn't bind to a field; it searches
+    // across all text fields like a tag-less query but with a RegExp.
+    if (/^regex:/i.test(e)) {
+      return { tag: 'regex', field: null, value: e.slice(6), regex: true, fieldStar: false };
+    }
+    const m = /^([a-zA-Z][\w-]*):(.*)$/s.exec(e);
+    if (m && _TAG_TO_FIELD[m[1].toLowerCase()]) {
+      const tag = m[1].toLowerCase();
+      const value = m[2];
+      return {
+        tag,
+        field: _TAG_TO_FIELD[tag],
+        value: value === '*' ? '' : value,
+        regex: false,
+        fieldStar: value === '*',
+      };
+    }
+    return { tag: null, field: null, value: e, regex: false, fieldStar: false };
+  }
+
+  // Substring match (case-insensitive via cmpLen) for one field. Regex
+  // path uses native RegExp with the 'i' flag.
+  function _matchesField(record, field, q) {
+    const fv = record && record[field];
+    if (fv == null) return false;
+    const s = String(fv);
+    if (q.regex) {
+      try { return new RegExp(q.value, 'i').test(s); } catch (_) { return false; }
+    }
+    return cmpLen(s).indexOf(cmpLen(q.value)) !== -1;
+  }
+
+  /**
+   * Find records matching a query string. Returns a shallow copy of
+   * each matching record annotated with `matchField` (which field hit).
+   *   searchAndReplace(tmData, 'source:cat')
+   *   searchAndReplace(tmData, 'regex:c[ao]t')
+   *   searchAndReplace(tmData, 'cat')   ← any text field
+   */
+  function searchAndReplace(tmData, expr) {
+    if (!tmData || !tmData.length) return [];
+    const q = parseQuery(expr);
+    const out = [];
+    const fields = q.field ? [q.field] : _TEXT_FIELDS;
+    for (let i = 0; i < tmData.length; i++) {
+      const rec = tmData[i];
+      let hitField = null;
+      for (const f of fields) {
+        if (_matchesField(rec, f, q)) { hitField = f; break; }
+      }
+      if (hitField) out.push({ ...rec, matchField: hitField, tmIdx: i });
+    }
+    return out;
+  }
+
+  // Coerce a TO-side value into the right type for non-text fields.
+  function _coerceFieldValue(field, raw) {
+    if (field === 'refcount' || field === 'reliability') {
+      const n = parseInt(raw, 10);
+      return Number.isFinite(n) ? n : 0;
+    }
+    if (field === 'validated') {
+      return /^(true|1|yes)$/i.test(String(raw).trim());
+    }
+    if (field === 'created' || field === 'modified') {
+      const d = new Date(String(raw).trim());
+      return isNaN(d.getTime()) ? null : d;
+    }
+    return String(raw);
+  }
+
+  /**
+   * Apply a from→to replacement across tmData (mutates in place).
+   * Returns { changed, scannedFields } counts. Behavior table:
+   *   from='cat',           to='dog'        → substring sub in any text field
+   *   from='source:cat',    to='dog'        → substring sub only in source
+   *   from='source:*',      to='Ryan'       → overwrite entire source field
+   *   from='regex:(\d+)円', to='\u00a5$1'    → regex replace in text fields
+   *   from='reliability:5', to='0'          → only matches records whose
+   *                                           reliability is 5; sets it to 0
+   */
+  function applyReplace(tmData, fromExpr, toExpr) {
+    if (!tmData || !tmData.length) return { changed: 0, scannedFields: 0 };
+    const fromQ = parseQuery(fromExpr);
+    const toQ = parseQuery(toExpr);
+    let changed = 0;
+    const targetField = fromQ.field;
+
+    // Field-replace mode: from='field:*', overwrite that field on
+    // every record (or only those that match an additional filter
+    // — Felix's UX is that you first filter via Search, then run
+    // replace on the filtered set; we keep it simple and apply to
+    // every record).
+    if (fromQ.fieldStar && targetField) {
+      const newValue = _coerceFieldValue(targetField, toQ.value);
+      for (const rec of tmData) {
+        rec[targetField] = newValue;
+        changed++;
+      }
+      return { changed, scannedFields: tmData.length };
+    }
+
+    // Numeric / boolean / date fields can't be substring-edited; only
+    // the field-replace path makes sense. If the from-side names such
+    // a field, treat any record matching the equality as a hit and
+    // assign the TO value.
+    if (targetField && !_TEXT_FIELDS.includes(targetField)) {
+      const wanted = _coerceFieldValue(targetField, fromQ.value);
+      const replacement = _coerceFieldValue(targetField, toQ.value);
+      for (const rec of tmData) {
+        const cur = rec[targetField];
+        const same = cur instanceof Date && wanted instanceof Date
+          ? cur.getTime() === wanted.getTime()
+          : cur === wanted;
+        if (same) {
+          rec[targetField] = replacement;
+          changed++;
+        }
+      }
+      return { changed, scannedFields: tmData.length };
+    }
+
+    // Substring / regex replacement on text fields.
+    const fields = targetField ? [targetField] : _TEXT_FIELDS;
+    const re = fromQ.regex
+      ? (() => { try { return new RegExp(fromQ.value, 'gi'); } catch (_) { return null; } })()
+      : null;
+    if (fromQ.regex && !re) return { changed: 0, scannedFields: 0 };
+
+    for (const rec of tmData) {
+      let recChanged = false;
+      for (const f of fields) {
+        const cur = rec[f];
+        if (cur == null) continue;
+        const s = String(cur);
+        let next;
+        if (re) {
+          next = s.replace(re, toQ.value);
+        } else {
+          // Case-insensitive substring replace via cmpLen positions.
+          const folded = cmpLen(s);
+          const needle = cmpLen(fromQ.value);
+          if (!needle) continue;
+          let i = 0, parts = '';
+          let pos = 0;
+          for (;;) {
+            const idx = folded.indexOf(needle, pos);
+            if (idx === -1) { parts += s.substring(pos); break; }
+            parts += s.substring(pos, idx) + toQ.value;
+            pos = idx + needle.length;
+            i++;
+          }
+          if (i === 0) continue;
+          next = parts;
+        }
+        if (next !== s) {
+          rec[f] = next;
+          recChanged = true;
+        }
+      }
+      if (recChanged) changed++;
+    }
+    return { changed, scannedFields: tmData.length * fields.length };
+  }
+
+  // === Quality Control (Felix Manual Ch.4.6.4) ===
+  //
+  // Three independent checks that flag suspicious source/target pairs:
+  //   • Numbers: every digit run on one side should appear on the other
+  //   • ALL CAPS: ≥2-letter all-uppercase words in source should appear
+  //     verbatim in target (English convention for product/code names)
+  //   • Glossary: terms registered in the glossary that show up in the
+  //     source should have their registered translation in the target
+  //
+  // Each helper returns an issue list independently so the UI can decide
+  // which classes of issue to surface; qcCheck is the convenience
+  // umbrella that runs all enabled checks in one pass.
+
+  // Extract digit runs (with optional decimal/thousands separators) from
+  // a cmpLen-folded copy of the input. Width-folding via cmpLen means
+  // ３１４ and 314 produce the same set, so width differences in the
+  // source/target don't trigger spurious mismatches.
+  function _extractNumbers(text) {
+    if (!text) return [];
+    const folded = cmpLen(text);
+    const re = /\d+(?:[.,]\d+)*/g;
+    const out = [];
+    let m;
+    while ((m = re.exec(folded)) !== null) out.push(m[0]);
+    return out;
+  }
+
+  // Multiset diff: which numbers appear on src side missing on tgt side
+  // (and vice versa). Multiset because "5 of 5" should preserve both.
+  function qcNumbers(source, target) {
+    const s = _extractNumbers(source);
+    const t = _extractNumbers(target);
+    const tCounts = new Map();
+    for (const n of t) tCounts.set(n, (tCounts.get(n) || 0) + 1);
+    const missing = [];
+    for (const n of s) {
+      const c = tCounts.get(n) || 0;
+      if (c <= 0) missing.push({ value: n, side: 'target' });
+      else tCounts.set(n, c - 1);
+    }
+    const extra = [];
+    for (const [n, c] of tCounts) {
+      for (let i = 0; i < c; i++) extra.push({ value: n, side: 'source' });
+    }
+    return missing.concat(extra);
+  }
+
+  // ≥2-letter all-uppercase word runs in source that are absent from
+  // target. Case-sensitive on purpose — the typical case is ENG product
+  // codes ("HP", "MATK", "GG") that should pass through verbatim.
+  function _extractAllCapsWords(text) {
+    if (!text) return [];
+    const out = [];
+    const re = /[A-Z][A-Z0-9]{1,}/g;
+    let m;
+    while ((m = re.exec(text)) !== null) out.push(m[0]);
+    return out;
+  }
+  function qcAllCaps(source, target, glossaryData) {
+    const words = _extractAllCapsWords(source);
+    if (!words.length) return [];
+    // CAPS words that are themselves a glossary term get a pass —
+    // qcGlossary already handles "is the translation in target?" for
+    // them. Without this dedup, every translated CAPS word ("DOWN" →
+    // "下降", "UP" → "提升") double-flags: once correctly via glossary,
+    // once spuriously via CAPS just because the literal English form
+    // doesn't survive translation.
+    const glossaryTerms = new Set();
+    if (glossaryData) {
+      for (const g of glossaryData) {
+        if (g && g.term) glossaryTerms.add(cmpLen(g.term));
+      }
+    }
+    const issues = [];
+    for (const w of words) {
+      if (glossaryTerms.has(cmpLen(w))) continue;
+      if (target.indexOf(w) === -1) issues.push({ word: w });
+    }
+    return issues;
+  }
+
+  // For each glossary term that appears in the source, the registered
+  // translation should appear in the target. Word-boundary aware on
+  // both sides via findWordBoundaryIndex, so "dark" inside "darkens"
+  // doesn't masquerade as a missing translation.
+  function qcGlossary(source, target, glossaryData) {
+    if (!glossaryData || !glossaryData.length || !source) return [];
+    const issues = [];
+    for (const g of glossaryData) {
+      const term = g && g.term;
+      const trans = g && g.translation;
+      if (!term || !trans) continue;
+      const termFolded = cmpLen(term);
+      // Term must be present on the source side (word-boundary aware).
+      if (findWordBoundaryIndex(source, termFolded) === -1) continue;
+      // Translation must be present on the target side.
+      const transFolded = cmpLen(trans);
+      if (findWordBoundaryIndex(target, transFolded) === -1) {
+        issues.push({ term, translation: trans });
+      }
+    }
+    return issues;
+  }
+
+  /**
+   * Run the enabled QC checks against a single record. Returns a flat
+   * issue list with a `type` discriminator so the UI can group/colour.
+   *   qcCheck({source, target}, glossaryData?, {numbers?, allCaps?, glossary?})
+   */
+  function qcCheck(record, glossaryData, opts) {
+    if (!record) return [];
+    opts = opts || { numbers: true, allCaps: true, glossary: true };
+    const src = record.source || '';
+    const tgt = record.target || '';
+    const out = [];
+    if (opts.numbers !== false) {
+      for (const issue of qcNumbers(src, tgt)) {
+        out.push({ type: 'number', ...issue });
+      }
+    }
+    if (opts.allCaps !== false) {
+      for (const issue of qcAllCaps(src, tgt, glossaryData)) {
+        out.push({ type: 'allcaps', ...issue });
+      }
+    }
+    if (opts.glossary !== false && glossaryData && glossaryData.length) {
+      for (const issue of qcGlossary(src, tgt, glossaryData)) {
+        out.push({ type: 'glossary', ...issue });
+      }
+    }
+    return out;
+  }
+
+  // === TMX 1.4 import / export ===
+  //
+  // Pure-string parser/serializer — no DOMParser dependency, so the
+  // same code runs in the extension (sidepanel) and in the Node test
+  // harness without polyfills. TMX is a flat-enough XML subset that
+  // a regex pass is sufficient; we do NOT try to handle arbitrary XML.
+  // Inline tags (<bpt>/<ept>/<ph>/<it>/<hi>) inside a <seg> are
+  // stripped down to their text content, matching the Python port and
+  // Felix CAT's own behavior.
+
+  const _XML_DECODE = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&amp;': '&' };
+  function decodeXml(s) {
+    return String(s).replace(/&(?:lt|gt|quot|apos|amp);/g, m => _XML_DECODE[m]);
+  }
+  function encodeXml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  function _parseAttrs(s) {
+    const out = {};
+    if (!s) return out;
+    const re = /([a-zA-Z_][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+    let m;
+    while ((m = re.exec(s)) !== null) out[m[1]] = m[2] != null ? m[2] : m[3];
+    return out;
+  }
+
+  // Format / parse Felix-flavored TMX dates (YYYYMMDDTHHmmssZ, UTC).
+  function _formatTmxDate(d) {
+    const pad = n => String(n).padStart(2, '0');
+    return d.getUTCFullYear()
+      + pad(d.getUTCMonth() + 1) + pad(d.getUTCDate())
+      + 'T' + pad(d.getUTCHours()) + pad(d.getUTCMinutes()) + pad(d.getUTCSeconds()) + 'Z';
+  }
+  function _parseTmxDate(s) {
+    if (!s) return null;
+    const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(s);
+    if (!m) return null;
+    return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+  }
+
+  // Best-match for a TUV language code, allowing 'en' to match 'en-US' etc.
+  function _findLangKey(tuvs, lang) {
+    if (!lang) return null;
+    const l = lang.toLowerCase();
+    if (l in tuvs) return l;
+    for (const k of Object.keys(tuvs)) {
+      if (k.startsWith(l + '-') || l.startsWith(k + '-')) return k;
+    }
+    return null;
+  }
+
+  // Strip inline TMX/XML tags inside a <seg> body and decode entities.
+  // Felix preserves seg.text + each child.text + child.tail; we collapse
+  // that to plain text since the engine downstream is text-only anyway.
+  function _segText(body) {
+    return decodeXml(String(body || '').replace(/<[^>]+>/g, ''));
+  }
+
+  /**
+   * Parse a TMX 1.4 document (string) into a list of records.
+   *   parseTmx(xml, { sourceLang?, targetLang? }) →
+   *     { records, sourceLang, targetLang }
+   *
+   * When sourceLang/targetLang are omitted they fall back to the
+   * <header srclang> attribute and then to the first two distinct
+   * language codes seen on each <tu>'s <tuv> children.
+   */
+  function parseTmx(xml, opts) {
+    opts = opts || {};
+    let sourceLang = (opts.sourceLang || '').toLowerCase() || null;
+    let targetLang = (opts.targetLang || '').toLowerCase() || null;
+
+    // Header srclang fills in the source default.
+    const headerMatch = /<header\b([^>]*?)\/?>/i.exec(xml);
+    if (headerMatch && !sourceLang) {
+      const ha = _parseAttrs(headerMatch[1]);
+      if (ha.srclang) sourceLang = ha.srclang.toLowerCase();
+    }
+
+    const records = [];
+    const tuRe = /<tu\b([^>]*?)>([\s\S]*?)<\/tu>/g;
+    let tuM;
+    while ((tuM = tuRe.exec(xml)) !== null) {
+      const tuAttrs = _parseAttrs(tuM[1]);
+      const tuBody = tuM[2];
+
+      // Per-TU context (Felix convention: <prop type="x-context">...).
+      let context = '';
+      const propRe = /<prop\b([^>]*?)>([\s\S]*?)<\/prop>/g;
+      let propM;
+      while ((propM = propRe.exec(tuBody)) !== null) {
+        const pa = _parseAttrs(propM[1]);
+        if ((pa.type || '').toLowerCase() === 'x-context') {
+          context = decodeXml(propM[2]);
+          break;
+        }
+      }
+
+      // Collect all <tuv lang=...><seg>...</seg></tuv>.
+      const tuvs = {};
+      const tuvRe = /<tuv\b([^>]*?)>([\s\S]*?)<\/tuv>/g;
+      let tuvM;
+      while ((tuvM = tuvRe.exec(tuBody)) !== null) {
+        const ta = _parseAttrs(tuvM[1]);
+        const lang = (ta['xml:lang'] || ta.lang || '').toLowerCase();
+        if (!lang) continue;
+        const segMatch = /<seg\b[^>]*?(?:\/>|>([\s\S]*?)<\/seg>)/i.exec(tuvM[2]);
+        const text = segMatch ? _segText(segMatch[1] || '') : '';
+        tuvs[lang] = text;
+      }
+
+      const langs = Object.keys(tuvs);
+      if (langs.length < 2) continue;
+
+      // Pick source/target by lang code; fall back to first two distinct.
+      let srcKey = _findLangKey(tuvs, sourceLang);
+      let tgtKey = _findLangKey(tuvs, targetLang);
+      if (!srcKey) srcKey = langs[0];
+      if (!tgtKey) tgtKey = langs.find(k => k !== srcKey) || null;
+      if (!tgtKey) continue;
+
+      // Lock in the auto-detected langs so all subsequent TUs match
+      // the same orientation, even if the source was unspecified.
+      if (!sourceLang) sourceLang = srcKey;
+      if (!targetLang) targetLang = tgtKey;
+
+      const rec = {
+        source: tuvs[srcKey],
+        target: tuvs[tgtKey],
+        context,
+        createdBy: tuAttrs.creationid || '',
+        modifiedBy: tuAttrs.changeid || '',
+        created: _parseTmxDate(tuAttrs.creationdate),
+        modified: _parseTmxDate(tuAttrs.changedate),
+      };
+      const usage = tuAttrs.usagecount;
+      if (usage && /^\d+$/.test(usage)) rec.refcount = parseInt(usage, 10);
+      records.push(rec);
+    }
+
+    return { records, sourceLang, targetLang };
+  }
+
+  /**
+   * Serialize records to a TMX 1.4 document string.
+   *   serializeTmx(records, { sourceLang, targetLang, creationTool?,
+   *                           creationToolVersion? }) → xml
+   *
+   * Records may carry the same fields parseTmx emits; missing optional
+   * fields drop their corresponding attribute (no creationid="" noise).
+   */
+  function serializeTmx(records, opts) {
+    opts = opts || {};
+    const sourceLang = opts.sourceLang || 'en';
+    const targetLang = opts.targetLang || 'ja';
+    const tool = opts.creationTool || 'felix-tm';
+    const toolVer = opts.creationToolVersion || '0.1.0';
+
+    const out = [];
+    out.push('<?xml version="1.0" encoding="UTF-8"?>');
+    out.push('<tmx version="1.4">');
+    out.push('  <header'
+      + ' creationtool="' + encodeXml(tool) + '"'
+      + ' creationtoolversion="' + encodeXml(toolVer) + '"'
+      + ' datatype="plaintext"'
+      + ' segtype="sentence"'
+      + ' adminlang="' + encodeXml(sourceLang.toUpperCase()) + '"'
+      + ' srclang="' + encodeXml(sourceLang.toUpperCase()) + '"'
+      + ' o-tmf="' + encodeXml(tool) + '"/>');
+    out.push('  <body>');
+
+    for (const rec of (records || [])) {
+      const attrs = [];
+      if (rec.created instanceof Date) attrs.push('creationdate="' + _formatTmxDate(rec.created) + '"');
+      if (rec.modified instanceof Date) attrs.push('changedate="' + _formatTmxDate(rec.modified) + '"');
+      if (rec.createdBy) attrs.push('creationid="' + encodeXml(rec.createdBy) + '"');
+      if (rec.modifiedBy) attrs.push('changeid="' + encodeXml(rec.modifiedBy) + '"');
+      if (rec.refcount) attrs.push('usagecount="' + rec.refcount + '"');
+      out.push('    <tu' + (attrs.length ? ' ' + attrs.join(' ') : '') + '>');
+      if (rec.context) {
+        out.push('      <prop type="x-context">' + encodeXml(rec.context) + '</prop>');
+      }
+      out.push('      <tuv xml:lang="' + encodeXml(sourceLang) + '"><seg>' + encodeXml(rec.source || '') + '</seg></tuv>');
+      out.push('      <tuv xml:lang="' + encodeXml(targetLang) + '"><seg>' + encodeXml(rec.target || '') + '</seg></tuv>');
+      out.push('    </tu>');
+    }
+
+    out.push('  </body>');
+    out.push('</tmx>');
+    return out.join('\n') + '\n';
+  }
+
+  // === Public API ===
+  return { makeCmp, cmpLen, search, reverseSearch, concordanceSearch, glossarySearch,
+           glossaryPlacement, numberPlacement, rulePlacement, nonNumericDiffs,
+           markGlossaryInSource, editDistance, bagDistance,
+           fuzzyScore, edScore, diffHighlight, tokenize,
+           containsCJK, addEntry, addGlossaryEntry, parseA1, esc, escA,
+           markUncoveredHtml, renderQueryCellWithUncovered,
+           uncoveredRegionsForText,
+           findDiffRegions, unverifiedRegions, buildCellFormatRuns,
+           CELL_FMT_PLACED, CELL_FMT_UNVERIFIED,
+           resolveWithPlacement,
+           planAutoTranslateSelection, planAutoTranslateToFuzzy,
+           buildPlanActions, describePlan,
+           parseTmx, serializeTmx,
+           qcCheck, qcNumbers, qcAllCaps, qcGlossary,
+           parseQuery, searchAndReplace, applyReplace,
+           subdist, formatPenalty };
+})();
+
+// Make available in different contexts
+if (typeof module !== 'undefined') module.exports = FelixEngine;
