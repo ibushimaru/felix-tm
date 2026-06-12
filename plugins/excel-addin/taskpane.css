@@ -31,7 +31,11 @@ h3.danger-h { color: var(--danger-line); }
   margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border-sub);
 }
 .header h1 { font-size: 15px; font-weight: 600; }
-.badge { background: var(--border-sub); color: var(--muted); padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+.header-tools { display: flex; align-items: center; gap: 4px; }
+.scale-btn { width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--muted); font-size: 13px; line-height: 1; cursor: pointer; }
+.scale-btn:hover { background: var(--surface-sub2); color: var(--fg); }
+.scale-label { font-size: 10px; color: var(--faint); min-width: 32px; text-align: center; }
+.badge { background: var(--border-sub); color: var(--muted); padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-left: 4px; }
 
 .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
 .tab { padding: 7px 10px; cursor: pointer; font-size: 13px; color: var(--muted); border-bottom: 2px solid transparent; }

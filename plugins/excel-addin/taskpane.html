@@ -12,7 +12,12 @@
 
 <div class="header">
   <h1>Felix TM</h1>
-  <span class="badge" id="stats-badge">TM: 0</span>
+  <span class="header-tools">
+    <button class="scale-btn" id="btn-scale-down" title="">−</button>
+    <span class="scale-label" id="scale-label">100%</span>
+    <button class="scale-btn" id="btn-scale-up" title="">＋</button>
+    <span class="badge" id="stats-badge">TM: 0</span>
+  </span>
 </div>
 
 <div class="tabs">
@@ -135,15 +140,6 @@
     <option value="0.6">60%</option>
     <option value="0.7">70%</option>
     <option value="0.8">80%</option>
-  </select>
-
-  <label class="field-label" id="lbl-ui-scale">UI scale / 表示倍率</label>
-  <select id="set-ui-scale">
-    <option value="0.9">90%</option>
-    <option value="1">100%</option>
-    <option value="1.1">110%</option>
-    <option value="1.25">125%</option>
-    <option value="1.5">150%</option>
   </select>
 
   <button class="btn btn-primary btn-block" style="margin-top:12px" id="btn-save-settings">Save / 保存</button>

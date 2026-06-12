@@ -1225,11 +1225,20 @@ function downloadText(text, filename) {
 
 // === Settings UI ===
 
-/** Pane-wide zoom. `zoom` is supported by both webviews Office uses
- *  (WebView2 on Windows, WKWebView on Mac) and by every browser the
- *  web version runs in. Windows panes render notably small at 100%. */
+/** Pane-wide zoom, adjusted via the −/＋ header buttons in 10% steps.
+ *  `zoom` is supported by both webviews Office uses (WebView2 on
+ *  Windows, WKWebView on Mac) and by every browser the web version
+ *  runs in. Windows panes render notably small at 100%. */
 function uiScale() { return parseFloat(settings.uiScale) || 1; }
-function applyUiScale() { document.body.style.zoom = String(uiScale()); }
+function applyUiScale() {
+  document.body.style.zoom = String(uiScale());
+  $('scale-label').textContent = Math.round(uiScale() * 100) + '%';
+}
+function nudgeUiScale(step) {
+  settings.uiScale = Math.min(2, Math.max(0.7, Math.round((uiScale() + step) * 10) / 10));
+  settingsSave(settings);
+  applyUiScale();
+}
 
 function loadSettingsUI() {
   $('set-lang').value = settings.lang || 'en';
@@ -1237,7 +1246,6 @@ function loadSettingsUI() {
   $('set-target-col').value = settings.targetCol || 'B';
   $('set-min-score').value = String(settings.minScore || 0.7);
   $('min-score').value = String(settings.minScore || 0.7);
-  $('set-ui-scale').value = String(uiScale());
 }
 
 async function saveSettingsUI() {
@@ -1345,7 +1353,8 @@ function applyLang() {
   set('btn-export-gloss', t('exportGloss'));
   // Settings
   set('h-settings', t('settings'));
-  set('lbl-ui-scale', t('lblUiScale'));
+  tip('btn-scale-down', t('lblUiScale'));
+  tip('btn-scale-up', t('lblUiScale'));
   set('btn-save-settings', t('save'));
   set('h-danger', t('danger'));
   set('btn-clear-tm', t('clearTM'));
@@ -1467,13 +1476,8 @@ async function init(hasExcel) {
     await settingsSave(settings);
     applyLang();
   });
-  // UI scale applies immediately — picking a size you then have to
-  // hunt for a Save button at the old size would be silly.
-  $('set-ui-scale').addEventListener('change', async (e) => {
-    settings.uiScale = parseFloat(e.target.value) || 1;
-    await settingsSave(settings);
-    applyUiScale();
-  });
+  $('btn-scale-down').addEventListener('click', () => nudgeUiScale(-0.1));
+  $('btn-scale-up').addEventListener('click', () => nudgeUiScale(0.1));
   $('btn-clear-tm').addEventListener('click', () => clearAllTM());
   $('btn-clear-gloss').addEventListener('click', () => clearAllGlossary());
 
