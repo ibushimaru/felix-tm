@@ -218,11 +218,24 @@ async function excelRun(fn) {
 }
 
 async function getSelectionInfo() {
+  // One batch, one roundtrip: alongside the selected cell we read the
+  // same row's source and target cells (via entire-row ∩ column, which
+  // needs no indices up front). routeSelection consumes them directly —
+  // fetching the counterpart in a second Excel.run was the bulk of the
+  // per-selection latency.
+  const src = (settings.sourceCol || 'A').toUpperCase();
+  const tgt = (settings.targetCol || 'B').toUpperCase();
   return excelRun(async (ctx) => {
+    const sheet = ctx.workbook.worksheets.getActiveWorksheet();
     const sel = ctx.workbook.getSelectedRange();
     const cell = sel.getCell(0, 0);
+    const row = cell.getEntireRow();
+    const srcCell = row.getIntersection(sheet.getRange(`${src}:${src}`));
+    const tgtCell = row.getIntersection(sheet.getRange(`${tgt}:${tgt}`));
     sel.load(['address']);
     cell.load(['address', 'values', 'rowIndex', 'columnIndex']);
+    srcCell.load('values');
+    tgtCell.load('values');
     await ctx.sync();
     const [sheetName, selRef] = splitAddress(sel.address);
     const [, ref] = splitAddress(cell.address);
@@ -231,6 +244,8 @@ async function getSelectionInfo() {
       colLetter: colLetterFromIndex(cell.columnIndex),
       rowNum: cell.rowIndex + 1,
       value: cellText(cell.values[0][0]).trim(),
+      srcValue: cellText(srcCell.values[0][0]).trim(),
+      tgtValue: cellText(tgtCell.values[0][0]).trim(),
     };
   });
 }
@@ -414,13 +429,12 @@ async function routeSelection(sel) {
     return;
   }
 
+  // From here on everything is synchronous — getSelectionInfo already
+  // fetched both counterpart cells in its single batch, so the preview
+  // and the results paint in the same tick as the selection event.
   if (panelMode === 'review') {
     // Review mode: reverse search using the target-side text.
-    let query = sel.value;
-    if (onSource) {
-      const tgt = await readCellValue(sel.sheetName, (settings.targetCol || 'B') + sel.rowNum);
-      query = tgt || sel.value;
-    }
+    const query = onSource ? (sel.tgtValue || sel.value) : sel.value;
     $('cell-value').textContent = query || '—';
     if (!query) { lastQuery = ''; paintEmpty('selectCell'); return; }
     renderSearch(query, true);
@@ -430,17 +444,14 @@ async function routeSelection(sel) {
   // Translate mode: forward search. On a target cell, use the same
   // row's source as the query so the panel keeps showing source-side
   // matches as the translator navigates between columns.
-  let query = sel.value;
-  if (onTarget) {
-    query = await readCellValue(sel.sheetName, (settings.sourceCol || 'A') + sel.rowNum);
-    if (!query) {
-      // Source row genuinely empty — the cell's own text is the only
-      // sensible preview content.
-      $('cell-value').textContent = sel.value || '—';
-      lastQuery = '';
-      paintEmpty('emptySourceRow');
-      return;
-    }
+  const query = onTarget ? sel.srcValue : sel.value;
+  if (onTarget && !query) {
+    // Source row genuinely empty — the cell's own text is the only
+    // sensible preview content.
+    $('cell-value').textContent = sel.value || '—';
+    lastQuery = '';
+    paintEmpty('emptySourceRow');
+    return;
   }
   $('cell-value').textContent = query || '—';
   if (!query) { lastQuery = ''; paintEmpty('selectCell'); return; }
